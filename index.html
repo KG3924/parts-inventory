@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Parts Inventory – Remote</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --open-order: #7c3aed;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: 0.75rem;
+      padding-bottom: 5.5rem;
+    }
+    .container { max-width: 920px; margin: 0 auto; }
+    header {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+      gap: 0.75rem; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 1.25rem; font-weight: 600; }
+    .user-bar { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; }
+    .user-bar select {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.85rem; max-width: 130px;
+    }
+    .tabs {
+      display: flex; gap: 0.35rem; position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--card); border-top: 1px solid var(--border); padding: 0.5rem;
+      z-index: 100; justify-content: center;
+    }
+    .tab {
+      background: transparent; border: 1px solid transparent; color: var(--muted);
+      padding: 0.5rem 0.4rem; border-radius: 8px; cursor: pointer; font-size: 0.68rem;
+      flex: 1; max-width: 78px; text-align: center;
+    }
+    .tab.active { background: var(--accent); color: white; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1rem; margin-bottom: 0.85rem;
+    }
+    .card h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, select, textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 0.55rem 0.7rem; border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.7rem;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 120px; }
+    button {
+      background: var(--accent); color: white; border: none; padding: 0.6rem 1rem;
+      border-radius: 8px; font-size: 0.9rem; cursor: pointer;
+    }
+    button:hover { background: var(--accent-hover); }
+    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.5rem 0.3rem; vertical-align: middle; }
+    tbody tr { border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+    .qty { font-weight: 600; }
+    .qty.low { color: var(--warning); }
+    .qty.out { color: var(--danger); }
+    .badge {
+      display: inline-block; font-size: 0.68rem; padding: 0.12rem 0.4rem; border-radius: 4px;
+      font-weight: 500; margin-right: 0.25rem; margin-top: 0.15rem;
+    }
+    .badge.open-order { background: rgba(168, 85, 247, 0.2); color: var(--open-order); }
+    .badge.needs-date { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+    .badge.low { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+    .barcode-preview { text-align: center; padding: 1rem; background: white; border-radius: 8px; margin: 0.75rem 0; }
+    .status {
+      padding: 0.65rem 0.85rem; border-radius: 8px; margin-bottom: 0.75rem; display: none; font-size: 0.9rem;
+    }
+    .status.show { display: block; }
+    .status.success { background: rgba(34, 197, 94, 0.15); color: var(--success); border: 1px solid var(--success); }
+    .status.error { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid var(--danger); }
+    .status.info { background: rgba(59, 130, 246, 0.15); color: var(--accent); border: 1px solid var(--accent); }
+    .actions {
+      display: flex; gap: 0.2rem; flex-wrap: nowrap; align-items: center; justify-content: flex-end;
+      white-space: nowrap;
+    }
+    .actions button { padding: 0.25rem 0.4rem; font-size: 0.7rem; flex-shrink: 0; }
+    .empty { text-align: center; color: var(--muted); padding: 1.5rem; }
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 0.85rem;
+    }
+    .stat {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 0.6rem 0.35rem; text-align: center;
+    }
+    .stat-value { font-size: 1.15rem; font-weight: 700; }
+    .stat-label { font-size: 0.68rem; color: var(--muted); }
+    .value-cards {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;
+    }
+    .value-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem;
+    }
+    .value-card .label { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .value-card .amount { font-size: 1.25rem; font-weight: 700; }
+    #reader { width: 100%; max-width: 400px; margin: 0 auto 1rem; border-radius: 12px; overflow: hidden; }
+    .scan-result-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 0.75rem;
+    }
+    .hint { font-size: 0.78rem; color: var(--muted); margin-top: -0.4rem; margin-bottom: 0.6rem; }
+    .config-banner {
+      background: rgba(245, 158, 11, 0.15); border: 1px solid var(--warning); color: var(--warning);
+      padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.85rem;
+    }
+    .order-box {
+      margin: 0.75rem 0; padding: 0.85rem; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);
+    }
+    .filter-row { margin: 0.45rem 0 0.15rem; }
+    .filter-row-label {
+      font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em;
+      margin-bottom: 0.3rem; font-weight: 600;
+    }
+    .source-filters, .category-filters {
+      display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.55rem;
+    }
+    .filter-chip {
+      background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+      padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.78rem; cursor: pointer;
+    }
+    .filter-chip.active {
+      background: var(--accent); border-color: var(--accent); color: white;
+    }
+    .filter-chip.cat-chip.active {
+      background: #0f766e; border-color: #0f766e; color: white;
+    }
+    .filter-chip:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+    .filter-chip.cat-chip:hover:not(.active) { border-color: #0f766e; color: #0f766e; }
+    .badge.category {
+      background: rgba(15, 118, 110, 0.12); color: #0f766e;
+    }
+    .badge.source-tag {
+      background: rgba(37, 99, 235, 0.1); color: var(--accent);
+    }
+    .user-bar select.user-missing {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+    }
+    .user-required-banner {
+      background: rgba(220, 38, 38, 0.08); border: 1px solid var(--danger); color: var(--danger);
+      padding: 0.55rem 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.85rem;
+      display: none;
+    }
+    .user-required-banner.show { display: block; }
+    .danger-zone {
+      margin-top: 1rem; padding: 0.85rem; border: 1px solid var(--danger);
+      border-radius: 8px; background: rgba(220, 38, 38, 0.04);
+    }
+    .meta-line {
+      display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; align-items: center;
+    }
+    button.danger {
+      background: transparent; border: 1px solid var(--danger); color: var(--danger);
+    }
+    button.danger:hover { background: var(--danger); color: white; }
+    button.quote-btn {
+      background: transparent; border: 1px solid var(--open-order); color: var(--open-order);
+    }
+    button.quote-btn:hover { background: var(--open-order); color: white; }
+    @media (max-width: 520px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .tab { font-size: 0.65rem; padding: 0.45rem 0.2rem; }
+    }
+    @media print {
+      body * { visibility: hidden !important; }
+      .print-area, .print-area * { visibility: visible !important; }
+      .print-area {
+        position: absolute; left: 0; top: 0; width: 100%;
+        background: white; padding: 0; margin: 0;
+      }
+      /* Brother DK-1201: 3.5 in wide × 1.1 in high (90.3 mm × 29 mm) */
+      .label-block {
+        page-break-after: always;
+        page-break-inside: avoid;
+        break-inside: avoid;
+        width: 3.3in;
+        max-width: 3.3in;
+        height: 0.95in;
+        max-height: 0.95in;
+        margin: 0;
+        padding: 0.06in 0.1in;
+        text-align: center;
+        color: #000;
+        font-family: Arial, Helvetica, sans-serif;
+        overflow: hidden;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+      .label-block:last-child { page-break-after: auto; }
+      @page {
+        size: 3.5in 1.1in;
+        margin: 0.05in;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📦 Parts Inventory</h1>
+      <div class="user-bar">
+        <span style="color:var(--muted)">User:</span>
+        <select id="current-user" onchange="saveUser()" required title="Required before making inventory changes">
+          <option value="">— Select —</option>
+          <option value="Toby">Toby</option>
+          <option value="Glynn">Glynn</option>
+          <option value="Ricky">Ricky</option>
+          <option value="Grant">Grant</option>
+          <option value="Kyle">Kyle</option>
+        </select>
+      </div>
+    </header>
+
+    <div id="config-banner" class="config-banner" style="display:none;">
+      <strong>Setup required:</strong> Paste your Supabase Project URL and anon key near the top of the script section.
+    </div>
+    <div id="user-required-banner" class="user-required-banner">
+      <strong>Select your name</strong> in the header before adding, editing, scanning commits, or adjusting stock. This stamps who made each change.
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <!-- DASHBOARD -->
+    <div id="dashboard" class="panel active">
+      <div class="stats" id="stats"></div>
+      <div class="value-cards" id="value-summary"></div>
+      <div class="card">
+        <input type="search" id="search" placeholder="Search name, part #, source, category, location..." oninput="renderTable()">
+        <div class="filter-row">
+          <div class="filter-row-label">Source</div>
+          <div id="source-filters" class="source-filters"></div>
+        </div>
+        <div class="filter-row">
+          <div class="filter-row-label">Category</div>
+          <div id="category-filters" class="category-filters"></div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Name / Part #</th>
+                <th>Qty</th>
+                <th>Value</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="inventory-body"></tbody>
+          </table>
+        </div>
+        <div id="empty-msg" class="empty" style="display:none;">No parts yet. Add one or scan a new part number.</div>
+      </div>
+    </div>
+
+    <!-- SCAN -->
+    <div id="scan" class="panel">
+      <div class="card">
+        <h2>Phone Camera Scan</h2>
+        <p class="hint">Scan a barcode or type a part number. The camera stops when an item is found so you can review and commit the change.</p>
+        <div id="reader"></div>
+        <div class="btn-group">
+          <button id="start-scan-btn" onclick="startScanner()">Start Camera</button>
+          <button class="secondary" id="stop-scan-btn" onclick="stopScanner()" style="display:none;">Stop Camera</button>
+        </div>
+        <hr style="border-color:var(--border); margin:1rem 0;">
+        <h2 style="font-size:0.95rem;">Or type / paste part number</h2>
+        <div class="row" style="align-items:flex-end;">
+          <div style="flex:2;">
+            <input type="text" id="manual-scan" placeholder="Part number" autocomplete="off" style="margin-bottom:0;">
+          </div>
+          <div style="flex:0;">
+            <button onclick="processManualScan()">Look up</button>
+          </div>
+        </div>
+        <div id="scan-result" style="margin-top:1rem;"></div>
+      </div>
+    </div>
+
+    <!-- ADD / EDIT -->
+    <div id="add" class="panel">
+      <div class="card">
+        <h2 id="form-title">Add Part</h2>
+        <input type="hidden" id="edit-id">
+        <label>Part Name *</label>
+        <input type="text" id="item-name" placeholder="e.g. Hydraulic Fitting 1/2&quot;">
+        <label>Part Number / SKU * (becomes the barcode)</label>
+        <input type="text" id="item-barcode" placeholder="Existing part # – letters & numbers OK">
+        <p class="hint">Encoded as Code 128. No new numbers created.</p>
+        <div class="row">
+          <div>
+            <label>Quantity on Hand</label>
+            <input type="number" id="item-qty" value="0" min="0">
+          </div>
+          <div>
+            <label>Reorder Level</label>
+            <input type="number" id="item-reorder" value="5" min="0">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Buy Price ($)</label>
+            <input type="number" id="item-buy-price" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div>
+            <label>Sell Price ($)</label>
+            <input type="number" id="item-sell-price" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Source / Supplier</label>
+            <input type="text" id="item-source" list="source-suggestions" placeholder="e.g. Wynn, FFS, Alu Design">
+            <datalist id="source-suggestions"></datalist>
+          </div>
+          <div>
+            <label>Category</label>
+            <input type="text" id="item-category" list="category-suggestions" placeholder="e.g. Valve, Blade, O-Ring">
+            <datalist id="category-suggestions"></datalist>
+          </div>
+        </div>
+        <label>Location / Bin</label>
+        <input type="text" id="item-location" placeholder="e.g. Shelf A-3">
+        <label>Notes</label>
+        <textarea id="item-notes" rows="2" placeholder="Optional notes"></textarea>
+
+        <div class="order-box">
+          <label style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">
+            <input type="checkbox" id="item-open-order" style="width:auto; margin:0;" onchange="toggleOrderFields()">
+            <span>Open Order</span>
+          </label>
+          <div id="order-fields" style="display:none;">
+            <div class="row">
+              <div>
+                <label>Order Date</label>
+                <input type="date" id="item-date-ordered">
+              </div>
+              <div>
+                <label>Est. Delivery Date</label>
+                <input type="date" id="item-est-delivery">
+              </div>
+            </div>
+            <label>Qty Ordered</label>
+            <input type="number" id="item-ordered-qty" min="0" placeholder="How many ordered">
+            <p class="hint" style="color:var(--warning);">Leave Est. Delivery blank if unknown — the item will be flagged “Needs Delivery Date” as a reminder.</p>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button onclick="saveItem()">Save</button>
+          <button class="secondary" onclick="clearForm()">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- REPORTS -->
+    <div id="reports" class="panel">
+      <div class="card">
+        <h2>Inventory Valuation</h2>
+        <p class="hint">Standard cost-based and retail-based views of what your stock is worth.</p>
+        <div class="value-cards" id="report-values"></div>
+      </div>
+      <div class="card">
+        <h2>Items Needing Attention</h2>
+        <div id="attention-list"></div>
+      </div>
+      <div class="card">
+        <h2>About these numbers</h2>
+        <p style="font-size:0.85rem; color:var(--muted);">
+          <strong>Cost Value</strong> = Σ (Qty × Buy Price) — typical accounting inventory asset value (what you paid).<br><br>
+          <strong>Sell / Retail Value</strong> = Σ (Qty × Sell Price) — potential revenue at list price.<br><br>
+          <strong>Potential Margin</strong> = Sell Value − Cost Value.<br><br>
+          Use <strong>Source</strong> and <strong>Category</strong> filter chips on Home to narrow the list (e.g. Wynn + Blade).
+        </p>
+      </div>
+    </div>
+
+    <!-- LABELS -->
+    <div id="labels" class="panel">
+      <div class="card">
+        <h2>Batch Print Labels</h2>
+        <p class="hint">Sized for Brother <strong>DK-1201</strong> (1.1&quot; × 3.5&quot; / 29 mm × 90.3 mm). Each label is its own page. In the print dialog: choose DK-1201 (or 3.5&quot; × 1.1&quot;), scale = 100%, no headers/footers.</p>
+        
+        <div style="margin-bottom:0.75rem;">
+          <input type="search" id="label-search" placeholder="Filter parts..." oninput="populateLabelList()" style="margin-bottom:0.5rem;">
+          <div class="btn-group" style="margin-bottom:0.5rem;">
+            <button class="secondary" onclick="selectAllLabels(true)">Select All Visible</button>
+            <button class="secondary" onclick="selectAllLabels(false)">Clear</button>
+          </div>
+        </div>
+
+        <div id="label-checklist" style="max-height:280px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:0.5rem; margin-bottom:1rem; background:var(--bg);"></div>
+
+        <div class="btn-group">
+          <button onclick="generateBatchLabels()">Generate Selected Labels</button>
+          <button class="secondary" id="print-batch-btn" onclick="window.print()" style="display:none;">Print Now</button>
+        </div>
+      </div>
+
+      <div class="card" id="batch-preview-card" style="display:none;">
+        <h2>Label Preview <span id="batch-count" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
+        <p class="hint">These will print one after another. Use your browser’s print dialog (paper size / margins) as needed.</p>
+        <div class="print-area" id="batch-label-preview" style="background:white; border-radius:8px; padding:0.5rem;"></div>
+      </div>
+    </div>
+
+    <!-- QUOTE -->
+    <div id="quote" class="panel">
+      <div class="card">
+        <h2>Quote Builder <span id="quote-count-badge" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
+        <p class="hint">Add parts from the Home list with the “Quote” button. Adjust qty & price here, then generate a branded printable quote.</p>
+
+        <div class="row">
+          <div>
+            <label>Quote #</label>
+            <input type="text" id="quote-number" value="Q-2026-001">
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" id="quote-date">
+          </div>
+          <div>
+            <label>Valid Until</label>
+            <input type="date" id="quote-valid">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Customer / Project</label>
+            <input type="text" id="quote-customer" placeholder="Customer or vessel name">
+          </div>
+          <div>
+            <label>Prepared By</label>
+            <input type="text" id="quote-by" value="Glynn Grantham">
+          </div>
+        </div>
+        <div>
+          <label>Notes</label>
+          <textarea id="quote-notes" rows="2" placeholder="Delivery, terms, or special notes..."></textarea>
+        </div>
+
+        <div id="quote-lines" style="margin:1rem 0;"></div>
+
+        <div class="btn-group">
+          <button onclick="generateQuote()">Generate Quote</button>
+          <button class="secondary" onclick="clearQuote()">Clear Quote</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MORE -->
+    <div id="data" class="panel">
+      <div class="card">
+        <h2>Backup</h2>
+        <div class="btn-group">
+          <button onclick="exportData()">Export JSON</button>
+          <button class="secondary" onclick="document.getElementById('import-file').click()">Import JSON</button>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+        </div>
+        <p class="hint">Import includes optional <code>category</code>. Existing part numbers are skipped.</p>
+        <hr style="border-color:var(--border); margin:1.25rem 0;">
+        <h2 style="font-size:0.95rem;">Supabase Connection</h2>
+        <p class="hint" id="conn-status">Checking…</p>
+        <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
+        <hr style="border-color:var(--border); margin:1.25rem 0;">
+        <h2 style="font-size:0.95rem;">Database setup (category column)</h2>
+        <p class="hint">Run this once in Supabase → SQL Editor if category filters/import are not working:</p>
+        <pre id="category-sql" style="font-size:0.72rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;">alter table inventory add column if not exists category text;
+create index if not exists inventory_category_idx on inventory (category);
+create index if not exists inventory_source_idx on inventory (source);</pre>
+        <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
+        <div class="danger-zone">
+          <h2 style="font-size:0.95rem;color:var(--danger);">Danger zone</h2>
+          <p class="hint">Delete every part from Supabase so you can re-import clean data. Export a backup first. Requires your name selected.</p>
+          <button class="danger" onclick="clearAllInventory()">Clear all inventory…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="dashboard">Home</button>
+    <button class="tab" data-tab="scan">Scan</button>
+    <button class="tab" data-tab="add">Add</button>
+    <button class="tab" data-tab="quote">Quote</button>
+    <button class="tab" data-tab="reports">Reports</button>
+    <button class="tab" data-tab="labels">Labels</button>
+    <button class="tab" data-tab="data">More</button>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://tlxioipgywozonrgjvvs.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_UIhXT6BJLiMU_-eV13RRyA_T5b89806';
+
+    const isConfigured = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+    let supabaseClient = null;
+    let inventory = [];
+    let html5QrCode = null;
+    let scanning = false;
+    let activeSourceFilter = 'All';
+    let activeCategoryFilter = 'All';
+    let hasCategoryColumn = true; // probed on load
+
+    /** Suggested categories from consolidated spreadsheet (also grows from live data). */
+    const DEFAULT_CATEGORIES = [
+      'Alarm', 'Arm', 'Bearing', 'Blade', 'Cable', 'Chair Parts', 'Complete System',
+      'Control Unit', 'Cylinder Seal Kit', 'Electrical', 'Filter', 'Fitting/Hose',
+      'Gasket', 'Gasket/Seal', 'Hardware', 'Heater', 'Motor', 'Nozzle', 'O-Ring',
+      'Packaging', 'Packing/Seal', 'Proximity Switch', 'Pump', 'Pump Parts',
+      'Seal/Service Kit', 'Spring', 'Spring/Strut', 'V-Belt', 'Valve'
+    ];
+    const DEFAULT_SOURCES = [
+      'Alu Design', 'FFS', 'In-Mar', 'Skum', 'Triplex', 'Versa', 'Wynn', 'Amazon', 'Uline'
+    ];
+
+    if (isConfigured) {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    } else {
+      document.getElementById('config-banner').style.display = 'block';
+    }
+
+    function showStatus(msg, type = 'info') {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = 'status show ' + type;
+      setTimeout(() => el.classList.remove('show'), 4500);
+    }
+    function escapeHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function money(n) {
+      if (n == null || isNaN(n)) return '—';
+      return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function currentUser() { return localStorage.getItem('inv_user') || ''; }
+    function saveUser() {
+      localStorage.setItem('inv_user', document.getElementById('current-user').value);
+      updateUserUI();
+    }
+    function updateUserUI() {
+      const sel = document.getElementById('current-user');
+      const banner = document.getElementById('user-required-banner');
+      const hasUser = !!currentUser();
+      if (sel) sel.classList.toggle('user-missing', !hasUser);
+      if (banner) banner.classList.toggle('show', !hasUser);
+    }
+    /** Block inventory writes unless a user is selected. */
+    function requireUser(actionLabel) {
+      if (currentUser()) return true;
+      updateUserUI();
+      showStatus(`Select your name before ${actionLabel || 'making changes'}`, 'error');
+      const sel = document.getElementById('current-user');
+      if (sel) {
+        sel.focus();
+        sel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      return false;
+    }
+    (function() {
+      const u = localStorage.getItem('inv_user');
+      if (u) document.getElementById('current-user').value = u;
+      updateUserUI();
+    })();
+
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+        if (btn.dataset.tab === 'labels') populateLabelSelect();
+        if (btn.dataset.tab === 'reports') renderReports();
+        if (btn.dataset.tab !== 'scan') stopScanner();
+      });
+    });
+
+    function toggleOrderFields() {
+      document.getElementById('order-fields').style.display =
+        document.getElementById('item-open-order').checked ? 'block' : 'none';
+    }
+
+    async function loadInventory() {
+      if (!supabaseClient) {
+        document.getElementById('conn-status').textContent = 'Not configured – paste keys in the HTML file.';
+        return;
+      }
+      const { data, error } = await supabaseClient.from('inventory').select('*').order('name');
+      if (error) {
+        console.error(error);
+        document.getElementById('conn-status').textContent = 'Error: ' + error.message;
+        showStatus('Load failed: ' + error.message, 'error');
+        return;
+      }
+      inventory = data || [];
+      // Detect category column support (missing column → undefined on all rows is OK; write errors handled later)
+      if (inventory.length > 0) {
+        hasCategoryColumn = Object.prototype.hasOwnProperty.call(inventory[0], 'category');
+      } else {
+        // Probe with a no-op select of category
+        const probe = await supabaseClient.from('inventory').select('category').limit(1);
+        hasCategoryColumn = !probe.error;
+      }
+      const schemaEl = document.getElementById('schema-status');
+      if (schemaEl) {
+        schemaEl.textContent = hasCategoryColumn
+          ? 'Schema: category column present ✓'
+          : 'Schema: category column missing — run the SQL below in Supabase, then refresh.';
+        schemaEl.style.color = hasCategoryColumn ? 'var(--success)' : 'var(--warning)';
+      }
+      document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
+      refreshSuggestionLists();
+      renderAll();
+    }
+
+    function refreshSuggestionLists() {
+      const cats = new Set(DEFAULT_CATEGORIES);
+      const srcs = new Set(DEFAULT_SOURCES);
+      inventory.forEach(i => {
+        if (i.category) cats.add(i.category);
+        if (i.source) srcs.add(i.source);
+      });
+      const catList = document.getElementById('category-suggestions');
+      const srcList = document.getElementById('source-suggestions');
+      if (catList) catList.innerHTML = [...cats].sort().map(c => `<option value="${escapeHtml(c)}">`).join('');
+      if (srcList) srcList.innerHTML = [...srcs].sort().map(s => `<option value="${escapeHtml(s)}">`).join('');
+    }
+
+    function copyCategorySql() {
+      const sql = document.getElementById('category-sql')?.textContent || '';
+      navigator.clipboard.writeText(sql).then(
+        () => showStatus('SQL copied — paste in Supabase SQL Editor', 'success'),
+        () => showStatus('Copy failed — select the SQL manually', 'error')
+      );
+    }
+
+    function subscribeRealtime() {
+      if (!supabaseClient) return;
+      supabaseClient.channel('inventory-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => loadInventory())
+        .subscribe();
+    }
+
+    function calcTotals() {
+      let cost = 0, sell = 0, units = 0, needsDate = 0;
+      inventory.forEach(i => {
+        const q = i.qty || 0;
+        units += q;
+        cost += q * (Number(i.buy_price) || 0);
+        sell += q * (Number(i.sell_price) || 0);
+        if (i.open_order && !i.estimated_delivery) needsDate++;
+      });
+      return { cost, sell, margin: sell - cost, units, needsDate };
+    }
+
+    function renderAll() {
+      renderStats();
+      renderValueSummary();
+      renderSourceFilters();
+      renderCategoryFilters();
+      renderTable();
+      populateLabelSelect();
+    }
+
+    function renderStats() {
+      const total = inventory.length;
+      const units = inventory.reduce((s, i) => s + (i.qty || 0), 0);
+      const low = inventory.filter(i => i.qty <= (i.reorder_level || 0) && i.qty > 0).length;
+      const open = inventory.filter(i => i.open_order).length;
+      document.getElementById('stats').innerHTML = `
+        <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Parts</div></div>
+        <div class="stat"><div class="stat-value">${units}</div><div class="stat-label">Units</div></div>
+        <div class="stat"><div class="stat-value" style="color:var(--warning)">${low}</div><div class="stat-label">Low</div></div>
+        <div class="stat"><div class="stat-value" style="color:var(--open-order)">${open}</div><div class="stat-label">Open Orders</div></div>
+      `;
+    }
+
+    function renderValueSummary() {
+      const t = calcTotals();
+      document.getElementById('value-summary').innerHTML = `
+        <div class="value-card"><div class="label">Inventory at Cost</div><div class="amount">${money(t.cost)}</div></div>
+        <div class="value-card"><div class="label">At Sell Price</div><div class="amount">${money(t.sell)}</div></div>
+        <div class="value-card"><div class="label">Potential Margin</div><div class="amount" style="color:var(--success)">${money(t.margin)}</div></div>
+        ${t.needsDate ? `<div class="value-card"><div class="label">Needs Delivery Date</div><div class="amount" style="color:var(--danger)">${t.needsDate}</div></div>` : ''}
+      `;
+    }
+
+    function chipList(values, active, setterName, extraClass) {
+      return values.map(s => {
+        const safe = String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return `<button type="button" class="filter-chip ${extraClass || ''} ${active === s ? 'active' : ''}" onclick="${setterName}('${safe}')">${escapeHtml(s)}</button>`;
+      }).join('');
+    }
+
+    function renderSourceFilters() {
+      const sources = ['All', ...new Set(inventory.map(i => i.source || 'Unspecified').filter(Boolean))].sort((a,b) => {
+        if (a === 'All') return -1;
+        if (b === 'All') return 1;
+        return a.localeCompare(b);
+      });
+      const el = document.getElementById('source-filters');
+      if (!el) return;
+      el.innerHTML = chipList(sources, activeSourceFilter, 'setSourceFilter', '');
+    }
+
+    function renderCategoryFilters() {
+      const cats = ['All', ...new Set(inventory.map(i => i.category || 'Uncategorized').filter(Boolean))].sort((a,b) => {
+        if (a === 'All') return -1;
+        if (b === 'All') return 1;
+        return a.localeCompare(b);
+      });
+      const el = document.getElementById('category-filters');
+      if (!el) return;
+      // Hide category row content if nothing has categories yet (except All)
+      el.innerHTML = chipList(cats, activeCategoryFilter, 'setCategoryFilter', 'cat-chip');
+    }
+
+    function setSourceFilter(src) {
+      activeSourceFilter = src;
+      renderSourceFilters();
+      renderTable();
+    }
+
+    function setCategoryFilter(cat) {
+      activeCategoryFilter = cat;
+      renderCategoryFilters();
+      renderTable();
+    }
+
+    function renderTable() {
+      const q = (document.getElementById('search')?.value || '').toLowerCase();
+      const filtered = inventory.filter(i => {
+        const matchSearch = !q ||
+          (i.name || '').toLowerCase().includes(q) ||
+          (i.part_number || '').toLowerCase().includes(q) ||
+          (i.source || '').toLowerCase().includes(q) ||
+          (i.category || '').toLowerCase().includes(q) ||
+          (i.location || '').toLowerCase().includes(q) ||
+          (i.notes || '').toLowerCase().includes(q);
+        const src = i.source || 'Unspecified';
+        const cat = i.category || 'Uncategorized';
+        const matchSource = activeSourceFilter === 'All' || src === activeSourceFilter;
+        const matchCat = activeCategoryFilter === 'All' || cat === activeCategoryFilter;
+        return matchSearch && matchSource && matchCat;
+      });
+      const tbody = document.getElementById('inventory-body');
+      const empty = document.getElementById('empty-msg');
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        if (inventory.length === 0) {
+          empty.textContent = 'No parts yet. Import clean JSON or add a part.';
+        } else if (activeSourceFilter !== 'All' || activeCategoryFilter !== 'All') {
+          empty.textContent = `No parts match filters (Source: ${activeSourceFilter}, Category: ${activeCategoryFilter}).`;
+        } else {
+          empty.textContent = 'No matching parts.';
+        }
+        return;
+      }
+      empty.style.display = 'none';
+      tbody.innerHTML = filtered.map(i => {
+        const qtyClass = i.qty <= 0 ? 'out' : (i.qty <= (i.reorder_level || 0) ? 'low' : '');
+        const costVal = (i.qty || 0) * (Number(i.buy_price) || 0);
+        const badges = [];
+        if (i.open_order) {
+          badges.push(`<span class="badge open-order">Open Order</span>`);
+          if (!i.estimated_delivery) badges.push(`<span class="badge needs-date">Needs Delivery Date</span>`);
+          else badges.push(`<span class="badge open-order">ETA ${i.estimated_delivery}</span>`);
+        }
+        if (i.qty > 0 && i.qty <= (i.reorder_level || 0)) badges.push(`<span class="badge low">Low</span>`);
+        const meta = [];
+        if (i.source) meta.push(`<span class="badge source-tag">${escapeHtml(i.source)}</span>`);
+        if (i.category) meta.push(`<span class="badge category">${escapeHtml(i.category)}</span>`);
+        return `<tr>
+          <td>
+            <strong>${escapeHtml(i.name)}</strong><br>
+            <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
+            ${meta.length ? `<div class="meta-line">${meta.join('')}</div>` : ''}
+            ${i.location ? '<small style="color:var(--muted)">' + escapeHtml(i.location) + '</small>' : ''}
+          </td>
+          <td class="qty ${qtyClass}">${i.qty}</td>
+          <td style="font-size:0.8rem;">
+            ${i.buy_price != null ? money(costVal) : '—'}
+            ${i.buy_price != null ? '<br><small style="color:var(--muted)">@ ' + money(i.buy_price) + '</small>' : ''}
+          </td>
+          <td>${badges.join('') || '—'}</td>
+          <td class="actions">
+            <button class="secondary" onclick="quickAdjust('${i.id}', 1)">+</button>
+            <button class="secondary" onclick="quickAdjust('${i.id}', -1)">−</button>
+            <button class="quote-btn" onclick="addToQuote('${i.id}')">Quote</button>
+            <button class="secondary" onclick="editItem('${i.id}')">Edit</button>
+            <button class="danger" onclick="deleteItem('${i.id}', '${escapeHtml(i.part_number)}')">Del</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function deleteItem(id, partNumber) {
+      if (!requireUser('deleting parts')) return;
+      if (!confirm(`Delete part “${partNumber}” permanently?\n\nThis cannot be undone.`)) return;
+      if (!supabaseClient) return;
+      const { error } = await supabaseClient.from('inventory').delete().eq('id', id);
+      if (error) {
+        showStatus('Delete failed: ' + error.message, 'error');
+        return;
+      }
+      showStatus(`Part deleted by ${currentUser()}`, 'success');
+      await loadInventory();
+    }
+
+    async function clearAllInventory() {
+      if (!requireUser('clearing inventory')) return;
+      if (!supabaseClient) return;
+      const n = inventory.length;
+      if (n === 0) {
+        showStatus('Inventory is already empty', 'info');
+        return;
+      }
+      if (!confirm(`Delete ALL ${n} parts from Supabase?\n\nExport a backup first if you need one.\n\nThis cannot be undone.`)) return;
+      const typed = prompt('Type DELETE ALL to confirm wiping the entire inventory:');
+      if (typed !== 'DELETE ALL') {
+        showStatus('Clear cancelled', 'info');
+        return;
+      }
+      // PostgREST requires a filter for DELETE — match all rows
+      const { error, count } = await supabaseClient
+        .from('inventory')
+        .delete({ count: 'exact' })
+        .not('id', 'is', null);
+      if (error) {
+        showStatus('Clear failed: ' + error.message, 'error');
+        return;
+      }
+      showStatus(`Cleared inventory (${count != null ? count : n} rows) — by ${currentUser()}`, 'success');
+      activeSourceFilter = 'All';
+      activeCategoryFilter = 'All';
+      await loadInventory();
+    }
+
+    function renderReports() {
+      const t = calcTotals();
+      document.getElementById('report-values').innerHTML = `
+        <div class="value-card">
+          <div class="label">Total Inventory at Cost</div>
+          <div class="amount">${money(t.cost)}</div>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">Qty × Buy Price (balance-sheet style)</div>
+        </div>
+        <div class="value-card">
+          <div class="label">Total at Sell Price</div>
+          <div class="amount">${money(t.sell)}</div>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">Potential revenue at list price</div>
+        </div>
+        <div class="value-card">
+          <div class="label">Potential Gross Margin</div>
+          <div class="amount" style="color:var(--success)">${money(t.margin)}</div>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">Sell value − Cost value</div>
+        </div>
+        <div class="value-card">
+          <div class="label">Units on Hand</div>
+          <div class="amount">${t.units}</div>
+        </div>
+      `;
+      const attention = inventory.filter(i =>
+        (i.open_order && !i.estimated_delivery) || (i.qty <= (i.reorder_level || 0) && i.qty >= 0)
+      );
+      if (attention.length === 0) {
+        document.getElementById('attention-list').innerHTML = '<p style="color:var(--muted);">Nothing needs attention right now.</p>';
+      } else {
+        document.getElementById('attention-list').innerHTML = `
+          <table>
+            <thead><tr><th>Part</th><th>Issue</th><th></th></tr></thead>
+            <tbody>
+              ${attention.map(i => {
+                let issue = [];
+                if (i.open_order && !i.estimated_delivery) issue.push('<span class="badge needs-date">Needs Delivery Date</span>');
+                if (i.qty <= 0) issue.push('<span class="badge needs-date">Out of stock</span>');
+                else if (i.qty <= (i.reorder_level || 0)) issue.push('<span class="badge low">Low stock</span>');
+                return `<tr>
+                  <td><strong>${escapeHtml(i.name)}</strong><br><code style="font-size:0.75rem">${escapeHtml(i.part_number)}</code></td>
+                  <td>${issue.join(' ')}</td>
+                  <td><button class="secondary" onclick="editItem('${i.id}')">Edit</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>`;
+      }
+    }
+
+    async function saveItem() {
+      if (!supabaseClient) { showStatus('Configure Supabase first', 'error'); return; }
+      if (!requireUser('saving parts')) return;
+      const name = document.getElementById('item-name').value.trim();
+      const part_number = document.getElementById('item-barcode').value.trim().replace(/\s+/g, '');
+      if (!name || !part_number) { showStatus('Name and Part Number are required', 'error'); return; }
+      const id = document.getElementById('edit-id').value;
+      const openOrder = document.getElementById('item-open-order').checked;
+      const payload = {
+        name, part_number,
+        qty: parseInt(document.getElementById('item-qty').value) || 0,
+        reorder_level: parseInt(document.getElementById('item-reorder').value) || 0,
+        buy_price: parseFloat(document.getElementById('item-buy-price').value) || null,
+        sell_price: parseFloat(document.getElementById('item-sell-price').value) || null,
+        source: document.getElementById('item-source').value.trim() || null,
+        category: document.getElementById('item-category').value.trim() || null,
+        location: document.getElementById('item-location').value.trim() || null,
+        notes: document.getElementById('item-notes').value.trim() || null,
+        open_order: openOrder,
+        date_ordered: openOrder ? (document.getElementById('item-date-ordered').value || null) : null,
+        estimated_delivery: openOrder ? (document.getElementById('item-est-delivery').value || null) : null,
+        ordered_qty: openOrder ? (parseInt(document.getElementById('item-ordered-qty').value) || null) : null,
+        updated_by: currentUser(),
+        updated_at: new Date().toISOString()
+      };
+      if (!hasCategoryColumn) delete payload.category;
+      let error;
+      if (id) {
+        ({ error } = await supabaseClient.from('inventory').update(payload).eq('id', id));
+      } else {
+        const { data: existing } = await supabaseClient.from('inventory').select('id').eq('part_number', part_number).maybeSingle();
+        if (existing) { showStatus('Part number already exists', 'error'); return; }
+        ({ error } = await supabaseClient.from('inventory').insert(payload));
+      }
+      if (error) {
+        if (/category/i.test(error.message)) {
+          showStatus('Save failed: add the category column (see More tab SQL), then try again', 'error');
+        } else {
+          showStatus('Save failed: ' + error.message, 'error');
+        }
+        return;
+      }
+      showStatus((id ? 'Updated' : 'Added') + ` by ${currentUser()}`, 'success');
+      clearForm();
+      await loadInventory();
+      document.querySelector('[data-tab="dashboard"]').click();
+    }
+
+    function clearForm() {
+      document.getElementById('edit-id').value = '';
+      document.getElementById('form-title').textContent = 'Add Part';
+      ['item-name','item-barcode','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
+       'item-date-ordered','item-est-delivery','item-ordered-qty'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('item-qty').value = 0;
+      document.getElementById('item-reorder').value = 5;
+      document.getElementById('item-open-order').checked = false;
+      toggleOrderFields();
+    }
+
+    function editItem(id) {
+      const item = inventory.find(i => i.id === id);
+      if (!item) return;
+      document.getElementById('edit-id').value = item.id;
+      document.getElementById('form-title').textContent = 'Edit Part';
+      document.getElementById('item-name').value = item.name || '';
+      document.getElementById('item-barcode').value = item.part_number || '';
+      document.getElementById('item-qty').value = item.qty || 0;
+      document.getElementById('item-reorder').value = item.reorder_level || 5;
+      document.getElementById('item-buy-price').value = item.buy_price ?? '';
+      document.getElementById('item-sell-price').value = item.sell_price ?? '';
+      document.getElementById('item-source').value = item.source || '';
+      document.getElementById('item-category').value = item.category || '';
+      document.getElementById('item-location').value = item.location || '';
+      document.getElementById('item-notes').value = item.notes || '';
+      document.getElementById('item-open-order').checked = !!item.open_order;
+      document.getElementById('item-date-ordered').value = item.date_ordered || '';
+      document.getElementById('item-est-delivery').value = item.estimated_delivery || '';
+      document.getElementById('item-ordered-qty').value = item.ordered_qty || '';
+      toggleOrderFields();
+      document.querySelector('[data-tab="add"]').click();
+    }
+
+    async function quickAdjust(id, delta) {
+      if (!requireUser('adjusting quantity')) return;
+      if (!supabaseClient) return;
+      const item = inventory.find(i => i.id === id);
+      if (!item) return;
+      const newQty = Math.max(0, (item.qty || 0) + delta);
+      const { error } = await supabaseClient.from('inventory')
+        .update({ qty: newQty, updated_by: currentUser(), updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) showStatus(error.message, 'error');
+      else await loadInventory();
+    }
+
+    let pendingScanItem = null; // item waiting for Commit
+    let lastScannedCode = null;
+
+    // Lookup only — does NOT change inventory until Commit
+    async function processScan(code) {
+      if (!code) return;
+      code = String(code).trim();
+      // Ignore rapid duplicate reads from the same camera session
+      if (scanning && code === lastScannedCode) return;
+      lastScannedCode = code;
+
+      const item = inventory.find(i =>
+        (i.part_number || '').toLowerCase() === code.toLowerCase()
+      );
+      const resultEl = document.getElementById('scan-result');
+
+      // Stop camera so the user can focus on the result
+      await stopScanner();
+
+      if (!item) {
+        pendingScanItem = null;
+        resultEl.innerHTML = `
+          <div class="scan-result-card">
+            <p style="margin:0 0 0.5rem;"><strong>Unknown part</strong></p>
+            <code style="font-size:0.95rem;">${escapeHtml(code)}</code>
+            <p style="font-size:0.85rem;color:var(--muted);margin:0.75rem 0 0.5rem;">Not in inventory yet.</p>
+            <div class="btn-group">
+              <button onclick="prefillNew('${escapeHtml(code)}')">Add this part</button>
+              <button class="secondary" onclick="startScanner()">Scan again</button>
+            </div>
+          </div>`;
+        resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      pendingScanItem = item;
+      const q = item.qty || 0;
+      resultEl.innerHTML = `
+        <div class="scan-result-card" style="border-color:var(--accent);">
+          <div style="font-size:0.75rem;color:var(--success);font-weight:600;margin-bottom:0.35rem;">✓ Found</div>
+          <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.15rem;">${escapeHtml(item.name)}</div>
+          <code style="font-size:0.9rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
+          <div class="meta-line" style="margin-top:0.35rem;">
+            ${item.source ? `<span class="badge source-tag">${escapeHtml(item.source)}</span>` : ''}
+            ${item.category ? `<span class="badge category">${escapeHtml(item.category)}</span>` : ''}
+          </div>
+          <div style="margin:0.85rem 0 0.5rem;font-size:1rem;">
+            Current qty: <strong style="font-size:1.25rem;">${q}</strong>
+            ${q <= (item.reorder_level || 0) && q > 0 ? ' <span class="badge low">Low</span>' : ''}
+            ${q <= 0 ? ' <span class="badge needs-date">Out</span>' : ''}
+          </div>
+          <div class="row">
+            <div>
+              <label>Action</label>
+              <select id="scan-action">
+                <option value="out">Remove (stock out)</option>
+                <option value="in">Add (stock in)</option>
+                <option value="set">Set exact qty</option>
+              </select>
+            </div>
+            <div>
+              <label>Quantity</label>
+              <input type="number" id="scan-qty" value="1" min="0">
+            </div>
+          </div>
+          <div class="btn-group" style="margin-top:0.25rem;">
+            <button onclick="commitScanChange()" style="flex:1;padding:0.75rem;font-size:1rem;font-weight:600;">Commit change</button>
+            <button class="secondary" onclick="startScanner()">Scan again</button>
+          </div>
+        </div>`;
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function commitScanChange() {
+      if (!pendingScanItem || !supabaseClient) return;
+      if (!requireUser('committing scan changes')) return;
+      const item = pendingScanItem;
+      const action = document.getElementById('scan-action')?.value || 'out';
+      const qty = parseInt(document.getElementById('scan-qty')?.value, 10);
+      if (isNaN(qty) || qty < 0) {
+        showStatus('Enter a valid quantity', 'error');
+        return;
+      }
+      const oldQty = item.qty || 0;
+      let newQty = oldQty;
+      if (action === 'out') newQty = Math.max(0, oldQty - qty);
+      else if (action === 'in') newQty = oldQty + qty;
+      else if (action === 'set') newQty = qty;
+
+      const { error } = await supabaseClient.from('inventory')
+        .update({ qty: newQty, updated_by: currentUser(), updated_at: new Date().toISOString() })
+        .eq('id', item.id);
+
+      const resultEl = document.getElementById('scan-result');
+      if (error) {
+        showStatus(error.message, 'error');
+        return;
+      }
+
+      pendingScanItem = null;
+      lastScannedCode = null;
+      resultEl.innerHTML = `
+        <div class="scan-result-card" style="border-color:var(--success);">
+          <div style="font-size:0.75rem;color:var(--success);font-weight:600;margin-bottom:0.35rem;">✓ Updated</div>
+          <div style="font-weight:700;">${escapeHtml(item.name)}</div>
+          <code style="font-size:0.85rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
+          <div style="margin-top:0.65rem;font-size:1.15rem;">
+            Qty: ${oldQty} → <strong>${newQty}</strong>
+            ${newQty <= (item.reorder_level || 0) && newQty > 0 ? ' <span class="badge low">Low</span>' : ''}
+            ${newQty <= 0 ? ' <span class="badge needs-date">Out</span>' : ''}
+          </div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;">By ${escapeHtml(currentUser())}</div>
+          <div class="btn-group" style="margin-top:0.85rem;">
+            <button onclick="startScanner()">Scan next item</button>
+          </div>
+        </div>`;
+      showStatus(`Qty updated: ${oldQty} → ${newQty} (${currentUser()})`, 'success');
+      await loadInventory();
+    }
+
+    function processManualScan() {
+      const code = document.getElementById('manual-scan').value.trim();
+      if (!code) {
+        showStatus('Enter a part number', 'error');
+        return;
+      }
+      lastScannedCode = null; // allow same code after typing
+      processScan(code);
+      document.getElementById('manual-scan').value = '';
+    }
+
+    function prefillNew(code) {
+      clearForm();
+      const pn = document.getElementById('item-barcode') || document.getElementById('item-part-number');
+      if (pn) pn.value = code;
+      document.querySelector('[data-tab="add"]').click();
+    }
+
+    async function startScanner() {
+      if (scanning) return;
+      lastScannedCode = null;
+      // Clear previous result so attention is on the camera
+      const resultEl = document.getElementById('scan-result');
+      if (resultEl && !pendingScanItem) resultEl.innerHTML = '';
+      html5QrCode = new Html5Qrcode('reader');
+      try {
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          { fps: 8, qrbox: { width: 250, height: 150 } },
+          (decodedText) => processScan(decodedText),
+          () => {}
+        );
+        scanning = true;
+        document.getElementById('start-scan-btn').style.display = 'none';
+        document.getElementById('stop-scan-btn').style.display = 'inline-block';
+      } catch (err) {
+        showStatus('Camera error: ' + err, 'error');
+      }
+    }
+
+    async function stopScanner() {
+      if (html5QrCode && scanning) {
+        try { await html5QrCode.stop(); } catch (e) {}
+        scanning = false;
+        document.getElementById('start-scan-btn').style.display = 'inline-block';
+        document.getElementById('stop-scan-btn').style.display = 'none';
+      }
+    }
+
+    function populateLabelList() {
+      const q = (document.getElementById('label-search')?.value || '').toLowerCase();
+      const list = document.getElementById('label-checklist');
+      if (!list) return;
+      const filtered = inventory.filter(i =>
+        !q ||
+        (i.name || '').toLowerCase().includes(q) ||
+        (i.part_number || '').toLowerCase().includes(q)
+      );
+      if (filtered.length === 0) {
+        list.innerHTML = '<p style="color:var(--muted);padding:0.5rem;">No parts match.</p>';
+        return;
+      }
+      list.innerHTML = filtered.map(i => `
+        <label style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border);cursor:pointer;font-size:0.85rem;">
+          <input type="checkbox" class="label-check" value="${i.id}" style="width:auto;margin:0.2rem 0 0 0;">
+          <span>
+            <strong>${escapeHtml(i.name)}</strong><br>
+            <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
+          </span>
+        </label>
+      `).join('');
+    }
+
+    // keep old name so existing calls still work
+    function populateLabelSelect() { populateLabelList(); }
+
+    function selectAllLabels(checked) {
+      document.querySelectorAll('.label-check').forEach(cb => cb.checked = checked);
+    }
+
+    function generateBatchLabels() {
+      const checked = [...document.querySelectorAll('.label-check:checked')].map(cb => cb.value);
+      if (checked.length === 0) {
+        showStatus('Select at least one part', 'error');
+        return;
+      }
+      const items = checked.map(id => inventory.find(i => i.id === id)).filter(Boolean);
+      const preview = document.getElementById('batch-label-preview');
+      const card = document.getElementById('batch-preview-card');
+      document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
+
+      // Sized for Brother DK-1201 die-cut labels: 3.5 in wide × 1.1 in high
+      // Each label is its own page so the printer advances one label at a time.
+      preview.innerHTML = items.map((item, idx) => {
+        const shortName = (item.name || '').length > 42
+          ? (item.name || '').slice(0, 40) + '…'
+          : (item.name || '');
+        return `
+        <div class="label-block" style="
+          color:#000;
+          font-family: Arial, Helvetica, sans-serif;
+          text-align:center;
+          width: 3.3in;
+          max-width: 3.3in;
+          height: 0.95in;
+          margin: 0 auto 10px;
+          padding: 4px 8px;
+          border: 1px dashed #ccc;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          overflow: hidden;
+        ">
+          <div style="font-weight:700; font-size:11px; line-height:1.15; margin-bottom:2px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${escapeHtml(shortName)}
+          </div>
+          <svg id="bc-${idx}" style="max-width:3.1in; height:28px;"></svg>
+          <div style="font-size:13px; font-weight:700; margin-top:2px; letter-spacing:0.03em;">
+            ${escapeHtml(item.part_number)}
+          </div>
+        </div>`;
+      }).join('');
+
+      items.forEach((item, idx) => {
+        try {
+          JsBarcode(`#bc-${idx}`, item.part_number, {
+            format: 'CODE128',
+            width: 1.6,
+            height: 28,
+            displayValue: false,
+            margin: 1,
+            background: '#ffffff',
+            lineColor: '#000000'
+          });
+        } catch (e) { console.warn('Barcode error', item.part_number, e); }
+      });
+
+      card.style.display = 'block';
+      document.getElementById('print-batch-btn').style.display = 'inline-block';
+      showStatus(`${items.length} labels ready — Print with DK-1201, scale 100%`, 'success');
+    }
+
+    function exportData() {
+      const blob = new Blob([JSON.stringify(inventory, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `inventory-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+    }
+
+    async function importData(e) {
+      const file = e.target.files[0];
+      if (!file || !supabaseClient) return;
+      if (!requireUser('importing')) {
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (!Array.isArray(data)) throw new Error('Invalid format');
+          if (!confirm(`Import ${data.length} items as ${currentUser()}?\n\nExisting part numbers will be skipped.`)) return;
+          let added = 0, skipped = 0, failed = 0;
+          for (const row of data) {
+            if (!row.part_number || !row.name) continue;
+            const pn = String(row.part_number).replace(/\s+/g, '');
+            const { data: exists } = await supabaseClient.from('inventory').select('id').eq('part_number', pn).maybeSingle();
+            if (exists) { skipped++; continue; }
+            const payload = {
+              part_number: pn,
+              name: row.name,
+              qty: row.qty || 0,
+              reorder_level: row.reorder_level != null ? row.reorder_level : 5,
+              buy_price: row.buy_price ?? null,
+              sell_price: row.sell_price ?? null,
+              source: row.source || null,
+              category: row.category || null,
+              location: row.location || null,
+              notes: row.notes || null,
+              open_order: !!(row.open_order || row.on_order),
+              date_ordered: row.date_ordered || null,
+              estimated_delivery: row.estimated_delivery || null,
+              ordered_qty: row.ordered_qty || null,
+              updated_by: currentUser()
+            };
+            if (!hasCategoryColumn) delete payload.category;
+            const { error } = await supabaseClient.from('inventory').insert(payload);
+            if (error) {
+              failed++;
+              console.error('Import row failed', pn, error);
+              if (/category/i.test(error.message || '')) {
+                hasCategoryColumn = false;
+                delete payload.category;
+                const retry = await supabaseClient.from('inventory').insert(payload);
+                if (!retry.error) { added++; failed--; }
+              }
+            } else {
+              added++;
+            }
+          }
+          showStatus(`Import done: ${added} added, ${skipped} skipped${failed ? ', ' + failed + ' failed' : ''} (${currentUser()})`, failed ? 'error' : 'success');
+          await loadInventory();
+        } catch (err) {
+          showStatus('Import failed: ' + err.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    }
+
+    // ===== QUOTE CART =====
+    let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
+
+    function saveQuoteCart() {
+      localStorage.setItem('inv_quote', JSON.stringify(quoteCart));
+      renderQuotePanel();
+    }
+
+    function addToQuote(id) {
+      const item = inventory.find(i => i.id === id);
+      if (!item) return;
+      const existing = quoteCart.find(c => c.id === id);
+      if (existing) {
+        existing.qty = (existing.qty || 1) + 1;
+      } else {
+        quoteCart.push({
+          id: item.id,
+          part_number: item.part_number,
+          name: item.name,
+          qty: 1,
+          unit_price: item.sell_price != null ? Number(item.sell_price) : 0
+        });
+      }
+      saveQuoteCart();
+      showStatus(`Added “${item.part_number}” to quote`, 'success');
+    }
+
+    function updateQuoteLine(idx, field, value) {
+      if (!quoteCart[idx]) return;
+      if (field === 'qty') quoteCart[idx].qty = Math.max(1, parseInt(value) || 1);
+      if (field === 'unit_price') quoteCart[idx].unit_price = parseFloat(value) || 0;
+      saveQuoteCart();
+    }
+
+    function removeQuoteLine(idx) {
+      quoteCart.splice(idx, 1);
+      saveQuoteCart();
+    }
+
+    function clearQuote() {
+      if (quoteCart.length && !confirm('Clear the entire quote?')) return;
+      quoteCart = [];
+      saveQuoteCart();
+      showStatus('Quote cleared', 'info');
+    }
+
+    function renderQuotePanel() {
+      const badge = document.getElementById('quote-count-badge');
+      if (badge) badge.textContent = quoteCart.length ? `(${quoteCart.length} line${quoteCart.length > 1 ? 's' : ''})` : '';
+      const el = document.getElementById('quote-lines');
+      if (!el) return;
+      if (quoteCart.length === 0) {
+        el.innerHTML = '<p class="empty">No items in quote yet. Use the purple “Quote” button on the Home list.</p>';
+        return;
+      }
+      let total = 0;
+      el.innerHTML = `
+        <table>
+          <thead><tr><th>Part</th><th>Qty</th><th>Unit $</th><th>Line</th><th></th></tr></thead>
+          <tbody>
+            ${quoteCart.map((c, idx) => {
+              const line = (c.qty || 1) * (c.unit_price || 0);
+              total += line;
+              return `<tr>
+                <td><strong>${escapeHtml(c.name)}</strong><br><code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(c.part_number)}</code></td>
+                <td><input type="number" min="1" value="${c.qty}" style="width:70px;margin:0" onchange="updateQuoteLine(${idx},'qty',this.value)"></td>
+                <td><input type="number" min="0" step="0.01" value="${c.unit_price}" style="width:90px;margin:0" onchange="updateQuoteLine(${idx},'unit_price',this.value)"></td>
+                <td>${money(line)}</td>
+                <td><button class="danger" onclick="removeQuoteLine(${idx})">×</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        <div style="text-align:right;font-weight:700;margin-top:0.75rem;font-size:1.1rem;">Total: ${money(total)}</div>
+      `;
+    }
+
+    function generateQuote() {
+      if (quoteCart.length === 0) {
+        showStatus('Add at least one part to the quote first', 'error');
+        return;
+      }
+      const data = {
+        number: document.getElementById('quote-number').value || 'Q-XXXX',
+        date: document.getElementById('quote-date').value || new Date().toISOString().slice(0,10),
+        valid: document.getElementById('quote-valid').value || '',
+        customer: document.getElementById('quote-customer').value || '',
+        by: document.getElementById('quote-by').value || '',
+        notes: document.getElementById('quote-notes').value || ''
+      };
+      let total = 0;
+      const rows = quoteCart.map(c => {
+        const line = (c.qty || 1) * (c.unit_price || 0);
+        total += line;
+        return `<tr>
+          <td style="padding:8px;border:1px solid #cbd5e1;font-family:monospace;font-size:12px;">${escapeHtml(c.part_number)}</td>
+          <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(c.name)}</td>
+          <td style="padding:8px;border:1px solid #cbd5e1;text-align:center;">${c.qty}</td>
+          <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;">${money(c.unit_price)}</td>
+          <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:600;">${money(line)}</td>
+        </tr>`;
+      }).join('');
+
+      // Logo: prefer local file next to index.html; fallback to a simple text header if missing
+      const logoSrc = 'inmar-logo.jpg';
+
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>In-Mar Quote ${data.number}</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; color: #1e293b; margin: 0; padding: 24px; font-size: 13px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 20px; }
+  .logo { max-height: 56px; width: auto; }
+  .quote-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; color: #1e3a5f; }
+  .meta { text-align: right; font-size: 13px; line-height: 1.5; }
+  .info { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 20px; }
+  .info span { color: #64748b; font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  th { background: #f1f5f9; text-align: left; padding: 8px; border: 1px solid #cbd5e1; font-size: 12px; }
+  .total-row { text-align: right; font-size: 16px; font-weight: 700; margin-top: 8px; }
+  .notes { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 16px; min-height: 48px; white-space: pre-wrap; }
+  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b; }
+  @media print {
+    body { padding: 12px; }
+    @page { margin: 0.6in; size: letter; }
+  }
+</style></head><body>
+  <div class="header">
+    <div>
+      <img class="logo" src="${logoSrc}" alt="In-Mar Systems & Solutions" onerror="this.style.display='none'">
+      <div style="font-size:11px;color:#64748b;margin-top:4px;">3011 S. Ruby Ave, Gonzales, LA 70737<br>(225) 430-9111 • info@inmarsystems.com</div>
+    </div>
+    <div class="meta">
+      <div class="quote-title">QUOTE</div>
+      <div><strong>Quote #:</strong> ${escapeHtml(data.number)}</div>
+      <div><strong>Date:</strong> ${escapeHtml(data.date)}</div>
+      <div><strong>Valid Until:</strong> ${escapeHtml(data.valid) || '—'}</div>
+    </div>
+  </div>
+
+  <div class="info">
+    <div><span>Customer / Project:</span> ${escapeHtml(data.customer) || '—'}</div>
+    <div><span>Prepared By:</span> ${escapeHtml(data.by) || '—'}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Part #</th>
+        <th>Description</th>
+        <th style="text-align:center;">Qty</th>
+        <th style="text-align:right;">Unit Price</th>
+        <th style="text-align:right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <div class="total-row">Total: ${money(total)}</div>
+
+  <div>
+    <div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div>
+    <div class="notes">${escapeHtml(data.notes) || 'No additional notes.'}</div>
+  </div>
+
+  <div class="footer">Thank you for your business.<br>In-Mar Systems &amp; Solutions</div>
+
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+</body></html>`;
+
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+    }
+
+    // Init quote date + panel
+    (function() {
+      const d = document.getElementById('quote-date');
+      if (d && !d.value) d.value = new Date().toISOString().slice(0,10);
+      renderQuotePanel();
+    })();
+
+    // Refresh quote panel when switching to Quote tab
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.tab === 'quote') renderQuotePanel();
+      });
+    });
+
+    if (isConfigured) {
+      loadInventory().then(() => subscribeRealtime());
+    }
+  </script>
+</body>
+</html>
