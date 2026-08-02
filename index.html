@@ -285,7 +285,7 @@
     <div id="scan" class="panel">
       <div class="card">
         <h2>Phone Camera Scan</h2>
-        <p class="hint">Scan a barcode or type a part number. The camera stops when an item is found so you can review and commit the change.</p>
+        <p class="hint">Scan a barcode or type a part number. The camera stops when an item is found so you can review notes, edit the full record, or commit a qty change.</p>
         <div id="reader"></div>
         <div class="btn-group">
           <button id="start-scan-btn" onclick="startScanner()">Start Camera</button>
@@ -996,6 +996,10 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       document.getElementById('item-ordered-qty').value = item.ordered_qty || '';
       toggleOrderFields();
       document.querySelector('[data-tab="add"]').click();
+      // Scroll form into view (useful when opened from Scan)
+      setTimeout(() => {
+        document.getElementById('form-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
     }
 
     async function quickAdjust(id, delta) {
@@ -1047,16 +1051,29 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       }
 
       pendingScanItem = item;
+      renderScanFoundCard(item);
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderScanFoundCard(item) {
+      const resultEl = document.getElementById('scan-result');
+      if (!resultEl || !item) return;
       const q = item.qty || 0;
+      const notesVal = item.notes || '';
       resultEl.innerHTML = `
         <div class="scan-result-card" style="border-color:var(--accent);">
-          <div style="font-size:0.75rem;color:var(--success);font-weight:600;margin-bottom:0.35rem;">✓ Found</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.25rem;">
+            <div style="font-size:0.75rem;color:var(--success);font-weight:600;">✓ Found</div>
+            <button type="button" class="secondary" style="padding:0.35rem 0.65rem;font-size:0.8rem;margin:0;"
+              onclick="editFromScan('${item.id}')">Edit part</button>
+          </div>
           <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.15rem;">${escapeHtml(item.name)}</div>
           <code style="font-size:0.9rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
           <div class="meta-line" style="margin-top:0.35rem;">
             ${item.source ? `<span class="badge source-tag">${escapeHtml(item.source)}</span>` : ''}
             ${item.category ? `<span class="badge category">${escapeHtml(item.category)}</span>` : ''}
           </div>
+          ${item.location ? `<div style="font-size:0.8rem;color:var(--muted);margin-top:0.25rem;">Location: ${escapeHtml(item.location)}</div>` : ''}
           <div style="margin:0.85rem 0 0.5rem;font-size:1rem;">
             Current qty: <strong style="font-size:1.25rem;">${q}</strong>
             ${q <= (item.reorder_level || 0) && q > 0 ? ' <span class="badge low">Low</span>' : ''}
@@ -1076,12 +1093,45 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
               <input type="number" id="scan-qty" value="1" min="0">
             </div>
           </div>
+          <div style="margin-top:0.15rem;">
+            <label for="scan-notes">Notes</label>
+            <textarea id="scan-notes" rows="3" placeholder="Part notes — view or edit here…">${escapeHtml(notesVal)}</textarea>
+            <p class="hint" style="margin-top:-0.35rem;">Notes save with Commit, or use Save notes only. Use <strong>Edit part</strong> for name, part #, source, category, prices, etc.</p>
+          </div>
           <div class="btn-group" style="margin-top:0.25rem;">
             <button onclick="commitScanChange()" style="flex:1;padding:0.75rem;font-size:1rem;font-weight:600;">Commit change</button>
-            <button class="secondary" onclick="startScanner()">Scan again</button>
+            <button type="button" class="secondary" onclick="saveScanNotesOnly()">Save notes</button>
+            <button type="button" class="secondary" onclick="startScanner()">Scan again</button>
           </div>
         </div>`;
-      resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function editFromScan(id) {
+      // Jump to full Add/Edit form (same as adding a part) to review identifiers, category, prices, etc.
+      pendingScanItem = null;
+      lastScannedCode = null;
+      const resultEl = document.getElementById('scan-result');
+      if (resultEl) resultEl.innerHTML = '';
+      editItem(id);
+    }
+
+    async function saveScanNotesOnly() {
+      if (!pendingScanItem || !supabaseClient) return;
+      if (!requireUser('saving notes')) return;
+      const notesRaw = document.getElementById('scan-notes')?.value ?? '';
+      const notes = notesRaw.trim() || null;
+      const { error } = await supabaseClient.from('inventory')
+        .update({ notes, updated_by: currentUser(), updated_at: new Date().toISOString() })
+        .eq('id', pendingScanItem.id);
+      if (error) {
+        showStatus(error.message, 'error');
+        return;
+      }
+      pendingScanItem.notes = notes;
+      // keep local inventory in sync
+      const idx = inventory.findIndex(i => i.id === pendingScanItem.id);
+      if (idx >= 0) inventory[idx].notes = notes;
+      showStatus(`Notes saved (${currentUser()})`, 'success');
     }
 
     async function commitScanChange() {
@@ -1100,8 +1150,16 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       else if (action === 'in') newQty = oldQty + qty;
       else if (action === 'set') newQty = qty;
 
+      const notesRaw = document.getElementById('scan-notes')?.value;
+      const notes = notesRaw != null ? (notesRaw.trim() || null) : (item.notes || null);
+
       const { error } = await supabaseClient.from('inventory')
-        .update({ qty: newQty, updated_by: currentUser(), updated_at: new Date().toISOString() })
+        .update({
+          qty: newQty,
+          notes,
+          updated_by: currentUser(),
+          updated_at: new Date().toISOString()
+        })
         .eq('id', item.id);
 
       const resultEl = document.getElementById('scan-result');
@@ -1110,6 +1168,7 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         return;
       }
 
+      const savedId = item.id;
       pendingScanItem = null;
       lastScannedCode = null;
       resultEl.innerHTML = `
@@ -1122,9 +1181,11 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
             ${newQty <= (item.reorder_level || 0) && newQty > 0 ? ' <span class="badge low">Low</span>' : ''}
             ${newQty <= 0 ? ' <span class="badge needs-date">Out</span>' : ''}
           </div>
+          ${notes ? `<div style="margin-top:0.5rem;font-size:0.85rem;color:var(--muted);white-space:pre-wrap;"><strong style="color:var(--text);">Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
           <div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;">By ${escapeHtml(currentUser())}</div>
           <div class="btn-group" style="margin-top:0.85rem;">
             <button onclick="startScanner()">Scan next item</button>
+            <button type="button" class="secondary" onclick="editFromScan('${savedId}')">Edit part</button>
           </div>
         </div>`;
       showStatus(`Qty updated: ${oldQty} → ${newQty} (${currentUser()})`, 'success');
