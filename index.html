@@ -110,6 +110,9 @@
       background: var(--card); border: 1px solid var(--border); border-radius: 10px;
       padding: 0.6rem 0.35rem; text-align: center;
     }
+    .stat.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+    .stat.clickable:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
+    .stat.clickable.active-filter { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
     .stat-value { font-size: 1.15rem; font-weight: 700; }
     .stat-label { font-size: 0.68rem; color: var(--muted); }
     .value-cards {
@@ -118,8 +121,29 @@
     .value-card {
       background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem;
     }
+    .value-card.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+    .value-card.clickable:hover { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(220,38,38,0.12); }
+    .value-card.clickable.active-filter { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(220,38,38,0.2); }
     .value-card .label { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.25rem; }
     .value-card .amount { font-size: 1.25rem; font-weight: 700; }
+    .home-filter-bar {
+      display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+      margin-bottom: 0.65rem; font-size: 0.82rem;
+    }
+    .home-filter-bar.show { display: flex; }
+    .attention-filters {
+      display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.75rem;
+    }
+    .filter-chip.att-chip.active { background: var(--danger); border-color: var(--danger); color: white; }
+    .filter-chip.att-chip:hover:not(.active) { border-color: var(--danger); color: var(--danger); }
+    .adj-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; align-items: flex-end; }
+    .adj-filters > div { min-width: 120px; flex: 1; }
+    .adj-filters label { margin-bottom: 0.2rem; }
+    .adj-filters input, .adj-filters select { margin-bottom: 0; }
+    @media print {
+      .adj-print-area, .adj-print-area * { visibility: visible !important; }
+      .adj-print-area { position: absolute; left: 0; top: 0; width: 100%; background: white; padding: 12px; }
+    }
     #reader { width: 100%; max-width: 400px; margin: 0 auto 1rem; border-radius: 12px; overflow: hidden; }
     .scan-result-card {
       background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 0.75rem;
@@ -194,17 +218,17 @@
         position: absolute; left: 0; top: 0; width: 100%;
         background: white; padding: 0; margin: 0;
       }
-      /* Brother DK-1201: 3.5 in wide × 1.1 in high (90.3 mm × 29 mm) */
+      /* Brother DK-1201 on QL-710W: 3.5 in wide × 1.1 in high */
       .label-block {
         page-break-after: always;
         page-break-inside: avoid;
         break-inside: avoid;
         width: 3.3in;
         max-width: 3.3in;
-        height: 0.95in;
-        max-height: 0.95in;
+        height: 1.02in;
+        max-height: 1.02in;
         margin: 0;
-        padding: 0.06in 0.1in;
+        padding: 0.06in 0.12in 0.07in;
         text-align: center;
         color: #000;
         font-family: Arial, Helvetica, sans-serif;
@@ -212,13 +236,36 @@
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .label-block .lbl-name,
+      .label-block .lbl-pn {
+        flex: 0 0 auto;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.25;
+      }
+      .label-block .bc-wrap {
+        flex: 1 1 auto;
+        display: flex;
         justify-content: center;
         align-items: center;
+        max-width: 2.9in;
+        min-height: 0;
+        padding: 0.02in 0.06in;
+        box-sizing: border-box;
+      }
+      .label-block .bc-wrap svg {
+        height: 34px !important;
+        image-rendering: pixelated;
       }
       .label-block:last-child { page-break-after: auto; }
       @page {
         size: 3.5in 1.1in;
-        margin: 0.05in;
+        margin: 0.04in;
       }
     }
   </style>
@@ -254,7 +301,11 @@
       <div class="stats" id="stats"></div>
       <div class="value-cards" id="value-summary"></div>
       <div class="card">
-        <input type="search" id="search" placeholder="Search name, part #, source, category, location..." oninput="renderTable()">
+        <div id="home-filter-bar" class="home-filter-bar">
+          <span id="home-filter-label" style="color:var(--muted);"></span>
+          <button type="button" class="secondary" style="padding:0.25rem 0.55rem;font-size:0.78rem;" onclick="clearHomeFilter()">Clear filter</button>
+        </div>
+        <input type="search" id="search" placeholder="Search name, part #, barcode, source, category, location..." oninput="renderTable()">
         <div class="filter-row">
           <div class="filter-row-label">Source</div>
           <div id="source-filters" class="source-filters"></div>
@@ -389,7 +440,54 @@
         <div class="value-cards" id="report-values"></div>
       </div>
       <div class="card">
+        <h2>Inventory Adjustment Report</h2>
+        <p class="hint">Timestamps of stock and part changes (what, who, when, action). Requires the <code>inventory_adjustments</code> table — see More tab SQL.</p>
+        <div class="adj-filters">
+          <div>
+            <label>User</label>
+            <select id="adj-user-filter">
+              <option value="">All users</option>
+              <option value="Toby">Toby</option>
+              <option value="Glynn">Glynn</option>
+              <option value="Ricky">Ricky</option>
+              <option value="Grant">Grant</option>
+              <option value="Kyle">Kyle</option>
+            </select>
+          </div>
+          <div>
+            <label>From</label>
+            <input type="date" id="adj-from">
+          </div>
+          <div>
+            <label>To</label>
+            <input type="date" id="adj-to">
+          </div>
+          <div>
+            <label>Action</label>
+            <select id="adj-action-filter">
+              <option value="">All actions</option>
+              <option value="stock_in">Stock in</option>
+              <option value="stock_out">Stock out</option>
+              <option value="set_qty">Set qty</option>
+              <option value="create">Create</option>
+              <option value="update">Update</option>
+              <option value="delete">Delete</option>
+              <option value="notes">Notes</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-group" style="margin-bottom:0.75rem;">
+          <button type="button" onclick="loadAdjustmentReport()">Generate report</button>
+          <button type="button" class="secondary" onclick="exportAdjustmentCsv()">Export CSV</button>
+          <button type="button" class="secondary" onclick="printAdjustmentReport()">Print</button>
+        </div>
+        <p class="hint" id="adj-status">Click Generate report to load adjustments.</p>
+        <div class="adj-print-area" id="adj-report-table" style="overflow-x:auto;"></div>
+      </div>
+      <div class="card">
         <h2>Items Needing Attention</h2>
+        <p class="hint">Tap a keyword to filter the list.</p>
+        <div id="attention-filters" class="attention-filters"></div>
         <div id="attention-list"></div>
       </div>
       <div class="card">
@@ -407,7 +505,7 @@
     <div id="labels" class="panel">
       <div class="card">
         <h2>Batch Print Labels</h2>
-        <p class="hint">Sized for Brother <strong>DK-1201</strong> (1.1&quot; × 3.5&quot; / 29 mm × 90.3 mm). Each label is its own page. In the print dialog: choose DK-1201 (or 3.5&quot; × 1.1&quot;), scale = 100%, no headers/footers.</p>
+        <p class="hint">Brother <strong>QL-710W</strong> + <strong>DK-1201</strong> (1.1&quot; × 3.5&quot;). Labels encode the <strong>stable barcode</strong> (not the part #), so reprints are not needed after name/PN edits. Print at 100% scale — do not fit to page.</p>
         
         <div style="margin-bottom:0.75rem;">
           <input type="search" id="label-search" placeholder="Filter parts..." oninput="populateLabelList()" style="margin-bottom:0.5rem;">
@@ -436,7 +534,7 @@
     <div id="quote" class="panel">
       <div class="card">
         <h2>Quote Builder <span id="quote-count-badge" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
-        <p class="hint">Add parts from the Home list with the “Quote” button. Adjust qty & price here, then generate a branded printable quote.</p>
+        <p class="hint">Add parts from Home or Scan with the “Quote” button. Adjust qty &amp; price here, then generate a branded printable quote.</p>
 
         <div class="row">
           <div>
@@ -459,7 +557,7 @@
           </div>
           <div>
             <label>Prepared By</label>
-            <input type="text" id="quote-by" value="Glynn Grantham">
+            <input type="text" id="quote-by" value="" placeholder="Your name">
           </div>
         </div>
         <div>
@@ -491,11 +589,31 @@
         <p class="hint" id="conn-status">Checking…</p>
         <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
-        <h2 style="font-size:0.95rem;">Database setup (category column)</h2>
-        <p class="hint">Run this once in Supabase → SQL Editor if category filters/import are not working:</p>
+        <h2 style="font-size:0.95rem;">Database setup (run once in Supabase SQL Editor)</h2>
+        <p class="hint">Adds category, stable barcode, and adjustment history. Safe to re-run.</p>
         <pre id="category-sql" style="font-size:0.72rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;">alter table inventory add column if not exists category text;
+alter table inventory add column if not exists barcode text;
+create unique index if not exists inventory_barcode_uidx on inventory (barcode) where barcode is not null;
 create index if not exists inventory_category_idx on inventory (category);
-create index if not exists inventory_source_idx on inventory (source);</pre>
+create index if not exists inventory_source_idx on inventory (source);
+
+create table if not exists inventory_adjustments (
+  id uuid primary key default gen_random_uuid(),
+  inventory_id uuid,
+  part_number text,
+  name text,
+  action text not null,
+  qty_before integer,
+  qty_after integer,
+  changed_by text,
+  details text,
+  created_at timestamptz default now()
+);
+alter table inventory_adjustments enable row level security;
+-- If policy already exists, ignore the error or drop first:
+-- drop policy if exists "Allow all for anon adj" on inventory_adjustments;
+create policy "Allow all for anon adj" on inventory_adjustments
+  for all using (true) with check (true);</pre>
         <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
         <div class="danger-zone">
           <h2 style="font-size:0.95rem;color:var(--danger);">Danger zone</h2>
@@ -527,7 +645,13 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
     let scanning = false;
     let activeSourceFilter = 'All';
     let activeCategoryFilter = 'All';
-    let hasCategoryColumn = true; // probed on load
+    let homeAttentionFilter = null; // 'open_order' | 'needs_date' | 'out' | 'low' | null
+    let attentionFilter = 'all'; // reports attention chips
+    let hasCategoryColumn = true;
+    let hasBarcodeColumn = true;
+    let hasAdjustmentsTable = true;
+    let lastAdjustmentRows = [];
+    let sessionUser = ''; // in-memory only — cleared when tab/browser closes
 
     /** Suggested categories from consolidated spreadsheet (also grows from live data). */
     const DEFAULT_CATEGORIES = [
@@ -560,16 +684,22 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       if (n == null || isNaN(n)) return '—';
       return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-    function currentUser() { return localStorage.getItem('inv_user') || ''; }
+    function currentUser() { return sessionUser || ''; }
     function saveUser() {
-      localStorage.setItem('inv_user', document.getElementById('current-user').value);
+      // Do not persist to localStorage — force re-select each browser session
+      try { localStorage.removeItem('inv_user'); } catch (e) {}
+      sessionUser = document.getElementById('current-user').value || '';
       updateUserUI();
     }
     function updateUserUI() {
       const sel = document.getElementById('current-user');
       const banner = document.getElementById('user-required-banner');
       const hasUser = !!currentUser();
-      if (sel) sel.classList.toggle('user-missing', !hasUser);
+      if (sel) {
+        // Keep select in sync with session (always start as — Select — on first load)
+        if (sel.value !== sessionUser) sel.value = sessionUser;
+        sel.classList.toggle('user-missing', !hasUser);
+      }
       if (banner) banner.classList.toggle('show', !hasUser);
     }
     /** Block inventory writes unless a user is selected. */
@@ -584,11 +714,98 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       }
       return false;
     }
+    // Clear any legacy persisted user so Kyle (etc.) is not auto-selected
     (function() {
-      const u = localStorage.getItem('inv_user');
-      if (u) document.getElementById('current-user').value = u;
+      try { localStorage.removeItem('inv_user'); } catch (e) {}
+      sessionUser = '';
+      const sel = document.getElementById('current-user');
+      if (sel) sel.value = '';
       updateUserUI();
     })();
+
+    /**
+     * Stable short CODE128-friendly barcode that never changes with name/PN edits.
+     * Keep short (IM + 8) so bars stay within label margins on QL-710W / DK-1201.
+     */
+    function generateBarcode() {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let s = 'IM';
+      if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        const arr = new Uint8Array(8);
+        crypto.getRandomValues(arr);
+        for (let i = 0; i < 8; i++) s += alphabet[arr[i] % alphabet.length];
+      } else {
+        for (let i = 0; i < 8; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+      }
+      return s;
+    }
+
+    function labelBarcodeValue(item) {
+      // Prefer stable short barcode; fall back to part # only if no barcode column/value
+      if (item?.barcode) return item.barcode;
+      return item?.part_number || '';
+    }
+
+    /**
+     * Module width = thickness of each bar/gap.
+     * Thermal QL-710W needs thicker modules so black bars don't smear together.
+     * Prefer short stable barcodes (IM+8) so total width stays on the label
+     * without shrinking (shrinking makes bars thin again).
+     */
+    function barcodeModuleWidth(code) {
+      const len = String(code || '').length;
+      // Short stable codes → thick modules (best for Brother thermal)
+      if (len <= 10) return 3.0;
+      if (len <= 12) return 2.7;
+      if (len <= 14) return 2.4;
+      // Long part # fallback only — still thicker than old 1.6
+      return 2.2;
+    }
+
+    async function logAdjustment({ inventory_id, part_number, name, action, qty_before, qty_after, details }) {
+      if (!supabaseClient || !hasAdjustmentsTable) return;
+      try {
+        const { error } = await supabaseClient.from('inventory_adjustments').insert({
+          inventory_id: inventory_id || null,
+          part_number: part_number || null,
+          name: name || null,
+          action,
+          qty_before: qty_before != null ? qty_before : null,
+          qty_after: qty_after != null ? qty_after : null,
+          changed_by: currentUser() || null,
+          details: details || null
+        });
+        if (error) {
+          if (/relation|does not exist|schema cache/i.test(error.message || '')) {
+            hasAdjustmentsTable = false;
+          } else {
+            console.warn('Adjustment log failed', error);
+          }
+        }
+      } catch (e) {
+        console.warn('Adjustment log error', e);
+      }
+    }
+
+    async function ensureBarcodes(items) {
+      if (!hasBarcodeColumn || !supabaseClient || !items?.length) return items;
+      let changed = false;
+      for (const item of items) {
+        if (item.barcode) continue;
+        const code = generateBarcode();
+        const { error } = await supabaseClient.from('inventory')
+          .update({ barcode: code })
+          .eq('id', item.id);
+        if (!error) {
+          item.barcode = code;
+          changed = true;
+        } else if (/barcode|column/i.test(error.message || '')) {
+          hasBarcodeColumn = false;
+          break;
+        }
+      }
+      return items;
+    }
 
     document.querySelectorAll('.tab').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -620,20 +837,32 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         return;
       }
       inventory = data || [];
-      // Detect category column support (missing column → undefined on all rows is OK; write errors handled later)
       if (inventory.length > 0) {
         hasCategoryColumn = Object.prototype.hasOwnProperty.call(inventory[0], 'category');
+        hasBarcodeColumn = Object.prototype.hasOwnProperty.call(inventory[0], 'barcode');
       } else {
-        // Probe with a no-op select of category
-        const probe = await supabaseClient.from('inventory').select('category').limit(1);
-        hasCategoryColumn = !probe.error;
+        const probeCat = await supabaseClient.from('inventory').select('category').limit(1);
+        hasCategoryColumn = !probeCat.error;
+        const probeBc = await supabaseClient.from('inventory').select('barcode').limit(1);
+        hasBarcodeColumn = !probeBc.error;
       }
+      // Probe adjustments table
+      const probeAdj = await supabaseClient.from('inventory_adjustments').select('id').limit(1);
+      hasAdjustmentsTable = !probeAdj.error;
+
+      // Backfill stable barcodes when column exists
+      if (hasBarcodeColumn) {
+        await ensureBarcodes(inventory);
+      }
+
       const schemaEl = document.getElementById('schema-status');
       if (schemaEl) {
-        schemaEl.textContent = hasCategoryColumn
-          ? 'Schema: category column present ✓'
-          : 'Schema: category column missing — run the SQL below in Supabase, then refresh.';
-        schemaEl.style.color = hasCategoryColumn ? 'var(--success)' : 'var(--warning)';
+        const bits = [];
+        bits.push(hasCategoryColumn ? 'category ✓' : 'category missing');
+        bits.push(hasBarcodeColumn ? 'barcode ✓' : 'barcode missing');
+        bits.push(hasAdjustmentsTable ? 'adjustments ✓' : 'adjustments missing');
+        schemaEl.textContent = 'Schema: ' + bits.join(' · ') + (hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable ? '' : ' — run SQL in More tab');
+        schemaEl.style.color = (hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable) ? 'var(--success)' : 'var(--warning)';
       }
       document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
       refreshSuggestionLists();
@@ -694,12 +923,23 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       const units = inventory.reduce((s, i) => s + (i.qty || 0), 0);
       const low = inventory.filter(i => i.qty <= (i.reorder_level || 0) && i.qty > 0).length;
       const open = inventory.filter(i => i.open_order).length;
+      const out = inventory.filter(i => (i.qty || 0) <= 0).length;
       document.getElementById('stats').innerHTML = `
-        <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Parts</div></div>
-        <div class="stat"><div class="stat-value">${units}</div><div class="stat-label">Units</div></div>
-        <div class="stat"><div class="stat-value" style="color:var(--warning)">${low}</div><div class="stat-label">Low</div></div>
-        <div class="stat"><div class="stat-value" style="color:var(--open-order)">${open}</div><div class="stat-label">Open Orders</div></div>
+        <div class="stat ${homeAttentionFilter === null ? 'active-filter' : ''}" onclick="setHomeFilter(null)" title="Show all parts">
+          <div class="stat-value">${total}</div><div class="stat-label">Parts</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">${units}</div><div class="stat-label">Units</div>
+        </div>
+        <div class="stat clickable ${homeAttentionFilter === 'low' ? 'active-filter' : ''}" onclick="setHomeFilter('low')" title="Filter low stock">
+          <div class="stat-value" style="color:var(--warning)">${low}</div><div class="stat-label">Low</div>
+        </div>
+        <div class="stat clickable ${homeAttentionFilter === 'open_order' ? 'active-filter' : ''}" onclick="setHomeFilter('open_order')" title="Filter open orders">
+          <div class="stat-value" style="color:var(--open-order)">${open}</div><div class="stat-label">Open Orders</div>
+        </div>
       `;
+      // keep out count available for needs date card; unused in stats grid intentionally
+      void out;
     }
 
     function renderValueSummary() {
@@ -708,8 +948,48 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         <div class="value-card"><div class="label">Inventory at Cost</div><div class="amount">${money(t.cost)}</div></div>
         <div class="value-card"><div class="label">At Sell Price</div><div class="amount">${money(t.sell)}</div></div>
         <div class="value-card"><div class="label">Potential Margin</div><div class="amount" style="color:var(--success)">${money(t.margin)}</div></div>
-        ${t.needsDate ? `<div class="value-card"><div class="label">Needs Delivery Date</div><div class="amount" style="color:var(--danger)">${t.needsDate}</div></div>` : ''}
+        ${t.needsDate ? `<div class="value-card clickable ${homeAttentionFilter === 'needs_date' ? 'active-filter' : ''}" onclick="setHomeFilter('needs_date')" title="Filter items needing delivery date"><div class="label">Needs Delivery Date</div><div class="amount" style="color:var(--danger)">${t.needsDate}</div></div>` : ''}
       `;
+    }
+
+    function setHomeFilter(mode) {
+      homeAttentionFilter = (homeAttentionFilter === mode) ? null : mode;
+      const bar = document.getElementById('home-filter-bar');
+      const label = document.getElementById('home-filter-label');
+      const labels = {
+        open_order: 'Showing: Open orders',
+        needs_date: 'Showing: Needs delivery date',
+        out: 'Showing: Out of stock',
+        low: 'Showing: Low stock'
+      };
+      if (homeAttentionFilter && bar && label) {
+        bar.classList.add('show');
+        label.textContent = labels[homeAttentionFilter] || 'Filtered';
+      } else if (bar) {
+        bar.classList.remove('show');
+        if (label) label.textContent = '';
+      }
+      renderStats();
+      renderValueSummary();
+      renderTable();
+    }
+
+    function clearHomeFilter() {
+      homeAttentionFilter = null;
+      const bar = document.getElementById('home-filter-bar');
+      if (bar) bar.classList.remove('show');
+      renderStats();
+      renderValueSummary();
+      renderTable();
+    }
+
+    function matchesHomeAttention(i) {
+      if (!homeAttentionFilter) return true;
+      if (homeAttentionFilter === 'open_order') return !!i.open_order;
+      if (homeAttentionFilter === 'needs_date') return !!(i.open_order && !i.estimated_delivery);
+      if (homeAttentionFilter === 'out') return (i.qty || 0) <= 0;
+      if (homeAttentionFilter === 'low') return (i.qty || 0) > 0 && (i.qty || 0) <= (i.reorder_level || 0);
+      return true;
     }
 
     function chipList(values, active, setterName, extraClass) {
@@ -760,6 +1040,7 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         const matchSearch = !q ||
           (i.name || '').toLowerCase().includes(q) ||
           (i.part_number || '').toLowerCase().includes(q) ||
+          (i.barcode || '').toLowerCase().includes(q) ||
           (i.source || '').toLowerCase().includes(q) ||
           (i.category || '').toLowerCase().includes(q) ||
           (i.location || '').toLowerCase().includes(q) ||
@@ -768,7 +1049,7 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         const cat = i.category || 'Uncategorized';
         const matchSource = activeSourceFilter === 'All' || src === activeSourceFilter;
         const matchCat = activeCategoryFilter === 'All' || cat === activeCategoryFilter;
-        return matchSearch && matchSource && matchCat;
+        return matchSearch && matchSource && matchCat && matchesHomeAttention(i);
       });
       const tbody = document.getElementById('inventory-body');
       const empty = document.getElementById('empty-msg');
@@ -777,8 +1058,8 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         empty.style.display = 'block';
         if (inventory.length === 0) {
           empty.textContent = 'No parts yet. Import clean JSON or add a part.';
-        } else if (activeSourceFilter !== 'All' || activeCategoryFilter !== 'All') {
-          empty.textContent = `No parts match filters (Source: ${activeSourceFilter}, Category: ${activeCategoryFilter}).`;
+        } else if (homeAttentionFilter || activeSourceFilter !== 'All' || activeCategoryFilter !== 'All') {
+          empty.textContent = 'No parts match the current filters.';
         } else {
           empty.textContent = 'No matching parts.';
         }
@@ -802,6 +1083,7 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
           <td>
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
+            ${i.barcode ? `<br><small style="color:var(--muted)">BC: ${escapeHtml(i.barcode)}</small>` : ''}
             ${meta.length ? `<div class="meta-line">${meta.join('')}</div>` : ''}
             ${i.location ? '<small style="color:var(--muted)">' + escapeHtml(i.location) + '</small>' : ''}
           </td>
@@ -826,11 +1108,21 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       if (!requireUser('deleting parts')) return;
       if (!confirm(`Delete part “${partNumber}” permanently?\n\nThis cannot be undone.`)) return;
       if (!supabaseClient) return;
+      const item = inventory.find(i => i.id === id);
       const { error } = await supabaseClient.from('inventory').delete().eq('id', id);
       if (error) {
         showStatus('Delete failed: ' + error.message, 'error');
         return;
       }
+      await logAdjustment({
+        inventory_id: id,
+        part_number: partNumber,
+        name: item?.name,
+        action: 'delete',
+        qty_before: item?.qty,
+        qty_after: null,
+        details: 'Part deleted'
+      });
       showStatus(`Part deleted by ${currentUser()}`, 'success');
       await loadInventory();
     }
@@ -887,11 +1179,55 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
           <div class="amount">${t.units}</div>
         </div>
       `;
-      const attention = inventory.filter(i =>
-        (i.open_order && !i.estimated_delivery) || (i.qty <= (i.reorder_level || 0) && i.qty >= 0)
+      renderAttentionFilters();
+      renderAttentionList();
+    }
+
+    function renderAttentionFilters() {
+      const el = document.getElementById('attention-filters');
+      if (!el) return;
+      const chips = [
+        { id: 'all', label: 'All' },
+        { id: 'out', label: 'Out of Stock' },
+        { id: 'needs_date', label: 'Needs Delivery Date' },
+        { id: 'low', label: 'Low Stock' },
+        { id: 'open_order', label: 'Open Orders' }
+      ];
+      el.innerHTML = chips.map(c =>
+        `<button type="button" class="filter-chip att-chip ${attentionFilter === c.id ? 'active' : ''}" onclick="setAttentionFilter('${c.id}')">${c.label}</button>`
+      ).join('');
+    }
+
+    function setAttentionFilter(id) {
+      attentionFilter = id;
+      renderAttentionFilters();
+      renderAttentionList();
+    }
+
+    function renderAttentionList() {
+      let attention = inventory.filter(i =>
+        (i.open_order && !i.estimated_delivery) ||
+        (i.qty <= (i.reorder_level || 0)) ||
+        !!i.open_order
       );
+      if (attentionFilter === 'out') {
+        attention = inventory.filter(i => (i.qty || 0) <= 0);
+      } else if (attentionFilter === 'needs_date') {
+        attention = inventory.filter(i => i.open_order && !i.estimated_delivery);
+      } else if (attentionFilter === 'low') {
+        attention = inventory.filter(i => (i.qty || 0) > 0 && (i.qty || 0) <= (i.reorder_level || 0));
+      } else if (attentionFilter === 'open_order') {
+        attention = inventory.filter(i => !!i.open_order);
+      } else {
+        // all needing attention
+        attention = inventory.filter(i =>
+          (i.open_order && !i.estimated_delivery) ||
+          (i.qty || 0) <= (i.reorder_level || 0)
+        );
+      }
+
       if (attention.length === 0) {
-        document.getElementById('attention-list').innerHTML = '<p style="color:var(--muted);">Nothing needs attention right now.</p>';
+        document.getElementById('attention-list').innerHTML = '<p style="color:var(--muted);">Nothing matches this filter.</p>';
       } else {
         document.getElementById('attention-list').innerHTML = `
           <table>
@@ -900,17 +1236,141 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
               ${attention.map(i => {
                 let issue = [];
                 if (i.open_order && !i.estimated_delivery) issue.push('<span class="badge needs-date">Needs Delivery Date</span>');
+                else if (i.open_order) issue.push('<span class="badge open-order">Open Order</span>');
                 if (i.qty <= 0) issue.push('<span class="badge needs-date">Out of stock</span>');
                 else if (i.qty <= (i.reorder_level || 0)) issue.push('<span class="badge low">Low stock</span>');
                 return `<tr>
                   <td><strong>${escapeHtml(i.name)}</strong><br><code style="font-size:0.75rem">${escapeHtml(i.part_number)}</code></td>
-                  <td>${issue.join(' ')}</td>
+                  <td>${issue.join(' ') || '—'}</td>
                   <td><button class="secondary" onclick="editItem('${i.id}')">Edit</button></td>
                 </tr>`;
               }).join('')}
             </tbody>
           </table>`;
       }
+    }
+
+    async function loadAdjustmentReport() {
+      const status = document.getElementById('adj-status');
+      const tableEl = document.getElementById('adj-report-table');
+      if (!supabaseClient) return;
+      if (!hasAdjustmentsTable) {
+        // re-probe
+        const probe = await supabaseClient.from('inventory_adjustments').select('id').limit(1);
+        hasAdjustmentsTable = !probe.error;
+      }
+      if (!hasAdjustmentsTable) {
+        if (status) status.textContent = 'Adjustment table not found — run the SQL on the More tab, then try again.';
+        if (tableEl) tableEl.innerHTML = '';
+        lastAdjustmentRows = [];
+        return;
+      }
+      if (status) status.textContent = 'Loading…';
+      let q = supabaseClient.from('inventory_adjustments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      const userF = document.getElementById('adj-user-filter')?.value;
+      const actionF = document.getElementById('adj-action-filter')?.value;
+      const fromF = document.getElementById('adj-from')?.value;
+      const toF = document.getElementById('adj-to')?.value;
+      if (userF) q = q.eq('changed_by', userF);
+      if (actionF) q = q.eq('action', actionF);
+      if (fromF) q = q.gte('created_at', fromF + 'T00:00:00');
+      if (toF) q = q.lte('created_at', toF + 'T23:59:59');
+      const { data, error } = await q;
+      if (error) {
+        if (status) status.textContent = 'Load failed: ' + error.message;
+        lastAdjustmentRows = [];
+        return;
+      }
+      lastAdjustmentRows = data || [];
+      if (status) status.textContent = `${lastAdjustmentRows.length} adjustment${lastAdjustmentRows.length === 1 ? '' : 's'} found.`;
+      if (!lastAdjustmentRows.length) {
+        tableEl.innerHTML = '<p style="color:var(--muted);">No adjustments match these filters.</p>';
+        return;
+      }
+      tableEl.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Who</th>
+              <th>Action</th>
+              <th>Part</th>
+              <th>Qty</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lastAdjustmentRows.map(r => {
+              const when = r.created_at ? new Date(r.created_at).toLocaleString() : '—';
+              const qty = (r.qty_before != null || r.qty_after != null)
+                ? `${r.qty_before ?? '—'} → ${r.qty_after ?? '—'}`
+                : '—';
+              return `<tr>
+                <td style="white-space:nowrap;font-size:0.78rem;">${escapeHtml(when)}</td>
+                <td>${escapeHtml(r.changed_by || '—')}</td>
+                <td><code style="font-size:0.75rem;">${escapeHtml(r.action || '')}</code></td>
+                <td>
+                  <strong>${escapeHtml(r.name || '—')}</strong><br>
+                  <code style="font-size:0.72rem;color:var(--muted)">${escapeHtml(r.part_number || '')}</code>
+                </td>
+                <td style="white-space:nowrap;">${escapeHtml(String(qty))}</td>
+                <td style="font-size:0.78rem;color:var(--muted);">${escapeHtml(r.details || '')}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    function exportAdjustmentCsv() {
+      if (!lastAdjustmentRows.length) {
+        showStatus('Generate a report first', 'error');
+        return;
+      }
+      const headers = ['when','who','action','part_number','name','qty_before','qty_after','details'];
+      const lines = [headers.join(',')];
+      lastAdjustmentRows.forEach(r => {
+        const row = [
+          r.created_at || '',
+          r.changed_by || '',
+          r.action || '',
+          r.part_number || '',
+          r.name || '',
+          r.qty_before ?? '',
+          r.qty_after ?? '',
+          r.details || ''
+        ].map(v => {
+          const s = String(v).replace(/"/g, '""');
+          return `"${s}"`;
+        });
+        lines.push(row.join(','));
+      });
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `inventory-adjustments-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+
+    function printAdjustmentReport() {
+      if (!lastAdjustmentRows.length) {
+        showStatus('Generate a report first', 'error');
+        return;
+      }
+      const html = `<!DOCTYPE html><html><head><title>Inventory Adjustments</title>
+        <style>body{font-family:system-ui,sans-serif;font-size:12px;padding:16px;}
+        table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:6px;text-align:left;}
+        th{background:#f1f5f9;}</style></head><body>
+        <h1>Inventory Adjustment Report</h1>
+        <p>Generated ${new Date().toLocaleString()} · ${lastAdjustmentRows.length} rows</p>
+        ${document.getElementById('adj-report-table').innerHTML}
+        <script>window.onload=function(){window.print();}<\/script>
+        </body></html>`;
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
     }
 
     async function saveItem() {
@@ -921,9 +1381,11 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       if (!name || !part_number) { showStatus('Name and Part Number are required', 'error'); return; }
       const id = document.getElementById('edit-id').value;
       const openOrder = document.getElementById('item-open-order').checked;
+      const newQty = parseInt(document.getElementById('item-qty').value) || 0;
+      const existingItem = id ? inventory.find(i => i.id === id) : null;
       const payload = {
         name, part_number,
-        qty: parseInt(document.getElementById('item-qty').value) || 0,
+        qty: newQty,
         reorder_level: parseInt(document.getElementById('item-reorder').value) || 0,
         buy_price: parseFloat(document.getElementById('item-buy-price').value) || null,
         sell_price: parseFloat(document.getElementById('item-sell-price').value) || null,
@@ -939,13 +1401,29 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         updated_at: new Date().toISOString()
       };
       if (!hasCategoryColumn) delete payload.category;
+      // Never overwrite barcode on edit; set only on create
+      if (!id && hasBarcodeColumn) {
+        payload.barcode = generateBarcode();
+      }
       let error;
+      let insertedId = id;
       if (id) {
+        // strip barcode if present so updates never change it
+        delete payload.barcode;
         ({ error } = await supabaseClient.from('inventory').update(payload).eq('id', id));
       } else {
         const { data: existing } = await supabaseClient.from('inventory').select('id').eq('part_number', part_number).maybeSingle();
         if (existing) { showStatus('Part number already exists', 'error'); return; }
-        ({ error } = await supabaseClient.from('inventory').insert(payload));
+        const res = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
+        error = res.error;
+        insertedId = res.data?.id;
+        if (error && /barcode/i.test(error.message || '')) {
+          hasBarcodeColumn = false;
+          delete payload.barcode;
+          const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
+          error = retry.error;
+          insertedId = retry.data?.id;
+        }
       }
       if (error) {
         if (/category/i.test(error.message)) {
@@ -954,6 +1432,28 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
           showStatus('Save failed: ' + error.message, 'error');
         }
         return;
+      }
+      if (id) {
+        const qtyChanged = existingItem && (existingItem.qty || 0) !== newQty;
+        await logAdjustment({
+          inventory_id: id,
+          part_number,
+          name,
+          action: qtyChanged ? 'set_qty' : 'update',
+          qty_before: existingItem?.qty,
+          qty_after: newQty,
+          details: qtyChanged ? 'Qty changed via edit form' : 'Part details updated'
+        });
+      } else {
+        await logAdjustment({
+          inventory_id: insertedId,
+          part_number,
+          name,
+          action: 'create',
+          qty_before: null,
+          qty_after: newQty,
+          details: hasBarcodeColumn && payload.barcode ? `Created · barcode ${payload.barcode}` : 'Created'
+        });
       }
       showStatus((id ? 'Updated' : 'Added') + ` by ${currentUser()}`, 'success');
       clearForm();
@@ -972,6 +1472,10 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       document.getElementById('item-qty').value = 0;
       document.getElementById('item-reorder').value = 5;
       document.getElementById('item-open-order').checked = false;
+      const bcHint = document.getElementById('item-stable-barcode-hint');
+      if (bcHint) bcHint.textContent = hasBarcodeColumn
+        ? 'A stable label barcode is assigned automatically when the part is created.'
+        : '';
       toggleOrderFields();
     }
 
@@ -994,9 +1498,20 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       document.getElementById('item-date-ordered').value = item.date_ordered || '';
       document.getElementById('item-est-delivery').value = item.estimated_delivery || '';
       document.getElementById('item-ordered-qty').value = item.ordered_qty || '';
+      // Show stable barcode under form if present
+      let bcHint = document.getElementById('item-stable-barcode-hint');
+      if (!bcHint) {
+        bcHint = document.createElement('p');
+        bcHint.id = 'item-stable-barcode-hint';
+        bcHint.className = 'hint';
+        const notes = document.getElementById('item-notes');
+        if (notes?.parentNode) notes.parentNode.insertBefore(bcHint, notes);
+      }
+      bcHint.textContent = item.barcode
+        ? `Stable label barcode: ${item.barcode} (does not change when name/part # is edited)`
+        : (hasBarcodeColumn ? 'Stable barcode will be assigned on next save/load if missing.' : '');
       toggleOrderFields();
       document.querySelector('[data-tab="add"]').click();
-      // Scroll form into view (useful when opened from Scan)
       setTimeout(() => {
         document.getElementById('form-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
@@ -1007,12 +1522,24 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       if (!supabaseClient) return;
       const item = inventory.find(i => i.id === id);
       if (!item) return;
-      const newQty = Math.max(0, (item.qty || 0) + delta);
+      const oldQty = item.qty || 0;
+      const newQty = Math.max(0, oldQty + delta);
       const { error } = await supabaseClient.from('inventory')
         .update({ qty: newQty, updated_by: currentUser(), updated_at: new Date().toISOString() })
         .eq('id', id);
       if (error) showStatus(error.message, 'error');
-      else await loadInventory();
+      else {
+        await logAdjustment({
+          inventory_id: id,
+          part_number: item.part_number,
+          name: item.name,
+          action: delta > 0 ? 'stock_in' : 'stock_out',
+          qty_before: oldQty,
+          qty_after: newQty,
+          details: delta > 0 ? '+1 on Home' : '−1 on Home'
+        });
+        await loadInventory();
+      }
     }
 
     let pendingScanItem = null; // item waiting for Commit
@@ -1026,8 +1553,10 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       if (scanning && code === lastScannedCode) return;
       lastScannedCode = code;
 
+      const codeLower = code.toLowerCase();
       const item = inventory.find(i =>
-        (i.part_number || '').toLowerCase() === code.toLowerCase()
+        (i.barcode || '').toLowerCase() === codeLower ||
+        (i.part_number || '').toLowerCase() === codeLower
       );
       const resultEl = document.getElementById('scan-result');
 
@@ -1064,11 +1593,16 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         <div class="scan-result-card" style="border-color:var(--accent);">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.25rem;">
             <div style="font-size:0.75rem;color:var(--success);font-weight:600;">✓ Found</div>
-            <button type="button" class="secondary" style="padding:0.35rem 0.65rem;font-size:0.8rem;margin:0;"
-              onclick="editFromScan('${item.id}')">Edit part</button>
+            <div class="btn-group" style="margin:0;">
+              <button type="button" class="quote-btn" style="padding:0.35rem 0.65rem;font-size:0.8rem;margin:0;"
+                onclick="addToQuote('${item.id}')">Quote</button>
+              <button type="button" class="secondary" style="padding:0.35rem 0.65rem;font-size:0.8rem;margin:0;"
+                onclick="editFromScan('${item.id}')">Edit part</button>
+            </div>
           </div>
           <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.15rem;">${escapeHtml(item.name)}</div>
           <code style="font-size:0.9rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
+          ${item.barcode ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">Label BC: <code>${escapeHtml(item.barcode)}</code></div>` : ''}
           <div class="meta-line" style="margin-top:0.35rem;">
             ${item.source ? `<span class="badge source-tag">${escapeHtml(item.source)}</span>` : ''}
             ${item.category ? `<span class="badge category">${escapeHtml(item.category)}</span>` : ''}
@@ -1128,9 +1662,17 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         return;
       }
       pendingScanItem.notes = notes;
-      // keep local inventory in sync
       const idx = inventory.findIndex(i => i.id === pendingScanItem.id);
       if (idx >= 0) inventory[idx].notes = notes;
+      await logAdjustment({
+        inventory_id: pendingScanItem.id,
+        part_number: pendingScanItem.part_number,
+        name: pendingScanItem.name,
+        action: 'notes',
+        qty_before: pendingScanItem.qty,
+        qty_after: pendingScanItem.qty,
+        details: 'Notes updated via scan'
+      });
       showStatus(`Notes saved (${currentUser()})`, 'success');
     }
 
@@ -1146,9 +1688,10 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       }
       const oldQty = item.qty || 0;
       let newQty = oldQty;
-      if (action === 'out') newQty = Math.max(0, oldQty - qty);
-      else if (action === 'in') newQty = oldQty + qty;
-      else if (action === 'set') newQty = qty;
+      let logAction = 'set_qty';
+      if (action === 'out') { newQty = Math.max(0, oldQty - qty); logAction = 'stock_out'; }
+      else if (action === 'in') { newQty = oldQty + qty; logAction = 'stock_in'; }
+      else if (action === 'set') { newQty = qty; logAction = 'set_qty'; }
 
       const notesRaw = document.getElementById('scan-notes')?.value;
       const notes = notesRaw != null ? (notesRaw.trim() || null) : (item.notes || null);
@@ -1168,6 +1711,16 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
         return;
       }
 
+      await logAdjustment({
+        inventory_id: item.id,
+        part_number: item.part_number,
+        name: item.name,
+        action: logAction,
+        qty_before: oldQty,
+        qty_after: newQty,
+        details: `Scan commit · ${action} ${qty}`
+      });
+
       const savedId = item.id;
       pendingScanItem = null;
       lastScannedCode = null;
@@ -1185,6 +1738,7 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
           <div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;">By ${escapeHtml(currentUser())}</div>
           <div class="btn-group" style="margin-top:0.85rem;">
             <button onclick="startScanner()">Scan next item</button>
+            <button type="button" class="quote-btn" onclick="addToQuote('${savedId}')">Quote</button>
             <button type="button" class="secondary" onclick="editFromScan('${savedId}')">Edit part</button>
           </div>
         </div>`;
@@ -1248,7 +1802,8 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       const filtered = inventory.filter(i =>
         !q ||
         (i.name || '').toLowerCase().includes(q) ||
-        (i.part_number || '').toLowerCase().includes(q)
+        (i.part_number || '').toLowerCase().includes(q) ||
+        (i.barcode || '').toLowerCase().includes(q)
       );
       if (filtered.length === 0) {
         list.innerHTML = '<p style="color:var(--muted);padding:0.5rem;">No parts match.</p>';
@@ -1260,6 +1815,7 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
           <span>
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
+            ${i.barcode ? `<br><small style="color:var(--muted)">BC ${escapeHtml(i.barcode)}</small>` : ''}
           </span>
         </label>
       `).join('');
@@ -1283,12 +1839,15 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
       const card = document.getElementById('batch-preview-card');
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
-      // Sized for Brother DK-1201 die-cut labels: 3.5 in wide × 1.1 in high
-      // Each label is its own page so the printer advances one label at a time.
+      // DK-1201 / QL-710W layout: reserved text rows (name + PN) so baselines aren't clipped;
+      // barcode sits in the middle with thick modules for thermal clarity.
       preview.innerHTML = items.map((item, idx) => {
-        const shortName = (item.name || '').length > 42
-          ? (item.name || '').slice(0, 40) + '…'
+        const shortName = (item.name || '').length > 38
+          ? (item.name || '').slice(0, 36) + '…'
           : (item.name || '');
+        const pnShow = (item.part_number || '').length > 28
+          ? (item.part_number || '').slice(0, 26) + '…'
+          : (item.part_number || '');
         return `
         <div class="label-block" style="
           color:#000;
@@ -1296,44 +1855,60 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
           text-align:center;
           width: 3.3in;
           max-width: 3.3in;
-          height: 0.95in;
+          height: 1.02in;
           margin: 0 auto 10px;
-          padding: 4px 8px;
+          padding: 0.06in 0.14in 0.07in;
           border: 1px dashed #ccc;
           box-sizing: border-box;
           display: flex;
           flex-direction: column;
-          justify-content: center;
+          justify-content: space-between;
           align-items: center;
           overflow: hidden;
         ">
-          <div style="font-weight:700; font-size:11px; line-height:1.15; margin-bottom:2px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-            ${escapeHtml(shortName)}
+          <div class="lbl-name" style="
+            flex:0 0 auto; width:100%;
+            font-weight:700; font-size:10px; line-height:1.3;
+            padding:1px 0 2px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+          ">${escapeHtml(shortName)}</div>
+          <div class="bc-wrap" style="
+            flex:1 1 auto; min-height:0; width:100%; max-width:2.9in;
+            display:flex; justify-content:center; align-items:center;
+            padding:1px 0;
+          ">
+            <svg id="bc-${idx}" style="height:34px;display:block;image-rendering:pixelated;"></svg>
           </div>
-          <svg id="bc-${idx}" style="max-width:3.1in; height:28px;"></svg>
-          <div style="font-size:13px; font-weight:700; margin-top:2px; letter-spacing:0.03em;">
-            ${escapeHtml(item.part_number)}
-          </div>
+          <div class="lbl-pn" style="
+            flex:0 0 auto; width:100%;
+            font-size:12px; font-weight:700; line-height:1.3;
+            letter-spacing:0.03em;
+            padding:2px 0 1px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+          ">${escapeHtml(pnShow)}</div>
         </div>`;
       }).join('');
 
       items.forEach((item, idx) => {
+        const code = labelBarcodeValue(item);
+        if (!code) return;
         try {
-          JsBarcode(`#bc-${idx}`, item.part_number, {
+          // Thick modules; height balanced so name + PN rows keep full baselines
+          JsBarcode(`#bc-${idx}`, code, {
             format: 'CODE128',
-            width: 1.6,
-            height: 28,
+            width: barcodeModuleWidth(code),
+            height: 34,
             displayValue: false,
-            margin: 1,
+            margin: 6,
             background: '#ffffff',
             lineColor: '#000000'
           });
-        } catch (e) { console.warn('Barcode error', item.part_number, e); }
+        } catch (e) { console.warn('Barcode error', code, e); }
       });
 
       card.style.display = 'block';
       document.getElementById('print-batch-btn').style.display = 'inline-block';
-      showStatus(`${items.length} labels ready — Print with DK-1201, scale 100%`, 'success');
+      showStatus(`${items.length} labels ready — thick bars; print at 100%`, 'success');
     }
 
     function exportData() {
@@ -1381,18 +1956,46 @@ create index if not exists inventory_source_idx on inventory (source);</pre>
               updated_by: currentUser()
             };
             if (!hasCategoryColumn) delete payload.category;
-            const { error } = await supabaseClient.from('inventory').insert(payload);
+            if (hasBarcodeColumn) payload.barcode = row.barcode || generateBarcode();
+            const { data: inserted, error } = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
             if (error) {
               failed++;
               console.error('Import row failed', pn, error);
               if (/category/i.test(error.message || '')) {
                 hasCategoryColumn = false;
                 delete payload.category;
-                const retry = await supabaseClient.from('inventory').insert(payload);
-                if (!retry.error) { added++; failed--; }
+              }
+              if (/barcode/i.test(error.message || '')) {
+                hasBarcodeColumn = false;
+                delete payload.barcode;
+              }
+              if (!hasCategoryColumn || !hasBarcodeColumn) {
+                const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
+                if (!retry.error) {
+                  added++;
+                  failed--;
+                  await logAdjustment({
+                    inventory_id: retry.data?.id,
+                    part_number: pn,
+                    name: row.name,
+                    action: 'create',
+                    qty_before: null,
+                    qty_after: row.qty || 0,
+                    details: 'Imported'
+                  });
+                }
               }
             } else {
               added++;
+              await logAdjustment({
+                inventory_id: inserted?.id,
+                part_number: pn,
+                name: row.name,
+                action: 'create',
+                qty_before: null,
+                qty_after: row.qty || 0,
+                details: 'Imported'
+              });
             }
           }
           showStatus(`Import done: ${added} added, ${skipped} skipped${failed ? ', ' + failed + ' failed' : ''} (${currentUser()})`, failed ? 'error' : 'success');
