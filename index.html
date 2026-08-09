@@ -482,13 +482,38 @@
     <!-- QUOTE -->
     <div id="quote" class="panel">
       <div class="card">
+        <h2>Saved Quotes</h2>
+        <p class="hint" id="quotes-schema-hint">Quotes save to Supabase when tables are installed (see More → SQL). Inventory stock is never changed by quotes.</p>
+        <div class="filter-row" style="margin-bottom:0.5rem;">
+          <div class="filter-row-label">Status</div>
+          <div id="quote-status-filters" class="source-filters"></div>
+        </div>
+        <div id="quotes-list" style="overflow-x:auto;"></div>
+        <div class="btn-group" style="margin-top:0.65rem;">
+          <button type="button" onclick="startNewQuote()">New quote from cart</button>
+          <button type="button" class="secondary" onclick="loadQuotesList()">Refresh list</button>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>Quote Builder <span id="quote-count-badge" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
-        <p class="hint">Add parts from Home or Scan with the “Quote” button. Adjust qty &amp; price here, then generate a branded printable quote.</p>
+        <p class="hint">Add parts from Home or Scan. Save to the database, print, or void — stock qty is never changed by quotes.</p>
+        <input type="hidden" id="quote-edit-id" value="">
 
         <div class="row">
           <div>
             <label>Quote #</label>
-            <input type="text" id="quote-number" value="Q-2026-001">
+            <input type="text" id="quote-number" placeholder="Auto Q-YYYY-###" autocomplete="off">
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="quote-status">
+              <option value="draft">Draft</option>
+              <option value="sent">Sent</option>
+              <option value="accepted">Accepted</option>
+              <option value="expired">Expired</option>
+              <option value="void">Void</option>
+            </select>
           </div>
           <div>
             <label>Date</label>
@@ -500,15 +525,20 @@
           </div>
         </div>
         <div class="row">
-          <div>
+          <div style="flex:2;">
             <label>Customer / Project</label>
-            <input type="text" id="quote-customer" placeholder="Customer or vessel name">
+            <input type="text" id="quote-customer" list="customer-suggestions" placeholder="Customer, vessel, or project name">
+            <datalist id="customer-suggestions"></datalist>
           </div>
           <div>
             <label>Prepared By</label>
             <input type="text" id="quote-by" value="" placeholder="Your name">
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:0.45rem;margin-bottom:0.7rem;font-size:0.85rem;color:var(--muted);">
+          <input type="checkbox" id="quote-save-customer" style="width:auto;margin:0;">
+          Also save this name to Customers (for reuse later)
+        </label>
         <div>
           <label>Notes</label>
           <textarea id="quote-notes" rows="2" placeholder="Delivery, terms, or special notes..."></textarea>
@@ -517,8 +547,11 @@
         <div id="quote-lines" style="margin:1rem 0;"></div>
 
         <div class="btn-group">
-          <button onclick="generateQuote()">Generate Quote</button>
-          <button class="secondary" onclick="clearQuote()">Clear Quote</button>
+          <button type="button" onclick="saveQuoteToDb()">Save quote</button>
+          <button type="button" class="secondary" onclick="generateQuote()">Print / PDF</button>
+          <button type="button" class="secondary" onclick="duplicateCurrentQuote()">Duplicate</button>
+          <button type="button" class="secondary" onclick="voidCurrentQuote()">Void</button>
+          <button type="button" class="secondary" onclick="clearQuote()">Clear cart</button>
         </div>
       </div>
     </div>
@@ -539,8 +572,9 @@
         <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Database setup (run once in Supabase SQL Editor)</h2>
-        <p class="hint">Adds category, stable barcode, and adjustment history. Safe to re-run.</p>
-        <pre id="category-sql" style="font-size:0.72rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;">alter table inventory add column if not exists category text;
+        <p class="hint">Additive only — does not remove inventory data or break the live inventory app. Safe to re-run if policies already exist (ignore duplicate policy errors).</p>
+        <pre id="category-sql" style="font-size:0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;max-height:240px;">-- Inventory extras
+alter table inventory add column if not exists category text;
 alter table inventory add column if not exists barcode text;
 create unique index if not exists inventory_barcode_uidx on inventory (barcode) where barcode is not null;
 create index if not exists inventory_category_idx on inventory (category);
@@ -548,21 +582,50 @@ create index if not exists inventory_source_idx on inventory (source);
 
 create table if not exists inventory_adjustments (
   id uuid primary key default gen_random_uuid(),
-  inventory_id uuid,
-  part_number text,
-  name text,
-  action text not null,
-  qty_before integer,
-  qty_after integer,
-  changed_by text,
-  details text,
+  inventory_id uuid, part_number text, name text, action text not null,
+  qty_before integer, qty_after integer, changed_by text, details text,
   created_at timestamptz default now()
 );
 alter table inventory_adjustments enable row level security;
--- If policy already exists, ignore the error or drop first:
--- drop policy if exists "Allow all for anon adj" on inventory_adjustments;
-create policy "Allow all for anon adj" on inventory_adjustments
-  for all using (true) with check (true);</pre>
+
+-- Phase 1 quotes (NEW tables only — does not alter inventory rows)
+create table if not exists customers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, company text, email text, phone text, notes text,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create table if not exists quotes (
+  id uuid primary key default gen_random_uuid(),
+  number text not null unique,
+  customer_id uuid references customers(id) on delete set null,
+  customer_name text,
+  status text not null default 'draft',
+  quote_date date, valid_until date, prepared_by text, notes text, created_by text,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create index if not exists quotes_status_idx on quotes (status);
+create table if not exists quote_lines (
+  id uuid primary key default gen_random_uuid(),
+  quote_id uuid not null references quotes(id) on delete cascade,
+  line_no integer not null default 1,
+  inventory_id uuid, part_number text, name text not null,
+  qty numeric not null default 1, unit_price numeric not null default 0
+);
+create index if not exists quote_lines_quote_id_idx on quote_lines (quote_id);
+create table if not exists document_counters (
+  doc_type text not null, year integer not null, last_value integer not null default 0,
+  primary key (doc_type, year)
+);
+alter table customers enable row level security;
+alter table quotes enable row level security;
+alter table quote_lines enable row level security;
+alter table document_counters enable row level security;
+-- create policies once (ignore errors if they already exist):
+-- create policy "Allow all customers" on customers for all using (true) with check (true);
+-- create policy "Allow all quotes" on quotes for all using (true) with check (true);
+-- create policy "Allow all quote_lines" on quote_lines for all using (true) with check (true);
+-- create policy "Allow all document_counters" on document_counters for all using (true) with check (true);
+-- create policy "Allow all for anon adj" on inventory_adjustments for all using (true) with check (true);</pre>
         <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
         <div class="danger-zone">
           <h2 style="font-size:0.95rem;color:var(--danger);">Danger zone</h2>
@@ -599,7 +662,11 @@ create policy "Allow all for anon adj" on inventory_adjustments
     let hasCategoryColumn = true;
     let hasBarcodeColumn = true;
     let hasAdjustmentsTable = true;
+    let hasQuotesTables = true;
     let lastAdjustmentRows = [];
+    let quotesListCache = [];
+    let quoteStatusFilter = 'all';
+    let editingQuoteId = null;
     let sessionUser = ''; // in-memory only — cleared when tab/browser closes
 
     /** Suggested categories from consolidated spreadsheet (also grows from live data). */
@@ -798,6 +865,8 @@ create policy "Allow all for anon adj" on inventory_adjustments
       // Probe adjustments table
       const probeAdj = await supabaseClient.from('inventory_adjustments').select('id').limit(1);
       hasAdjustmentsTable = !probeAdj.error;
+      const probeQuotes = await supabaseClient.from('quotes').select('id').limit(1);
+      hasQuotesTables = !probeQuotes.error;
 
       // Backfill stable barcodes when column exists
       if (hasBarcodeColumn) {
@@ -810,8 +879,10 @@ create policy "Allow all for anon adj" on inventory_adjustments
         bits.push(hasCategoryColumn ? 'category ✓' : 'category missing');
         bits.push(hasBarcodeColumn ? 'barcode ✓' : 'barcode missing');
         bits.push(hasAdjustmentsTable ? 'adjustments ✓' : 'adjustments missing');
-        schemaEl.textContent = 'Schema: ' + bits.join(' · ') + (hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable ? '' : ' — run SQL in More tab');
-        schemaEl.style.color = (hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable) ? 'var(--success)' : 'var(--warning)';
+        bits.push(hasQuotesTables ? 'quotes ✓' : 'quotes missing');
+        const schemaOk = hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable && hasQuotesTables;
+        schemaEl.textContent = 'Schema: ' + bits.join(' · ') + (schemaOk ? '' : ' — run SQL in More tab');
+        schemaEl.style.color = schemaOk ? 'var(--success)' : 'var(--warning)';
       }
       document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
       refreshSuggestionLists();
@@ -2111,7 +2182,7 @@ ${bodyHtml}
       e.target.value = '';
     }
 
-    // ===== QUOTE CART =====
+    // ===== QUOTES (Phase 1: save to Supabase; no inventory qty impact) =====
     let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
 
     function saveQuoteCart() {
@@ -2122,12 +2193,13 @@ ${bodyHtml}
     function addToQuote(id) {
       const item = inventory.find(i => i.id === id);
       if (!item) return;
-      const existing = quoteCart.find(c => c.id === id);
+      const existing = quoteCart.find(c => c.id === id || (c.inventory_id && c.inventory_id === id));
       if (existing) {
         existing.qty = (existing.qty || 1) + 1;
       } else {
         quoteCart.push({
           id: item.id,
+          inventory_id: item.id,
           part_number: item.part_number,
           name: item.name,
           qty: 1,
@@ -2151,10 +2223,17 @@ ${bodyHtml}
     }
 
     function clearQuote() {
-      if (quoteCart.length && !confirm('Clear the entire quote?')) return;
+      if (quoteCart.length && !confirm('Clear the working cart? (Saved quotes in the database are kept.)')) return;
       quoteCart = [];
+      editingQuoteId = null;
+      const eid = document.getElementById('quote-edit-id');
+      if (eid) eid.value = '';
+      const st = document.getElementById('quote-status');
+      if (st) st.value = 'draft';
+      const num = document.getElementById('quote-number');
+      if (num) num.value = '';
       saveQuoteCart();
-      showStatus('Quote cleared', 'info');
+      showStatus('Cart cleared', 'info');
     }
 
     function renderQuotePanel() {
@@ -2163,7 +2242,7 @@ ${bodyHtml}
       const el = document.getElementById('quote-lines');
       if (!el) return;
       if (quoteCart.length === 0) {
-        el.innerHTML = '<p class="empty">No items in quote yet. Use the purple “Quote” button on the Home list.</p>';
+        el.innerHTML = '<p class="empty">No items in cart yet. Use the purple “Quote” button on Home or Scan.</p>';
         return;
       }
       let total = 0;
@@ -2188,6 +2267,310 @@ ${bodyHtml}
       `;
     }
 
+    function quoteCartTotal() {
+      return quoteCart.reduce((s, c) => s + (c.qty || 1) * (c.unit_price || 0), 0);
+    }
+
+    async function nextDocNumber(docType) {
+      const year = new Date().getFullYear();
+      const prefix = docType === 'quote' ? 'Q' : docType === 'order' ? 'SO' : docType === 'invoice' ? 'INV' : 'DOC';
+      if (!supabaseClient || !hasQuotesTables) {
+        return `${prefix}-${year}-001`;
+      }
+      // Prefer document_counters; fall back to max existing quote number
+      try {
+        const { data: row } = await supabaseClient.from('document_counters')
+          .select('last_value').eq('doc_type', docType).eq('year', year).maybeSingle();
+        let next = (row?.last_value || 0) + 1;
+        if (!row) {
+          await supabaseClient.from('document_counters').insert({ doc_type: docType, year, last_value: next });
+        } else {
+          await supabaseClient.from('document_counters').update({ last_value: next }).eq('doc_type', docType).eq('year', year);
+        }
+        return `${prefix}-${year}-${String(next).padStart(3, '0')}`;
+      } catch (e) {
+        console.warn('counter failed', e);
+      }
+      const { data: existing } = await supabaseClient.from('quotes').select('number').like('number', `${prefix}-${year}-%`);
+      let max = 0;
+      (existing || []).forEach(r => {
+        const m = String(r.number || '').match(/-(\d+)$/);
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      });
+      return `${prefix}-${year}-${String(max + 1).padStart(3, '0')}`;
+    }
+
+    async function ensureQuotesTables() {
+      if (!supabaseClient) return false;
+      if (hasQuotesTables) return true;
+      const probe = await supabaseClient.from('quotes').select('id').limit(1);
+      hasQuotesTables = !probe.error;
+      return hasQuotesTables;
+    }
+
+    async function loadCustomerSuggestions() {
+      const list = document.getElementById('customer-suggestions');
+      if (!list || !supabaseClient || !hasQuotesTables) return;
+      const { data } = await supabaseClient.from('customers').select('name,company').order('name').limit(200);
+      const names = new Set();
+      (data || []).forEach(c => {
+        if (c.name) names.add(c.name);
+        if (c.company) names.add(c.company);
+      });
+      list.innerHTML = [...names].sort().map(n => `<option value="${escapeHtml(n)}">`).join('');
+    }
+
+    function renderQuoteStatusFilters() {
+      const el = document.getElementById('quote-status-filters');
+      if (!el) return;
+      const chips = [
+        { id: 'all', label: 'All' },
+        { id: 'draft', label: 'Draft' },
+        { id: 'sent', label: 'Sent' },
+        { id: 'accepted', label: 'Accepted' },
+        { id: 'expired', label: 'Expired' },
+        { id: 'void', label: 'Void' }
+      ];
+      el.innerHTML = chips.map(c =>
+        `<button type="button" class="filter-chip ${quoteStatusFilter === c.id ? 'active' : ''}" onclick="setQuoteStatusFilter('${c.id}')">${c.label}</button>`
+      ).join('');
+    }
+
+    function setQuoteStatusFilter(id) {
+      quoteStatusFilter = id;
+      renderQuoteStatusFilters();
+      renderQuotesList();
+    }
+
+    async function loadQuotesList() {
+      const hint = document.getElementById('quotes-schema-hint');
+      const listEl = document.getElementById('quotes-list');
+      renderQuoteStatusFilters();
+      if (!supabaseClient) return;
+      const ok = await ensureQuotesTables();
+      if (!ok) {
+        if (hint) hint.textContent = 'Quotes tables not found — run Phase 1 SQL on the More tab. Inventory still works normally.';
+        if (listEl) listEl.innerHTML = '<p class="empty">Install quotes SQL to save and list quotes.</p>';
+        return;
+      }
+      if (hint) hint.textContent = 'Quotes are stored in Supabase. Saving a quote never changes inventory quantities.';
+      const { data, error } = await supabaseClient.from('quotes')
+        .select('id,number,customer_name,status,quote_date,valid_until,prepared_by,updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(200);
+      if (error) {
+        if (listEl) listEl.innerHTML = `<p class="empty">Could not load quotes: ${escapeHtml(error.message)}</p>`;
+        return;
+      }
+      quotesListCache = data || [];
+      await loadCustomerSuggestions();
+      renderQuotesList();
+    }
+
+    function renderQuotesList() {
+      const listEl = document.getElementById('quotes-list');
+      if (!listEl) return;
+      let rows = quotesListCache;
+      if (quoteStatusFilter !== 'all') {
+        rows = rows.filter(q => q.status === quoteStatusFilter);
+      }
+      if (!rows.length) {
+        listEl.innerHTML = '<p class="empty">No saved quotes for this filter.</p>';
+        return;
+      }
+      listEl.innerHTML = `
+        <table>
+          <thead><tr><th>Number</th><th>Customer</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody>
+            ${rows.map(q => `
+              <tr>
+                <td><code>${escapeHtml(q.number)}</code></td>
+                <td>${escapeHtml(q.customer_name || '—')}</td>
+                <td><span class="badge ${q.status === 'void' ? 'needs-date' : q.status === 'accepted' ? 'open-order' : 'source-tag'}">${escapeHtml(q.status)}</span></td>
+                <td style="font-size:0.8rem;color:var(--muted)">${escapeHtml(q.quote_date || '')}</td>
+                <td class="actions">
+                  <button class="secondary" onclick="openQuote('${q.id}')">Open</button>
+                  <button class="secondary" onclick="duplicateQuoteById('${q.id}')">Dup</button>
+                  <button class="secondary" onclick="printQuoteById('${q.id}')">Print</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    async function startNewQuote() {
+      editingQuoteId = null;
+      document.getElementById('quote-edit-id').value = '';
+      document.getElementById('quote-status').value = 'draft';
+      document.getElementById('quote-number').value = '';
+      if (!document.getElementById('quote-date').value) {
+        document.getElementById('quote-date').value = new Date().toISOString().slice(0, 10);
+      }
+      if (currentUser() && !document.getElementById('quote-by').value) {
+        document.getElementById('quote-by').value = currentUser();
+      }
+      if (hasQuotesTables && !document.getElementById('quote-number').value) {
+        document.getElementById('quote-number').value = await nextDocNumber('quote');
+      }
+      renderQuotePanel();
+      showStatus('Builder ready — add lines then Save quote', 'info');
+    }
+
+    async function openQuote(id) {
+      if (!(await ensureQuotesTables())) {
+        showStatus('Quotes tables not installed', 'error');
+        return;
+      }
+      const { data: q, error } = await supabaseClient.from('quotes').select('*').eq('id', id).maybeSingle();
+      if (error || !q) {
+        showStatus(error?.message || 'Quote not found', 'error');
+        return;
+      }
+      const { data: lines } = await supabaseClient.from('quote_lines')
+        .select('*').eq('quote_id', id).order('line_no');
+      editingQuoteId = q.id;
+      document.getElementById('quote-edit-id').value = q.id;
+      document.getElementById('quote-number').value = q.number || '';
+      document.getElementById('quote-status').value = q.status || 'draft';
+      document.getElementById('quote-date').value = q.quote_date || '';
+      document.getElementById('quote-valid').value = q.valid_until || '';
+      document.getElementById('quote-customer').value = q.customer_name || '';
+      document.getElementById('quote-by').value = q.prepared_by || '';
+      document.getElementById('quote-notes').value = q.notes || '';
+      document.getElementById('quote-save-customer').checked = false;
+      quoteCart = (lines || []).map(l => ({
+        id: l.inventory_id || l.id,
+        inventory_id: l.inventory_id,
+        part_number: l.part_number,
+        name: l.name,
+        qty: Number(l.qty) || 1,
+        unit_price: Number(l.unit_price) || 0
+      }));
+      saveQuoteCart();
+      showStatus(`Opened ${q.number}`, 'success');
+    }
+
+    async function saveQuoteToDb() {
+      if (!requireUser('saving quotes')) return;
+      if (!(await ensureQuotesTables())) {
+        showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
+        return;
+      }
+      if (quoteCart.length === 0) {
+        showStatus('Add at least one line before saving', 'error');
+        return;
+      }
+      let number = (document.getElementById('quote-number').value || '').trim();
+      if (!number) {
+        number = await nextDocNumber('quote');
+        document.getElementById('quote-number').value = number;
+      }
+      const customerName = (document.getElementById('quote-customer').value || '').trim();
+      let customerId = null;
+      if (document.getElementById('quote-save-customer')?.checked && customerName) {
+        const { data: existing } = await supabaseClient.from('customers')
+          .select('id').ilike('name', customerName).maybeSingle();
+        if (existing?.id) {
+          customerId = existing.id;
+        } else {
+          const { data: created, error: cErr } = await supabaseClient.from('customers')
+            .insert({ name: customerName }).select('id').maybeSingle();
+          if (cErr) console.warn(cErr);
+          else customerId = created?.id;
+        }
+      }
+      const payload = {
+        number,
+        customer_id: customerId,
+        customer_name: customerName || null,
+        status: document.getElementById('quote-status').value || 'draft',
+        quote_date: document.getElementById('quote-date').value || null,
+        valid_until: document.getElementById('quote-valid').value || null,
+        prepared_by: (document.getElementById('quote-by').value || '').trim() || currentUser() || null,
+        notes: (document.getElementById('quote-notes').value || '').trim() || null,
+        created_by: currentUser(),
+        updated_at: new Date().toISOString()
+      };
+      let quoteId = editingQuoteId || document.getElementById('quote-edit-id').value || null;
+      let error;
+      if (quoteId) {
+        ({ error } = await supabaseClient.from('quotes').update(payload).eq('id', quoteId));
+        if (!error) {
+          await supabaseClient.from('quote_lines').delete().eq('quote_id', quoteId);
+        }
+      } else {
+        const res = await supabaseClient.from('quotes').insert(payload).select('id').maybeSingle();
+        error = res.error;
+        quoteId = res.data?.id;
+      }
+      if (error) {
+        showStatus('Save failed: ' + error.message, 'error');
+        return;
+      }
+      const lineRows = quoteCart.map((c, i) => ({
+        quote_id: quoteId,
+        line_no: i + 1,
+        inventory_id: c.inventory_id || c.id || null,
+        part_number: c.part_number || null,
+        name: c.name || 'Item',
+        qty: c.qty || 1,
+        unit_price: c.unit_price || 0
+      }));
+      const { error: lErr } = await supabaseClient.from('quote_lines').insert(lineRows);
+      if (lErr) {
+        showStatus('Quote header saved but lines failed: ' + lErr.message, 'error');
+        return;
+      }
+      editingQuoteId = quoteId;
+      document.getElementById('quote-edit-id').value = quoteId;
+      showStatus(`Quote ${number} saved (${currentUser()})`, 'success');
+      await loadQuotesList();
+    }
+
+    async function voidCurrentQuote() {
+      if (!requireUser('voiding quotes')) return;
+      const id = editingQuoteId || document.getElementById('quote-edit-id').value;
+      if (!id) {
+        showStatus('Open a saved quote to void it', 'error');
+        return;
+      }
+      if (!confirm('Void this quote? It will be kept for history with status void.')) return;
+      const { error } = await supabaseClient.from('quotes')
+        .update({ status: 'void', updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) {
+        showStatus(error.message, 'error');
+        return;
+      }
+      document.getElementById('quote-status').value = 'void';
+      showStatus('Quote voided', 'success');
+      await loadQuotesList();
+    }
+
+    async function duplicateCurrentQuote() {
+      if (!(await ensureQuotesTables())) return;
+      if (!quoteCart.length) {
+        showStatus('Nothing to duplicate', 'error');
+        return;
+      }
+      editingQuoteId = null;
+      document.getElementById('quote-edit-id').value = '';
+      document.getElementById('quote-status').value = 'draft';
+      document.getElementById('quote-number').value = await nextDocNumber('quote');
+      document.getElementById('quote-date').value = new Date().toISOString().slice(0, 10);
+      showStatus('Duplicated as new draft — click Save quote', 'info');
+    }
+
+    async function duplicateQuoteById(id) {
+      await openQuote(id);
+      await duplicateCurrentQuote();
+    }
+
+    async function printQuoteById(id) {
+      await openQuote(id);
+      generateQuote();
+    }
+
     function generateQuote() {
       if (quoteCart.length === 0) {
         showStatus('Add at least one part to the quote first', 'error');
@@ -2199,7 +2582,8 @@ ${bodyHtml}
         valid: document.getElementById('quote-valid').value || '',
         customer: document.getElementById('quote-customer').value || '',
         by: document.getElementById('quote-by').value || '',
-        notes: document.getElementById('quote-notes').value || ''
+        notes: document.getElementById('quote-notes').value || '',
+        status: document.getElementById('quote-status')?.value || 'draft'
       };
       let total = 0;
       const rows = quoteCart.map(c => {
@@ -2214,7 +2598,6 @@ ${bodyHtml}
         </tr>`;
       }).join('');
 
-      // Logo: prefer local file next to index.html; fallback to a simple text header if missing
       const logoSrc = 'inmar-logo.jpg';
 
       const html = `<!DOCTYPE html>
@@ -2245,6 +2628,7 @@ ${bodyHtml}
     <div class="meta">
       <div class="quote-title">QUOTE</div>
       <div><strong>Quote #:</strong> ${escapeHtml(data.number)}</div>
+      <div><strong>Status:</strong> ${escapeHtml(data.status)}</div>
       <div><strong>Date:</strong> ${escapeHtml(data.date)}</div>
       <div><strong>Valid Until:</strong> ${escapeHtml(data.valid) || '—'}</div>
     </div>
@@ -2281,6 +2665,10 @@ ${bodyHtml}
 </body></html>`;
 
       const w = window.open('', '_blank');
+      if (!w) {
+        showStatus('Pop-up blocked — allow pop-ups to print', 'error');
+        return;
+      }
       w.document.write(html);
       w.document.close();
     }
@@ -2295,7 +2683,10 @@ ${bodyHtml}
     // Refresh quote panel when switching to Quote tab
     document.querySelectorAll('.tab').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (btn.dataset.tab === 'quote') renderQuotePanel();
+        if (btn.dataset.tab === 'quote') {
+          renderQuotePanel();
+          loadQuotesList();
+        }
       });
     });
 
