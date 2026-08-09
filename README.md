@@ -2,26 +2,25 @@
 
 **Live app:** [https://kg3924.github.io/parts-inventory/](https://kg3924.github.io/parts-inventory/)
 
-Phone-friendly inventory tracker for In-Mar Systems with live remote access, barcode scanning, open-order tracking, inventory valuation, batch label printing, and a branded quote builder.
+Phone-friendly inventory tracker for **In-Mar Systems** with live remote access, barcode scanning, labels, quotes, and basic reports.
 
-**No new part numbers are created.**  
-Your real alphanumeric part numbers are encoded directly as **Code 128** barcodes.
+**Labels encode a stable barcode** (short Code 128 value stored on each part). The human-readable **part number** is shown on the label but is not what the barcode encodes (unless the barcode column is missing).
 
 ---
 
-## Features
+## Features (live)
 
 | Area | What it does |
 |------|----------------|
-| **Home** | Live list, search, **source + category filter chips**, badges, quick +/−, cost value, Open Order flags, **Delete**, **Add to Quote** |
-| **Scan** | Phone camera or type part number → review → **Commit change** (stock in / out / set) |
-| **Add** | Full form: Source, **Category**, Buy/Sell price, location, notes, Open Order |
-| **Quote** | Build multi-line quotes, edit qty & unit price, generate branded printable quote with In-Mar logo |
-| **Reports** | Inventory at Cost, At Sell Price, Potential Margin, items needing attention |
-| **Labels** | Batch-select parts → print labels sized for **Brother DK-1201** (1.1″ × 3.5″) |
-| **More** | Export / Import JSON, connection status |
+| **Home** | Live list; search (name, part #, barcode, source, category); **source + category** filter chips; badges; clickable **Open Orders / Low / Needs Delivery Date** tiles; quick +/−; cost value; **Quote**, **Edit**, **Del** |
+| **Scan** | Camera or type part # / barcode → review → **Commit** stock in/out/set; **notes** view/edit; **Quote** and **Edit part** on the result card |
+| **Add / Edit** | Name, part #, qty, reorder, buy/sell, source, category, location, notes, open order (order date, est. delivery, qty ordered) |
+| **Quote** | Cart (browser) + **saved quotes in Supabase** (when tables are installed): list by status, open/edit, save, duplicate, void, print branded PDF; free-text customer with optional save to **Customers** |
+| **Reports** | Inventory valuation; **adjustment report** (who/when/action — needs adjustments table); items needing attention with filters (Out of Stock, Needs Delivery Date, Low, Open Orders) |
+| **Labels** | Select parts → preview → **Print on Brother QL (DK-1201)** or **Print on letter paper (8 per sheet)** for shelves/laminate |
+| **More** | Export/Import JSON; connection + schema status; setup SQL; clear all inventory |
 
-**Users (required before changes):** Toby, Glynn, Ricky, Grant, Kyle — select in the header; stamps `updated_by` on saves, qty adjusts, scan commits, deletes, and imports.
+**Users (required before changes):** Toby, Glynn, Ricky, Grant, Kyle — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes.
 
 **Theme:** Light (white background)
 
@@ -31,67 +30,27 @@ Your real alphanumeric part numbers are encoded directly as **Code 128** barcode
 
 | File | Purpose |
 |------|---------|
-| `index.html` | The app (must contain your real Supabase URL + anon key) |
+| `index.html` | The app (includes Supabase URL + anon key) |
 | `inmar-logo.jpg` | Logo used on generated quotes |
-
-Upload both to the root of this repo so Pages can serve them.
 
 ---
 
 ## 1. Supabase setup
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. In **SQL Editor** run:
+2. In **SQL Editor**, run the setup SQL from the app (**More → Copy SQL**) or the files under `schema/` in the repo. That includes:
+   - `inventory` extras (`category`, `barcode`)
+   - `inventory_adjustments`
+   - Phase 1 quotes: `customers`, `quotes`, `quote_lines`, `document_counters`
+3. **Project Settings → API** → copy Project URL and `anon` public key into `index.html` (do not overwrite existing production keys unless intentional).
 
-```sql
-create table if not exists inventory (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  part_number text unique not null,
-  qty integer not null default 0,
-  reorder_level integer default 5,
-  buy_price numeric(12,2),
-  sell_price numeric(12,2),
-  source text,
-  category text,
-  location text,
-  notes text,
-  open_order boolean default false,
-  date_ordered date,
-  estimated_delivery date,
-  ordered_qty integer,
-  updated_by text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-alter publication supabase_realtime add table inventory;
-
--- Simple open policy for trusted internal use
-create policy "Allow all for anon" on inventory
-  for all using (true) with check (true);
-
--- If the table already exists without category:
-alter table inventory add column if not exists category text;
-create index if not exists inventory_category_idx on inventory (category);
-create index if not exists inventory_source_idx on inventory (source);
-```
-
-3. **Project Settings → API** → copy Project URL and `anon` public key.
-4. Paste them into `index.html` near the top of the `<script>` block:
-
-```js
-const SUPABASE_URL = 'https://xxxx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJ...';
-```
+Open RLS policies are used for trusted internal access (same model as the live app).
 
 ---
 
 ## 2. Importing spreadsheet data
 
 Use **More → Import JSON**.
-
-JSON format (array of objects):
 
 ```json
 [
@@ -107,54 +66,59 @@ JSON format (array of objects):
 ```
 
 - Select your **user name** before importing (required).
-- Existing part numbers are **skipped** (safe to re-import).
-- Use `PLACEHOLDER` in the name or part number for items that still need a real part # — search “placeholder” later to find them.
+- Existing part numbers are **skipped**.
+- Optional `barcode`; if omitted and the column exists, the app generates one.
 - No spaces in part numbers.
-- To wipe the database and start fresh: **More → Clear all inventory…** (type `DELETE ALL`). Export a backup first.
+- Placeholders: include `PLACEHOLDER` in the part number (e.g. `WYNN-PLACEHOLDER-001`).
+- Wipe and restart: **More → Clear all inventory…** (type `DELETE ALL`). Export a backup first.
 
 ---
 
-## 3. Printing labels (Brother DK-1201)
+## 3. Labels
 
-Labels are sized for **Brother DK-1201** die-cut labels:
+### Brother QL-710W + DK-1201
+- Size: **1.1″ high × 3.5″ wide**
+- Labels tab → select parts → **Generate preview** → **Print on Brother QL (DK-1201)**
+- Print dialog: media **DK-1201**, scale **100%**, no fit-to-page, no headers/footers
+- Each die-cut is its own page (print opens a clean popup so extra blank labels are not fed)
 
-- **Size:** 1.1 in high × 3.5 in wide (29 mm × 90.3 mm)
+Each label shows: **name**, **Code 128 of the stable barcode**, **part number text**.
 
-1. Labels tab → select parts → **Generate Selected Labels** → **Print Now**
-2. In the print dialog:
-   - Printer = your Brother QL
-   - Paper / media = **DK-1201** (or custom 3.5″ × 1.1″)
-   - Scale = **100%** (do not fit to page)
-   - Uncheck **Headers and footers**
-3. Each label is its own page so the printer advances one label at a time until the batch is finished.
-
-Each label shows: **Name** (truncated if long), **barcode (Code 128 of the real part number)**, **part number text**.
+### Letter paper (shelves / laminate)
+- Same preview → **Print on letter paper (8 / sheet)**
+- **2×4 grid** on US Letter (~3.5″ × 2.4″ each), larger barcode for readability
 
 ---
 
-## 4. Quote builder
+## 4. Quotes
 
-1. On Home, click the purple **Quote** button on any part (uses Sell Price as default unit price when available).
-2. Open the **Quote** tab.
-3. Adjust quantities and unit prices, fill customer / project / notes.
-4. **Generate Quote** opens a print-ready window with the In-Mar logo and company details. Print or Save as PDF.
+1. Add lines from Home or Scan with **Quote**.
+2. On the **Quote** tab: fill header (customer/project, dates, prepared by, status).
+3. **Save quote** stores it in Supabase (after Phase 1 SQL is run).
+4. Open from the saved list to edit; **Print / PDF** for the branded layout; **Void** instead of delete.
+5. Optional: check **Also save this name to Customers**.
 
-Quote cart is stored in the browser (survives refresh).
+Document numbers look like `Q-2026-001`. The working cart is still in the browser until you save; **quotes never change inventory qty**.
 
 ---
 
-## Inventory valuation (Reports tab)
+## 5. Reports
 
-- **Inventory at Cost** = Σ (Qty × Buy Price) — balance-sheet style asset value
-- **At Sell / Retail Value** = Σ (Qty × Sell Price)
-- **Potential Gross Margin** = Sell Value − Cost Value
+- **Inventory at Cost** = Σ (Qty × Buy Price)
+- **At Sell Price** / **Potential Margin**
+- **Adjustment report:** Generate after the `inventory_adjustments` table exists (filters: user, dates, action)
+- **Needs attention:** filter chips for out of stock, needs delivery date, low stock, open orders
 
 ---
 
 ## Tips
 
-- Leave Est. Delivery blank when unknown — the red “Needs Delivery Date” badge reminds everyone.
-- Use source filter chips on Home to keep the list uncluttered.
-- Delete obsolete parts with the red **Del** button (asks for confirmation).
-- Export JSON from More as a backup before big imports.
-- Hosted on GitHub Pages; all data lives in your Supabase project (real-time across devices).
+- Select a user every session before changing stock or saving quotes.
+- Leave Est. Delivery blank when unknown — “Needs Delivery Date” flags it.
+- Use source/category chips and Home tiles to narrow the list.
+- Export JSON from More before large imports or clears.
+- Hosted on GitHub Pages; data lives in your Supabase project (realtime across devices).
+
+---
+
+*Last updated: 2026-08-09*

@@ -38,7 +38,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 | Piece | Detail |
 |-------|--------|
 | UI | Single `index.html`, light theme |
-| Backend | Supabase JS v2, `inventory` + `inventory_adjustments` |
+| Backend | Supabase JS v2: `inventory`, `inventory_adjustments`, Phase 1 `customers` / `quotes` / `quote_lines` / `document_counters` |
 | Barcodes | JsBarcode **CODE128** of stable `barcode` field (short `IM…` codes) |
 | Camera scan | html5-qrcode; lookup by **barcode or part_number**; commit separate |
 | Hosting | GitHub Pages from `main` |
@@ -75,10 +75,22 @@ details (text)
 created_at (timestamptz)
 ```
 
-**One-time SQL** is on the **More** tab in the app (Copy SQL). Run in Supabase SQL Editor if schema status shows missing pieces.
+**One-time SQL** is on the **More** tab in the app (Copy SQL). Also `schema/quotes_phase1.sql` for quotes.
 
-App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`.  
+App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
+
+### Phase 1 sales docs (additive — safe alongside inventory)
+
+```
+customers (name, company, email, phone, notes)
+quotes (number Q-YYYY-###, customer_id?, customer_name, status, dates, prepared_by, notes, created_by)
+quote_lines (quote_id, line_no, inventory_id?, part_number, name, qty, unit_price)
+document_counters (doc_type, year, last_value)
+```
+
+Status enum (app): draft | sent | accepted | expired | void.  
+**Main branch safety:** only CREATE TABLE IF NOT EXISTS — does not drop/alter inventory. Old Pages builds ignore new tables.
 
 ---
 
@@ -106,9 +118,16 @@ If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`
 - Same form; **barcode never edited by user** — generated on create, shown as read-only hint on edit
 - Create / update / qty change on form → adjustment log
 
-### Quote
-- **Prepared By** starts **blank**
-- Add from Home or Scan
+### Quote (Phase 1 — saved quotes)
+- Working **cart** still in `localStorage` (`inv_quote`) until Save
+- **Saved Quotes** list from Supabase (status filter chips)
+- Builder: number, status (draft/sent/accepted/expired/void), dates, customer free-text, prepared by, notes, lines
+- **Save quote** / Print / Duplicate / Void (no hard delete)
+- Customer free-text + optional “Also save to Customers”
+- Document numbers: `Q-YYYY-###` via `document_counters` (fallback: max existing)
+- Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
+- **Does not change inventory qty**
+- Tables optional: if missing, inventory app still works; quote list prompts for SQL
 
 ### Labels
 - Encode short stable **`barcode`** (`IM` + 8 chars; never changes with name/PN); fallback to part_number
@@ -191,7 +210,9 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 - User runs More-tab SQL if barcode/adjustments not yet in Supabase
 - Reprint Brother labels once after barcodes backfilled (one-time migration)
 - Optional future: further Brother barcode size tuning (user asked to hold for now)
-- Stronger quotes (saved history, multi-page)
+- Phase 2 sales orders from accepted quotes
+- Phase 3 invoices; Phase 4 purchase orders
+- Quote multi-page terms / email
 - Real auth / tighter RLS
 - `config.js` + gitignore for secrets
 - Optional helper scripts: export-from-supabase, sheet-to-json, db-vs-sheet diff
@@ -211,4 +232,4 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 
 ---
 
-*Last updated: 2026-08-02 — letter-paper 8-up shelf labels; Brother print via popup (no blank die-cut feed); adjustment report under Valuation; session-only user; stable barcodes.*
+*Last updated: 2026-08-09 — Phase 1 saved quotes (Supabase); customers optional; document counters; inventory untouched by quote save; dual label print (Brother + letter 8-up).*
