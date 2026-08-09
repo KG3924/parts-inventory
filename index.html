@@ -211,63 +211,7 @@
       .stats { grid-template-columns: repeat(2, 1fr); }
       .tab { font-size: 0.65rem; padding: 0.45rem 0.2rem; }
     }
-    @media print {
-      body * { visibility: hidden !important; }
-      .print-area, .print-area * { visibility: visible !important; }
-      .print-area {
-        position: absolute; left: 0; top: 0; width: 100%;
-        background: white; padding: 0; margin: 0;
-      }
-      /* Brother DK-1201 on QL-710W: 3.5 in wide × 1.1 in high */
-      .label-block {
-        page-break-after: always;
-        page-break-inside: avoid;
-        break-inside: avoid;
-        width: 3.3in;
-        max-width: 3.3in;
-        height: 1.02in;
-        max-height: 1.02in;
-        margin: 0;
-        padding: 0.06in 0.12in 0.07in;
-        text-align: center;
-        color: #000;
-        font-family: Arial, Helvetica, sans-serif;
-        overflow: hidden;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .label-block .lbl-name,
-      .label-block .lbl-pn {
-        flex: 0 0 auto;
-        width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        line-height: 1.25;
-      }
-      .label-block .bc-wrap {
-        flex: 1 1 auto;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        max-width: 2.9in;
-        min-height: 0;
-        padding: 0.02in 0.06in;
-        box-sizing: border-box;
-      }
-      .label-block .bc-wrap svg {
-        height: 34px !important;
-        image-rendering: pixelated;
-      }
-      .label-block:last-child { page-break-after: auto; }
-      @page {
-        size: 3.5in 1.1in;
-        margin: 0.04in;
-      }
-    }
+    /* Labels print in a dedicated popup window (avoids blank DK-1201 feeds from hidden page content). */
   </style>
 </head>
 <body>
@@ -505,7 +449,7 @@
     <div id="labels" class="panel">
       <div class="card">
         <h2>Batch Print Labels</h2>
-        <p class="hint">Brother <strong>QL-710W</strong> + <strong>DK-1201</strong> (1.1&quot; × 3.5&quot;). Labels encode the <strong>stable barcode</strong> (not the part #), so reprints are not needed after name/PN edits. Print at 100% scale — do not fit to page.</p>
+        <p class="hint">Labels encode the <strong>stable barcode</strong> (not the part #). Choose a print target after generating a preview.</p>
         
         <div style="margin-bottom:0.75rem;">
           <input type="search" id="label-search" placeholder="Filter parts..." oninput="populateLabelList()" style="margin-bottom:0.5rem;">
@@ -518,15 +462,20 @@
         <div id="label-checklist" style="max-height:280px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:0.5rem; margin-bottom:1rem; background:var(--bg);"></div>
 
         <div class="btn-group">
-          <button onclick="generateBatchLabels()">Generate Selected Labels</button>
-          <button class="secondary" id="print-batch-btn" onclick="window.print()" style="display:none;">Print Now</button>
+          <button onclick="generateBatchLabels()">Generate preview</button>
         </div>
       </div>
 
       <div class="card" id="batch-preview-card" style="display:none;">
         <h2>Label Preview <span id="batch-count" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
-        <p class="hint">These will print one after another. Use your browser’s print dialog (paper size / margins) as needed.</p>
-        <div class="print-area" id="batch-label-preview" style="background:white; border-radius:8px; padding:0.5rem;"></div>
+        <p class="hint" id="label-print-hint">Preview only. Use a print button below (opens a clean print window — avoids extra blank Brother labels).</p>
+        <div class="btn-group" style="margin-bottom:0.75rem;">
+          <button type="button" id="print-brother-btn" onclick="printLabelsBrother()">Print on Brother QL (DK-1201)</button>
+          <button type="button" class="secondary" id="print-paper-btn" onclick="printLabelsPaper()">Print on letter paper (8 / sheet)</button>
+        </div>
+        <p class="hint">Brother: 1 label per die-cut (1.1&quot; × 3.5&quot;), 100% scale, no fit-to-page.<br>
+          Letter paper: <strong>8 large labels per page</strong> (2×4) for laminating / shelf tags — about 3.5&quot; × 2.4&quot; each.</p>
+        <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.5rem; border:1px solid var(--border);"></div>
       </div>
     </div>
 
@@ -1828,6 +1777,18 @@ create policy "Allow all for anon adj" on inventory_adjustments
       document.querySelectorAll('.label-check').forEach(cb => cb.checked = checked);
     }
 
+    /** Last generated label payload for print windows (avoids re-selecting). */
+    let lastLabelItems = [];
+
+    function shortLabelName(name, max) {
+      const n = name || '';
+      return n.length > max ? n.slice(0, max - 1) + '…' : n;
+    }
+    function shortLabelPn(pn, max) {
+      const n = pn || '';
+      return n.length > max ? n.slice(0, max - 1) + '…' : n;
+    }
+
     function generateBatchLabels() {
       const checked = [...document.querySelectorAll('.label-check:checked')].map(cb => cb.value);
       if (checked.length === 0) {
@@ -1835,57 +1796,36 @@ create policy "Allow all for anon adj" on inventory_adjustments
         return;
       }
       const items = checked.map(id => inventory.find(i => i.id === id)).filter(Boolean);
+      lastLabelItems = items.map(i => ({
+        id: i.id,
+        name: i.name,
+        part_number: i.part_number,
+        barcode: labelBarcodeValue(i)
+      }));
       const preview = document.getElementById('batch-label-preview');
       const card = document.getElementById('batch-preview-card');
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
-      // DK-1201 / QL-710W layout: reserved text rows (name + PN) so baselines aren't clipped;
-      // barcode sits in the middle with thick modules for thermal clarity.
+      // Screen preview (approximate DK-1201 size)
       preview.innerHTML = items.map((item, idx) => {
-        const shortName = (item.name || '').length > 38
-          ? (item.name || '').slice(0, 36) + '…'
-          : (item.name || '');
-        const pnShow = (item.part_number || '').length > 28
-          ? (item.part_number || '').slice(0, 26) + '…'
-          : (item.part_number || '');
+        const shortName = shortLabelName(item.name, 38);
+        const pnShow = shortLabelPn(item.part_number, 28);
         return `
-        <div class="label-block" style="
-          color:#000;
-          font-family: Arial, Helvetica, sans-serif;
-          text-align:center;
-          width: 3.3in;
-          max-width: 3.3in;
-          height: 1.02in;
-          margin: 0 auto 10px;
-          padding: 0.06in 0.14in 0.07in;
-          border: 1px dashed #ccc;
-          box-sizing: border-box;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          align-items: center;
-          overflow: hidden;
+        <div style="
+          color:#000; font-family:Arial,Helvetica,sans-serif; text-align:center;
+          width:3.3in; max-width:3.3in; height:1.02in; margin:0 auto 12px;
+          padding:0.06in 0.14in 0.07in; border:1px dashed #ccc; box-sizing:border-box;
+          display:flex; flex-direction:column; justify-content:space-between; align-items:center; overflow:hidden;
         ">
-          <div class="lbl-name" style="
-            flex:0 0 auto; width:100%;
-            font-weight:700; font-size:10px; line-height:1.3;
-            padding:1px 0 2px;
-            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-          ">${escapeHtml(shortName)}</div>
-          <div class="bc-wrap" style="
-            flex:1 1 auto; min-height:0; width:100%; max-width:2.9in;
-            display:flex; justify-content:center; align-items:center;
-            padding:1px 0;
-          ">
-            <svg id="bc-${idx}" style="height:34px;display:block;image-rendering:pixelated;"></svg>
+          <div style="flex:0 0 auto;width:100%;font-weight:700;font-size:10px;line-height:1.3;padding:1px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escapeHtml(shortName)}
           </div>
-          <div class="lbl-pn" style="
-            flex:0 0 auto; width:100%;
-            font-size:12px; font-weight:700; line-height:1.3;
-            letter-spacing:0.03em;
-            padding:2px 0 1px;
-            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-          ">${escapeHtml(pnShow)}</div>
+          <div style="flex:1 1 auto;min-height:0;width:100%;max-width:2.9in;display:flex;justify-content:center;align-items:center;padding:1px 0;">
+            <svg id="bc-preview-${idx}" style="height:34px;display:block;image-rendering:pixelated;"></svg>
+          </div>
+          <div style="flex:0 0 auto;width:100%;font-size:12px;font-weight:700;line-height:1.3;letter-spacing:0.03em;padding:2px 0 1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escapeHtml(pnShow)}
+          </div>
         </div>`;
       }).join('');
 
@@ -1893,8 +1833,7 @@ create policy "Allow all for anon adj" on inventory_adjustments
         const code = labelBarcodeValue(item);
         if (!code) return;
         try {
-          // Thick modules; height balanced so name + PN rows keep full baselines
-          JsBarcode(`#bc-${idx}`, code, {
+          JsBarcode(`#bc-preview-${idx}`, code, {
             format: 'CODE128',
             width: barcodeModuleWidth(code),
             height: 34,
@@ -1907,8 +1846,172 @@ create policy "Allow all for anon adj" on inventory_adjustments
       });
 
       card.style.display = 'block';
-      document.getElementById('print-batch-btn').style.display = 'inline-block';
-      showStatus(`${items.length} labels ready — thick bars; print at 100%`, 'success');
+      showStatus(`${items.length} labels ready — choose Brother or letter paper print`, 'success');
+    }
+
+    /**
+     * Print only selected labels in a clean popup.
+     * mode: 'brother' = one DK-1201 page each; 'paper' = 8 large labels per US Letter (2×4).
+     * Using a popup avoids the old bug: visibility:hidden page content still occupied layout
+     * and advanced ~10–12 blank die-cut labels on the QL-710W.
+     */
+    function printLabelsBrother() {
+      if (!lastLabelItems.length) {
+        showStatus('Generate a preview first', 'error');
+        return;
+      }
+      openLabelPrintWindow('brother', lastLabelItems);
+    }
+
+    function printLabelsPaper() {
+      if (!lastLabelItems.length) {
+        showStatus('Generate a preview first', 'error');
+        return;
+      }
+      openLabelPrintWindow('paper', lastLabelItems);
+    }
+
+    function openLabelPrintWindow(mode, items) {
+      const isBrother = mode === 'brother';
+      // Paper: 2 columns × 4 rows = 8 per letter sheet (~3.5" × 2.4" usable each with 0.5" margins)
+      const paperCss = `
+        @page { size: letter; margin: 0.45in; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #000; }
+        .sheet {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: repeat(4, 1fr);
+          gap: 0.12in;
+          width: 100%;
+          height: 10.1in;
+          page-break-after: always;
+        }
+        .sheet:last-child { page-break-after: auto; }
+        .plabel {
+          border: 1px solid #222;
+          border-radius: 4px;
+          padding: 0.12in 0.14in;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          align-items: center;
+          text-align: center;
+          overflow: hidden;
+          min-height: 0;
+        }
+        .plabel .n { font-weight: 700; font-size: 13px; line-height: 1.25; width: 100%;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 2px 0; }
+        .plabel .bc { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+          width: 100%; min-height: 0; padding: 4px 0; }
+        .plabel .bc svg { height: 56px; max-width: 100%; image-rendering: pixelated; }
+        .plabel .p { font-weight: 700; font-size: 14px; line-height: 1.25; letter-spacing: 0.03em;
+          width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 2px 0; }
+      `;
+      const brotherCss = `
+        @page { size: 3.5in 1.1in; margin: 0.04in; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; width: 3.5in; height: 1.1in; overflow: hidden; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+        .blabel {
+          width: 3.3in; height: 1.02in; margin: 0 auto;
+          padding: 0.06in 0.14in 0.07in;
+          page-break-after: always;
+          page-break-inside: avoid;
+          display: flex; flex-direction: column; justify-content: space-between; align-items: center;
+          text-align: center; overflow: hidden;
+        }
+        .blabel:last-child { page-break-after: auto; }
+        .blabel .n { font-weight: 700; font-size: 10px; line-height: 1.3; width: 100%;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 1px 0 2px; }
+        .blabel .bc { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+          width: 100%; max-width: 2.9in; min-height: 0; }
+        .blabel .bc svg { height: 34px; image-rendering: pixelated; }
+        .blabel .p { font-weight: 700; font-size: 12px; line-height: 1.3; letter-spacing: 0.03em; width: 100%;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 2px 0 1px; }
+      `;
+
+      let bodyHtml = '';
+      if (isBrother) {
+        bodyHtml = items.map((item, idx) => `
+          <div class="blabel">
+            <div class="n">${escapeHtml(shortLabelName(item.name, 38))}</div>
+            <div class="bc"><svg id="pbc-${idx}"></svg></div>
+            <div class="p">${escapeHtml(shortLabelPn(item.part_number, 28))}</div>
+          </div>`).join('');
+      } else {
+        const pages = [];
+        for (let i = 0; i < items.length; i += 8) {
+          const chunk = items.slice(i, i + 8);
+          const cells = chunk.map((item, j) => {
+            const idx = i + j;
+            return `<div class="plabel">
+              <div class="n">${escapeHtml(shortLabelName(item.name, 48))}</div>
+              <div class="bc"><svg id="pbc-${idx}"></svg></div>
+              <div class="p">${escapeHtml(shortLabelPn(item.part_number, 36))}</div>
+            </div>`;
+          }).join('');
+          // pad empty cells so grid stays aligned on last page
+          const pad = Array(Math.max(0, 8 - chunk.length)).fill('<div class="plabel" style="border:1px dashed #ccc;visibility:hidden;"></div>').join('');
+          pages.push(`<div class="sheet">${cells}${pad}</div>`);
+        }
+        bodyHtml = pages.join('');
+      }
+
+      const payload = JSON.stringify(items.map(i => ({
+        code: i.barcode || i.part_number || '',
+        len: String(i.barcode || i.part_number || '').length
+      })));
+
+      const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>Labels ${isBrother ? 'Brother DK-1201' : 'Letter 8/sheet'}</title>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+<style>${isBrother ? brotherCss : paperCss}</style>
+</head><body>
+${bodyHtml}
+<script>
+(function(){
+  var items = ${payload};
+  function modW(len) {
+    if (len <= 10) return ${isBrother ? '3.0' : '2.8'};
+    if (len <= 12) return ${isBrother ? '2.7' : '2.5'};
+    if (len <= 14) return ${isBrother ? '2.4' : '2.3'};
+    return ${isBrother ? '2.2' : '2.1'};
+  }
+  items.forEach(function(it, idx) {
+    if (!it.code) return;
+    try {
+      JsBarcode('#pbc-' + idx, it.code, {
+        format: 'CODE128',
+        width: modW(it.len),
+        height: ${isBrother ? 34 : 56},
+        displayValue: false,
+        margin: ${isBrother ? 6 : 10},
+        background: '#ffffff',
+        lineColor: '#000000'
+      });
+    } catch (e) { console.warn(e); }
+  });
+  setTimeout(function(){ window.focus(); window.print(); }, 350);
+})();
+<\/script>
+</body></html>`;
+
+      const w = window.open('', '_blank');
+      if (!w) {
+        showStatus('Pop-up blocked — allow pop-ups to print labels', 'error');
+        return;
+      }
+      w.document.write(html);
+      w.document.close();
+      showStatus(
+        isBrother
+          ? `Printing ${items.length} Brother label(s) — select QL-710W / DK-1201, scale 100%`
+          : `Printing ${items.length} shelf label(s) — ${Math.ceil(items.length / 8)} letter page(s), 8 per sheet`,
+        'success'
+      );
     }
 
     function exportData() {

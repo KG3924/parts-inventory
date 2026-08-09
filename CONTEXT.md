@@ -4,7 +4,7 @@
 
 **Local project folder:** `/Users/kylegrantham/Inmar Parts Inventory`  
 Git repo for GitHub Pages: this folder’s `.git` → `KG3924/parts-inventory` (`main`).  
-**Do not push until the user reviews** (they may request local-only changes first).
+Push to `main` when the user asks (GitHub Pages serves the live app).
 
 ---
 
@@ -110,14 +110,14 @@ If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`
 - **Prepared By** starts **blank**
 - Add from Home or Scan
 
-### Labels (QL-710W / DK-1201)
-- Encode short stable **`barcode`** (`IM` + 8 chars; never changes with name/PN)
-- Fallback to part_number only if no barcode
-- **Thick modules** (width ~2.2–3.0) so thermal bars don’t smear together — do **not** scale SVG down after render
-- Short payload keeps overall width on-label; long part # only as fallback
-- Height ~42px; quiet zone margin 8; centered on DK-1201
-- Human-readable **part number** under bars (truncated if long)
-- Print: 100% scale, no fit-to-page
+### Labels
+- Encode short stable **`barcode`** (`IM` + 8 chars; never changes with name/PN); fallback to part_number
+- **Thick modules** for thermal (no SVG scale-down after render)
+- **Print via popup window** (not `window.print()` on main page) — fixes QL-710W advancing ~10–12 blank die-cuts (old `visibility:hidden` still consumed layout height as many 1.1″ pages)
+- **Brother QL-710W / DK-1201:** one label per page, ~1.02″ high layout
+- **Letter paper (shelf/laminate):** **8 labels per page** (2×4 grid), ~3.5″ × 2.4″ each, larger barcode (height 56) for clarity
+- Preview on Labels tab → **Print on Brother** or **Print on letter paper**
+- Human-readable part number under bars
 
 ### Reports (tab order)
 1. **Inventory Valuation**
@@ -182,16 +182,19 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 - Employee name required each session for future audit reports
 - Labels must scan on QL-710W; prefer short stable barcodes over long part #s
 - Prefer not reprinting labels when only name/PN text changes
+- Shelf tags: letter paper, 8/sheet, laminate as needed
 
 ---
 
 ## Possible next work
 
 - User runs More-tab SQL if barcode/adjustments not yet in Supabase
-- Reprint labels once after barcodes backfilled (one-time migration)
+- Reprint Brother labels once after barcodes backfilled (one-time migration)
+- Optional future: further Brother barcode size tuning (user asked to hold for now)
 - Stronger quotes (saved history, multi-page)
 - Real auth / tighter RLS
 - `config.js` + gitignore for secrets
+- Optional helper scripts: export-from-supabase, sheet-to-json, db-vs-sheet diff
 
 ---
 
@@ -208,4 +211,4 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 
 ---
 
-*Last updated: 2026-08-02 — adjustment report under Valuation; label barcode max-width + quiet zones + shorter IM codes. Not pushed until user reviews.*
+*Last updated: 2026-08-02 — letter-paper 8-up shelf labels; Brother print via popup (no blank die-cut feed); adjustment report under Valuation; session-only user; stable barcodes.*
