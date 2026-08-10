@@ -473,8 +473,8 @@
           <button type="button" id="print-brother-btn" onclick="printLabelsBrother()">Print on Brother QL (DK-1201)</button>
           <button type="button" class="secondary" id="print-paper-btn" onclick="printLabelsPaper()">Print on letter paper (8 / sheet)</button>
         </div>
-        <p class="hint">Brother DK-1201: 1 QR label per die-cut (1.1&quot; × 3.5&quot;), 100% scale, no fit-to-page.<br>
-          Letter paper: <strong>8 labels per page</strong> (2×4) with larger QR for shelves/laminate.</p>
+                <p class="hint">Brother DK-1201: 1 large QR per die-cut (1.1&quot; × 3.5&quot;). Print at <strong>100% / Actual size</strong> — not Fit to Page. Screen-scan works when modules are sharp; paper fails if the printer shrinks or softens the QR.<br>
+          Letter paper: 8 large labels/sheet. Prefer phone Camera or in-app Scan with good light.</p>
         <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.5rem; border:1px solid var(--border);"></div>
       </div>
     </div>
@@ -781,26 +781,28 @@ alter table document_counters enable row level security;
 
     /**
      * Full deep-link URL for labels. Encodes stable DB key so name/PN edits do not break the QR.
+     * Uses short query key `p=` to keep the QR less dense (critical for thermal print).
      * Phone Camera opens this URL → app loads Scan UI for that part (Commit still required).
      */
     function buildPartDeepLink(item) {
       const key = stablePartKey(item);
       if (!key) return getAppBaseUrl();
-      return getAppBaseUrl() + '?part=' + encodeURIComponent(key);
+      // Prefer short param name to reduce QR module count on small labels
+      return getAppBaseUrl() + '?p=' + encodeURIComponent(key);
     }
 
-    /** Extract part key from plain text or deep-link URL (?part= / ?pn=). */
+    /** Extract part key from plain text or deep-link URL (?p= / ?part= / ?pn=). */
     function extractPartFromScanPayload(raw) {
       const s = String(raw || '').trim();
       if (!s) return '';
       try {
-        if (/^https?:\/\//i.test(s) || s.includes('?part=') || s.includes('?pn=') || s.includes('&part=') || s.includes('&pn=')) {
+        if (/^https?:\/\//i.test(s) || /[?&](p|part|pn)=/i.test(s)) {
           const u = new URL(s, window.location.href);
-          const p = u.searchParams.get('part') || u.searchParams.get('pn');
+          const p = u.searchParams.get('p') || u.searchParams.get('part') || u.searchParams.get('pn');
           if (p) return p.trim();
         }
       } catch (e) { /* fall through */ }
-      const m = s.match(/[?&](?:part|pn)=([^&\s#]+)/i);
+      const m = s.match(/[?&](?:p|part|pn)=([^&\s#]+)/i);
       if (m) {
         try { return decodeURIComponent(m[1]).trim(); } catch (e2) { return m[1].trim(); }
       }
@@ -816,20 +818,41 @@ alter table document_counters enable row level security;
       ) || null;
     }
 
-    /** Render QR into a canvas element (or replace placeholder). */
+    /**
+     * QR options tuned for thermal + laser paper.
+     * Screen is forgiving; print blurs small modules — need big modules, quiet zone, pure black.
+     */
+    const QR_PRINT_OPTS = {
+      margin: 3,
+      errorCorrectionLevel: 'H',
+      color: { dark: '#000000', light: '#ffffff' }
+    };
+
     async function renderQrToCanvas(canvasOrId, text, px) {
       const el = typeof canvasOrId === 'string' ? document.getElementById(canvasOrId) : canvasOrId;
       if (!el || !text || typeof QRCode === 'undefined') return;
-      const size = px || 96;
+      const size = px || 140;
       try {
-        await QRCode.toCanvas(el, text, {
-          width: size,
-          margin: 1,
-          errorCorrectionLevel: 'M',
-          color: { dark: '#000000', light: '#ffffff' }
-        });
+        await QRCode.toCanvas(el, text, Object.assign({ width: size }, QR_PRINT_OPTS));
+        el.style.imageRendering = 'pixelated';
+        el.style.imageRendering = 'crisp-edges';
       } catch (e) {
         console.warn('QR render failed', e);
+      }
+    }
+
+    /**
+     * High-res PNG data URL for print windows.
+     * Thermal drivers often rasterize SVG poorly; PNG modules stay solid black.
+     */
+    async function qrToPrintDataUrl(text, px) {
+      if (!text || typeof QRCode === 'undefined') return '';
+      try {
+        // Over-sample (e.g. 320px) so each module is many pixels before printer downscales
+        return await QRCode.toDataURL(text, Object.assign({ width: px || 320 }, QR_PRINT_OPTS));
+      } catch (e) {
+        console.warn('QR PNG failed', e);
+        return '';
       }
     }
 
@@ -1675,7 +1698,7 @@ alter table document_counters enable row level security;
       let part = '';
       try {
         const params = new URLSearchParams(window.location.search);
-        part = (params.get('part') || params.get('pn') || '').trim();
+        part = (params.get('p') || params.get('part') || params.get('pn') || '').trim();
       } catch (e) { return; }
       if (!part) return;
       await stopScanner();
@@ -1964,41 +1987,40 @@ alter table document_counters enable row level security;
       const card = document.getElementById('batch-preview-card');
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
-      // DK-1201 landscape: QR left, name + large part # right
+      // DK-1201: maximize QR size (thermal needs large modules); text secondary
       preview.innerHTML = lastLabelItems.map((item, idx) => {
-        const shortName = shortLabelName(item.name, 42);
-        const pnShow = shortLabelPn(item.part_number, 32);
+        const shortName = shortLabelName(item.name, 36);
+        const pnShow = shortLabelPn(item.part_number, 28);
         return `
         <div style="
           color:#000; font-family:Arial,Helvetica,sans-serif;
           width:3.3in; max-width:3.3in; height:1.02in; margin:0 auto 12px;
-          padding:0.06in 0.1in; border:1px dashed #ccc; box-sizing:border-box;
-          display:flex; flex-direction:row; align-items:center; gap:0.1in; overflow:hidden;
+          padding:0.05in 0.08in; border:1px dashed #ccc; box-sizing:border-box;
+          display:flex; flex-direction:row; align-items:center; gap:0.08in; overflow:hidden;
+          background:#fff;
         ">
-          <canvas id="bc-preview-${idx}" width="88" height="88" style="width:0.85in;height:0.85in;flex:0 0 auto;"></canvas>
-          <div style="flex:1 1 auto;min-width:0;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:4px;">
+          <canvas id="bc-preview-${idx}" width="140" height="140"
+            style="width:1.0in;height:1.0in;flex:0 0 auto;image-rendering:pixelated;image-rendering:crisp-edges;"></canvas>
+          <div style="flex:1 1 auto;min-width:0;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:3px;">
             <div style="font-weight:600;font-size:9px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;">
               ${escapeHtml(shortName)}
             </div>
-            <div style="font-weight:700;font-size:14px;line-height:1.2;letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <div style="font-weight:700;font-size:13px;line-height:1.2;letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
               ${escapeHtml(pnShow)}
             </div>
+            <div style="font-size:7px;color:#666;line-height:1.2;">Scan with phone Camera</div>
           </div>
         </div>`;
       }).join('');
 
       lastLabelItems.forEach((item, idx) => {
-        renderQrToCanvas(`bc-preview-${idx}`, item.qrUrl, 88);
+        renderQrToCanvas(`bc-preview-${idx}`, item.qrUrl, 140);
       });
 
       card.style.display = 'block';
-      showStatus(`${items.length} QR labels ready — Camera opens app to that part`, 'success');
+      showStatus(`${items.length} QR labels ready — print at 100%; thermal needs large QR`, 'success');
     }
 
-    /**
-     * Print labels in a clean popup.
-     * mode: 'brother' = one DK-1201 page each; 'paper' = 8 large labels per US Letter (2×4).
-     */
     function printLabelsBrother() {
       if (!lastLabelItems.length) {
         showStatus('Generate a preview first', 'error');
@@ -2015,70 +2037,91 @@ alter table document_counters enable row level security;
       openLabelPrintWindow('paper', lastLabelItems);
     }
 
-    function openLabelPrintWindow(mode, items) {
+    async function openLabelPrintWindow(mode, items) {
       const isBrother = mode === 'brother';
+      // High-res PNG QRs (thermal print drivers often blur SVG)
+      const qrs = [];
+      for (const item of items) {
+        const url = item.qrUrl || buildPartDeepLink(item);
+        const dataUrl = await qrToPrintDataUrl(url, isBrother ? 360 : 400);
+        qrs.push(dataUrl || '');
+      }
+
       const paperCss = `
-        @page { size: letter; margin: 0.45in; }
+        @page { size: letter; margin: 0.4in; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #000; }
+        body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #000;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
         .sheet {
           display: grid;
           grid-template-columns: 1fr 1fr;
           grid-template-rows: repeat(4, 1fr);
-          gap: 0.12in;
+          gap: 0.1in;
           width: 100%;
-          height: 10.1in;
+          height: 10.2in;
           page-break-after: always;
         }
         .sheet:last-child { page-break-after: auto; }
         .plabel {
-          border: 1px solid #222;
-          border-radius: 4px;
-          padding: 0.12in 0.14in;
+          border: 1px solid #000;
+          padding: 0.08in 0.1in;
           display: flex;
           flex-direction: row;
           align-items: center;
-          gap: 0.12in;
+          gap: 0.1in;
           overflow: hidden;
-          min-height: 0;
+          background: #fff;
         }
-        .plabel canvas { flex: 0 0 auto; width: 1.05in; height: 1.05in; }
+        .plabel .qr-img {
+          flex: 0 0 auto; width: 1.35in; height: 1.35in; display: block;
+          image-rendering: pixelated; image-rendering: crisp-edges;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
         .plabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; }
         .plabel .n { font-weight: 600; font-size: 12px; line-height: 1.25;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; color: #333; }
-        .plabel .p { font-weight: 700; font-size: 16px; line-height: 1.2; letter-spacing: 0.02em;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; color: #222; }
+        .plabel .p { font-weight: 700; font-size: 16px; line-height: 1.2;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
       const brotherCss = `
-        @page { size: 3.5in 1.1in; margin: 0.04in; }
+        @page { size: 3.5in 1.1in; margin: 0; }
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; width: 3.5in; height: 1.1in; overflow: hidden; }
-        body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #000;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
         .blabel {
-          width: 3.3in; height: 1.02in; margin: 0 auto;
-          padding: 0.06in 0.1in;
+          width: 3.5in; height: 1.1in; margin: 0;
+          padding: 0.04in 0.06in;
           page-break-after: always;
           page-break-inside: avoid;
-          display: flex; flex-direction: row; align-items: center; gap: 0.1in;
-          overflow: hidden;
+          display: flex; flex-direction: row; align-items: center; gap: 0.06in;
+          overflow: hidden; background: #fff;
         }
         .blabel:last-child { page-break-after: auto; }
-        .blabel canvas { flex: 0 0 auto; width: 0.85in; height: 0.85in; }
-        .blabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; }
-        .blabel .n { font-weight: 600; font-size: 9px; line-height: 1.25;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; color: #333; }
-        .blabel .p { font-weight: 700; font-size: 13px; line-height: 1.2; letter-spacing: 0.02em;
+        .blabel .qr-img {
+          flex: 0 0 auto; width: 1.02in; height: 1.02in; display: block;
+          image-rendering: pixelated; image-rendering: crisp-edges;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .blabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; padding-right: 0.04in; }
+        .blabel .n { font-weight: 600; font-size: 8px; line-height: 1.2;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; color: #222; }
+        .blabel .p { font-weight: 700; font-size: 12px; line-height: 1.15;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
+
+      const qrImg = (src) => src
+        ? `<img class="qr-img" src="${src}" alt="QR" width="360" height="360" />`
+        : '';
 
       let bodyHtml = '';
       if (isBrother) {
         bodyHtml = items.map((item, idx) => `
           <div class="blabel">
-            <canvas id="pbc-${idx}" width="96" height="96"></canvas>
+            ${qrImg(qrs[idx])}
             <div class="txt">
-              <div class="n">${escapeHtml(shortLabelName(item.name, 40))}</div>
-              <div class="p">${escapeHtml(shortLabelPn(item.part_number, 30))}</div>
+              <div class="n">${escapeHtml(shortLabelName(item.name, 36))}</div>
+              <div class="p">${escapeHtml(shortLabelPn(item.part_number, 28))}</div>
             </div>
           </div>`).join('');
       } else {
@@ -2088,59 +2131,40 @@ alter table document_counters enable row level security;
           const cells = chunk.map((item, j) => {
             const idx = i + j;
             return `<div class="plabel">
-              <canvas id="pbc-${idx}" width="128" height="128"></canvas>
+              ${qrImg(qrs[idx])}
               <div class="txt">
                 <div class="n">${escapeHtml(shortLabelName(item.name, 48))}</div>
                 <div class="p">${escapeHtml(shortLabelPn(item.part_number, 36))}</div>
               </div>
             </div>`;
           }).join('');
-          const pad = Array(Math.max(0, 8 - chunk.length)).fill('<div class="plabel" style="border:1px dashed #ccc;visibility:hidden;"></div>').join('');
+          const pad = Array(Math.max(0, 8 - chunk.length)).fill('<div class="plabel" style="visibility:hidden;border:none;"></div>').join('');
           pages.push(`<div class="sheet">${cells}${pad}</div>`);
         }
         bodyHtml = pages.join('');
       }
 
-      const payload = JSON.stringify(items.map(i => ({
-        url: i.qrUrl || buildPartDeepLink(i),
-      })));
-
-      const qrSize = isBrother ? 96 : 128;
-      const html = `<!DOCTYPE html>
+      const htmlDoc = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
 <title>QR Labels ${isBrother ? 'Brother DK-1201' : 'Letter 8/sheet'}</title>
-<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.js"><\/script>
 <style>${isBrother ? brotherCss : paperCss}</style>
 </head><body>
 ${bodyHtml}
 <script>
-(function(){
-  var items = ${payload};
-  var size = ${qrSize};
-  function drawAll(i) {
-    if (i >= items.length) {
-      setTimeout(function(){ window.focus(); window.print(); }, 300);
-      return;
-    }
-    var it = items[i];
-    var el = document.getElementById('pbc-' + i);
-    if (!el || !it.url || typeof QRCode === 'undefined') {
-      drawAll(i + 1);
-      return;
-    }
-    QRCode.toCanvas(el, it.url, {
-      width: size,
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#000000', light: '#ffffff' }
-    }).then(function(){ drawAll(i + 1); }).catch(function(e){
-      console.warn(e);
-      drawAll(i + 1);
+  function goPrint(){ window.focus(); window.print(); }
+  // Wait for PNG images so print dialog does not capture blank/gray boxes
+  var imgs = Array.prototype.slice.call(document.images || []);
+  if (!imgs.length) { setTimeout(goPrint, 200); }
+  else {
+    var left = imgs.length;
+    function done(){ left--; if (left <= 0) setTimeout(goPrint, 150); }
+    imgs.forEach(function(img){
+      if (img.complete) done();
+      else { img.onload = done; img.onerror = done; }
     });
+    setTimeout(goPrint, 2500);
   }
-  drawAll(0);
-})();
 <\/script>
 </body></html>`;
 
@@ -2149,12 +2173,12 @@ ${bodyHtml}
         showStatus('Pop-up blocked — allow pop-ups to print labels', 'error');
         return;
       }
-      w.document.write(html);
+      w.document.write(htmlDoc);
       w.document.close();
       showStatus(
         isBrother
-          ? `Printing ${items.length} QR label(s) — QL-710W / DK-1201, scale 100%`
-          : `Printing ${items.length} shelf QR label(s) — ${Math.ceil(items.length / 8)} letter page(s)`,
+          ? `Printing ${items.length} QR label(s) — set scale to 100% / Actual size (not Fit to Page)`
+          : `Printing ${items.length} shelf QR label(s) — ${Math.ceil(items.length / 8)} letter page(s); scale 100%`,
         'success'
       );
     }
