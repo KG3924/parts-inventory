@@ -475,7 +475,7 @@
         </div>
                 <p class="hint">Brother DK-1201: 1 large QR per die-cut (1.1&quot; × 3.5&quot;). Print at <strong>100% / Actual size</strong> — not Fit to Page. Screen-scan works when modules are sharp; paper fails if the printer shrinks or softens the QR.<br>
           Letter paper: 8 large labels/sheet. Prefer phone Camera or in-app Scan with good light.</p>
-        <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.5rem; border:1px solid var(--border);"></div>
+        <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.75rem; border:1px solid var(--border); overflow-x:auto;"></div>
       </div>
     </div>
 
@@ -1987,25 +1987,29 @@ alter table document_counters enable row level security;
       const card = document.getElementById('batch-preview-card');
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
-      // DK-1201: maximize QR size (thermal needs large modules); text secondary
-      preview.innerHTML = lastLabelItems.map((item, idx) => {
+      // Actual-size DK-1201 mock (3.5" × 1.1"). QR 0.95" leaves pad so nothing clips.
+      // Math: 1.1 − 2×0.06 pad = 0.98" content height → 0.95" QR fits with room.
+      preview.innerHTML = `
+        <p style="margin:0 0 8px;font-size:0.8rem;color:var(--muted);">
+          Actual size · Brother DK-1201 die-cut <strong>3.5&quot; × 1.1&quot;</strong> (matches print)
+        </p>` + lastLabelItems.map((item, idx) => {
         const shortName = shortLabelName(item.name, 36);
         const pnShow = shortLabelPn(item.part_number, 28);
         return `
         <div style="
           color:#000; font-family:Arial,Helvetica,sans-serif;
-          width:3.3in; max-width:3.3in; height:1.02in; margin:0 auto 12px;
-          padding:0.05in 0.08in; border:1px dashed #ccc; box-sizing:border-box;
-          display:flex; flex-direction:row; align-items:center; gap:0.08in; overflow:hidden;
-          background:#fff;
+          width:3.5in; height:1.1in; margin:0 auto 14px;
+          padding:0.06in 0.08in; border:1px dashed #999; box-sizing:border-box;
+          display:flex; flex-direction:row; align-items:center; gap:0.08in;
+          overflow:visible; background:#fff;
         ">
-          <canvas id="bc-preview-${idx}" width="140" height="140"
-            style="width:1.0in;height:1.0in;flex:0 0 auto;image-rendering:pixelated;image-rendering:crisp-edges;"></canvas>
-          <div style="flex:1 1 auto;min-width:0;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:3px;">
-            <div style="font-weight:600;font-size:9px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;">
+          <canvas id="bc-preview-${idx}" width="160" height="160"
+            style="width:0.95in;height:0.95in;flex:0 0 0.95in;image-rendering:pixelated;image-rendering:crisp-edges;"></canvas>
+          <div style="flex:1 1 auto;min-width:0;max-width:2.3in;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;">
+            <div style="font-weight:600;font-size:9px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;">
               ${escapeHtml(shortName)}
             </div>
-            <div style="font-weight:700;font-size:13px;line-height:1.2;letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <div style="font-weight:700;font-size:13px;line-height:1.15;letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
               ${escapeHtml(pnShow)}
             </div>
             <div style="font-size:7px;color:#666;line-height:1.2;">Scan with phone Camera</div>
@@ -2014,11 +2018,11 @@ alter table document_counters enable row level security;
       }).join('');
 
       lastLabelItems.forEach((item, idx) => {
-        renderQrToCanvas(`bc-preview-${idx}`, item.qrUrl, 140);
+        renderQrToCanvas(`bc-preview-${idx}`, item.qrUrl, 160);
       });
 
       card.style.display = 'block';
-      showStatus(`${items.length} QR labels ready — print at 100%; thermal needs large QR`, 'success');
+      showStatus(`${items.length} QR labels ready — preview is actual DK-1201 size; print at 100%`, 'success');
     }
 
     function printLabelsBrother() {
@@ -2083,6 +2087,7 @@ alter table document_counters enable row level security;
         .plabel .p { font-weight: 700; font-size: 16px; line-height: 1.2;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
+      // DK-1201 die-cut ≈ 3.5" × 1.1". Keep QR ≤ 0.95" so pad + modules never clip.
       const brotherCss = `
         @page { size: 3.5in 1.1in; margin: 0; }
         * { box-sizing: border-box; }
@@ -2091,22 +2096,22 @@ alter table document_counters enable row level security;
           -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
         .blabel {
           width: 3.5in; height: 1.1in; margin: 0;
-          padding: 0.04in 0.06in;
+          padding: 0.06in 0.08in;
           page-break-after: always;
           page-break-inside: avoid;
-          display: flex; flex-direction: row; align-items: center; gap: 0.06in;
+          display: flex; flex-direction: row; align-items: center; gap: 0.08in;
           overflow: hidden; background: #fff;
         }
         .blabel:last-child { page-break-after: auto; }
         .blabel .qr-img {
-          flex: 0 0 auto; width: 1.02in; height: 1.02in; display: block;
+          flex: 0 0 0.95in; width: 0.95in; height: 0.95in; display: block;
           image-rendering: pixelated; image-rendering: crisp-edges;
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
-        .blabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; padding-right: 0.04in; }
-        .blabel .n { font-weight: 600; font-size: 8px; line-height: 1.2;
+        .blabel .txt { flex: 1 1 auto; min-width: 0; max-width: 2.3in; text-align: left; overflow: hidden; }
+        .blabel .n { font-weight: 600; font-size: 9px; line-height: 1.2;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; color: #222; }
-        .blabel .p { font-weight: 700; font-size: 12px; line-height: 1.15;
+        .blabel .p { font-weight: 700; font-size: 13px; line-height: 1.15;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
 
