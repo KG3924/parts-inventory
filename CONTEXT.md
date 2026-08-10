@@ -39,8 +39,8 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 |-------|--------|
 | UI | Single `index.html`, light theme |
 | Backend | Supabase JS v2: `inventory`, `inventory_adjustments`, Phase 1 `customers` / `quotes` / `quote_lines` / `document_counters` |
-| Barcodes | JsBarcode **CODE128** of stable `barcode` field (short `IM…` codes) |
-| Camera scan | html5-qrcode; lookup by **barcode or part_number**; commit separate |
+| Labels | QR (`qrcode` CDN) deep-link `?part=` stable `barcode` ID; human part # printed beside QR |
+| Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate; deep-link `?part=` |
 | Hosting | GitHub Pages from `main` |
 | Auth | None; open RLS for trusted internal use |
 | Users | Toby, Glynn, Ricky, Grant, Kyle — must select each session |
@@ -129,14 +129,16 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Does not change inventory qty**
 - Tables optional: if missing, inventory app still works; quote list prompts for SQL
 
-### Labels
-- Encode short stable **`barcode`** (`IM` + 8 chars; never changes with name/PN); fallback to part_number
-- **Thick modules** for thermal (no SVG scale-down after render)
-- **Print via popup window** (not `window.print()` on main page) — fixes QL-710W advancing ~10–12 blank die-cuts (old `visibility:hidden` still consumed layout height as many 1.1″ pages)
-- **Brother QL-710W / DK-1201:** one label per page, ~1.02″ high layout
-- **Letter paper (shelf/laminate):** **8 labels per page** (2×4 grid), ~3.5″ × 2.4″ each, larger barcode (height 56) for clarity
-- Preview on Labels tab → **Print on Brother** or **Print on letter paper**
-- Human-readable part number under bars
+### Labels (QR deep-links)
+- QR codes (library: `qrcode` CDN), **not** Code 128
+- QR payload = full app URL + `?part=` **stable label ID** (`inventory.barcode`, e.g. `IM…`) — **does not change** when name or part # is edited
+- Fallback key is `part_number` only if barcode column/value missing
+- Phone **Camera** opens the URL → app deep-links to Scan UI for that part (**Commit** still required)
+- In-app scanner: if decoded text is a URL with `part`/`pn`, extract key; else treat as plain ID/part #
+- Lookup matches `barcode` **or** `part_number` (case-insensitive)
+- Layout DK-1201: horizontal — QR left (~0.85″), name small + **large part #** right
+- Print via **popup** (Brother one-per-page; letter paper 8-up with larger QR)
+- Deep link on load: read `?part=` / `?pn=`, open Scan found card, `history.replaceState` cleans URL
 
 ### Reports (tab order)
 1. **Inventory Valuation**
@@ -232,4 +234,4 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 
 ---
 
-*Last updated: 2026-08-09 — Phase 1 saved quotes (Supabase); customers optional; document counters; inventory untouched by quote save; dual label print (Brother + letter 8-up).*
+*Last updated: 2026-08-09 — QR deep-link labels (?part= stable barcode ID); Camera app opens Scan with Commit.*

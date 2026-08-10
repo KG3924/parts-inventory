@@ -4,7 +4,7 @@
 
 Phone-friendly inventory tracker for **In-Mar Systems** with live remote access, barcode scanning, labels, quotes, and basic reports.
 
-**Labels encode a stable barcode** (short Code 128 value stored on each part). The human-readable **part number** is shown on the label but is not what the barcode encodes (unless the barcode column is missing).
+**Labels use QR codes** that deep-link into the app (`?part=` + stable label ID). The printed part number is human-readable text; the QR stays valid when name/part # change.
 
 ---
 
@@ -17,7 +17,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **Add / Edit** | Name, part #, qty, reorder, buy/sell, source, category, location, notes, open order (order date, est. delivery, qty ordered) |
 | **Quote** | Cart (browser) + **saved quotes in Supabase** (when tables are installed): list by status, open/edit, save, duplicate, void, print branded PDF; free-text customer with optional save to **Customers** |
 | **Reports** | Inventory valuation; **adjustment report** (who/when/action — needs adjustments table); items needing attention with filters (Out of Stock, Needs Delivery Date, Low, Open Orders) |
-| **Labels** | Select parts → preview → **Print on Brother QL (DK-1201)** or **Print on letter paper (8 per sheet)** for shelves/laminate |
+| **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
 | **More** | Export/Import JSON; connection + schema status; setup SQL; clear all inventory |
 
 **Users (required before changes):** Toby, Glynn, Ricky, Grant, Kyle — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes.
@@ -74,21 +74,28 @@ Use **More → Import JSON**.
 
 ---
 
-## 3. Labels
+## 3. Labels (QR deep-links)
+
+Labels use a **QR code** that opens the live app with a query parameter, e.g.  
+`https://kg3924.github.io/parts-inventory/?part=IMXXXXXXXX`
+
+The value is the part’s **stable label ID** (`barcode` in Supabase), not the human part number — so renaming a part does **not** require reprinting. Name and part # still print as text next to the QR.
 
 ### Brother QL-710W + DK-1201
 - Size: **1.1″ high × 3.5″ wide**
-- Labels tab → select parts → **Generate preview** → **Print on Brother QL (DK-1201)**
-- Print dialog: media **DK-1201**, scale **100%**, no fit-to-page, no headers/footers
-- Each die-cut is its own page (print opens a clean popup so extra blank labels are not fed)
-
-Each label shows: **name**, **Code 128 of the stable barcode**, **part number text**.
+- Labels → select → **Generate preview** → **Print on Brother QL (DK-1201)**
+- Print: media **DK-1201**, scale **100%**, no fit-to-page
+- One die-cut per page (popup print window)
 
 ### Letter paper (shelves / laminate)
-- Same preview → **Print on letter paper (8 / sheet)**
-- **2×4 grid** on US Letter (~3.5″ × 2.4″ each), larger barcode for readability
+- **Print on letter paper (8 / sheet)** — 2×4 grid, larger QR
+
+### Scanning
+1. **Phone Camera app** → opens the web app → Scan screen with that part → choose action/qty → **Commit change**
+2. **In-app scanner** → reads the same QR (or a plain part number) → same Commit flow
 
 ---
+
 
 ## 4. Quotes
 
@@ -121,4 +128,4 @@ Document numbers look like `Q-2026-001`. The working cart is still in the browse
 
 ---
 
-*Last updated: 2026-08-09*
+*Last updated: 2026-08-09 — QR deep-link labels*

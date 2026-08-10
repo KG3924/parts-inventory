@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Parts Inventory – Remote</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     :root {
@@ -280,7 +280,7 @@
     <div id="scan" class="panel">
       <div class="card">
         <h2>Phone Camera Scan</h2>
-        <p class="hint">Scan a barcode or type a part number. The camera stops when an item is found so you can review notes, edit the full record, or commit a qty change.</p>
+        <p class="hint">Scan a QR label or type a part number / label ID. Camera stops when found — review notes and <strong>Commit change</strong> before qty updates. Phone Camera app can also open QR deep-links into this screen.</p>
         <div id="reader"></div>
         <div class="btn-group">
           <button id="start-scan-btn" onclick="startScanner()">Start Camera</button>
@@ -307,9 +307,9 @@
         <input type="hidden" id="edit-id">
         <label>Part Name *</label>
         <input type="text" id="item-name" placeholder="e.g. Hydraulic Fitting 1/2&quot;">
-        <label>Part Number / SKU * (becomes the barcode)</label>
+        <label>Part Number / SKU *</label>
         <input type="text" id="item-barcode" placeholder="Existing part # – letters & numbers OK">
-        <p class="hint">Encoded as Code 128. No new numbers created.</p>
+        <p class="hint">Human part # (no spaces). Labels use a separate stable QR ID that does not change when you edit the name or part #.</p>
         <div class="row">
           <div>
             <label>Quantity on Hand</label>
@@ -449,7 +449,7 @@
     <div id="labels" class="panel">
       <div class="card">
         <h2>Batch Print Labels</h2>
-        <p class="hint">Labels encode the <strong>stable barcode</strong> (not the part #). Choose a print target after generating a preview.</p>
+        <p class="hint">Labels use a <strong>QR code deep-link</strong> to this app (stable ID in the URL). Phone <strong>Camera</strong> opens the part ready to Commit qty. In-app scanner also reads these QR codes. Part name/number on the label can change later without reprinting.</p>
         
         <div style="margin-bottom:0.75rem;">
           <input type="search" id="label-search" placeholder="Filter parts..." oninput="populateLabelList()" style="margin-bottom:0.5rem;">
@@ -473,8 +473,8 @@
           <button type="button" id="print-brother-btn" onclick="printLabelsBrother()">Print on Brother QL (DK-1201)</button>
           <button type="button" class="secondary" id="print-paper-btn" onclick="printLabelsPaper()">Print on letter paper (8 / sheet)</button>
         </div>
-        <p class="hint">Brother: 1 label per die-cut (1.1&quot; × 3.5&quot;), 100% scale, no fit-to-page.<br>
-          Letter paper: <strong>8 large labels per page</strong> (2×4) for laminating / shelf tags — about 3.5&quot; × 2.4&quot; each.</p>
+        <p class="hint">Brother DK-1201: 1 QR label per die-cut (1.1&quot; × 3.5&quot;), 100% scale, no fit-to-page.<br>
+          Letter paper: <strong>8 labels per page</strong> (2×4) with larger QR for shelves/laminate.</p>
         <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.5rem; border:1px solid var(--border);"></div>
       </div>
     </div>
@@ -740,8 +740,8 @@ alter table document_counters enable row level security;
     })();
 
     /**
-     * Stable short CODE128-friendly barcode that never changes with name/PN edits.
-     * Keep short (IM + 8) so bars stay within label margins on QL-710W / DK-1201.
+     * Stable short ID stored in inventory.barcode — never changes when name/part # is edited.
+     * Used as the QR deep-link key (?part=ID) so labels stay valid after renames.
      */
     function generateBarcode() {
       const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -756,26 +756,81 @@ alter table document_counters enable row level security;
       return s;
     }
 
-    function labelBarcodeValue(item) {
-      // Prefer stable short barcode; fall back to part # only if no barcode column/value
-      if (item?.barcode) return item.barcode;
-      return item?.part_number || '';
+    /** Stable key for QR / lookup: DB barcode first, else part_number. */
+    function stablePartKey(item) {
+      if (!item) return '';
+      return String(item.barcode || item.part_number || '').trim();
+    }
+
+    /** App base URL (works on GitHub Pages and local file/server). */
+    function getAppBaseUrl() {
+      const origin = window.location.origin;
+      let path = window.location.pathname || '/';
+      path = path.replace(/index\.html$/i, '');
+      if (!path.endsWith('/')) {
+        const seg = path.split('/').pop() || '';
+        if (seg.includes('.')) path = path.slice(0, path.lastIndexOf('/') + 1);
+        else path = path + '/';
+      }
+      // file:// origin is "null" string in some browsers
+      if (!origin || origin === 'null') {
+        return 'https://kg3924.github.io/parts-inventory/';
+      }
+      return origin + path;
     }
 
     /**
-     * Module width = thickness of each bar/gap.
-     * Thermal QL-710W needs thicker modules so black bars don't smear together.
-     * Prefer short stable barcodes (IM+8) so total width stays on the label
-     * without shrinking (shrinking makes bars thin again).
+     * Full deep-link URL for labels. Encodes stable DB key so name/PN edits do not break the QR.
+     * Phone Camera opens this URL → app loads Scan UI for that part (Commit still required).
      */
-    function barcodeModuleWidth(code) {
-      const len = String(code || '').length;
-      // Short stable codes → thick modules (best for Brother thermal)
-      if (len <= 10) return 3.0;
-      if (len <= 12) return 2.7;
-      if (len <= 14) return 2.4;
-      // Long part # fallback only — still thicker than old 1.6
-      return 2.2;
+    function buildPartDeepLink(item) {
+      const key = stablePartKey(item);
+      if (!key) return getAppBaseUrl();
+      return getAppBaseUrl() + '?part=' + encodeURIComponent(key);
+    }
+
+    /** Extract part key from plain text or deep-link URL (?part= / ?pn=). */
+    function extractPartFromScanPayload(raw) {
+      const s = String(raw || '').trim();
+      if (!s) return '';
+      try {
+        if (/^https?:\/\//i.test(s) || s.includes('?part=') || s.includes('?pn=') || s.includes('&part=') || s.includes('&pn=')) {
+          const u = new URL(s, window.location.href);
+          const p = u.searchParams.get('part') || u.searchParams.get('pn');
+          if (p) return p.trim();
+        }
+      } catch (e) { /* fall through */ }
+      const m = s.match(/[?&](?:part|pn)=([^&\s#]+)/i);
+      if (m) {
+        try { return decodeURIComponent(m[1]).trim(); } catch (e2) { return m[1].trim(); }
+      }
+      return s;
+    }
+
+    function findInventoryByKey(key) {
+      const k = String(key || '').trim().toLowerCase();
+      if (!k) return null;
+      return inventory.find(i =>
+        (i.barcode || '').toLowerCase() === k ||
+        (i.part_number || '').toLowerCase() === k
+      ) || null;
+    }
+
+    /** Render QR into a canvas element (or replace placeholder). */
+    async function renderQrToCanvas(canvasOrId, text, px) {
+      const el = typeof canvasOrId === 'string' ? document.getElementById(canvasOrId) : canvasOrId;
+      if (!el || !text || typeof QRCode === 'undefined') return;
+      const size = px || 96;
+      try {
+        await QRCode.toCanvas(el, text, {
+          width: size,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+          color: { dark: '#000000', light: '#ffffff' }
+        });
+      } catch (e) {
+        console.warn('QR render failed', e);
+      }
     }
 
     async function logAdjustment({ inventory_id, part_number, name, action, qty_before, qty_after, details }) {
@@ -1103,7 +1158,7 @@ alter table document_counters enable row level security;
           <td>
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
-            ${i.barcode ? `<br><small style="color:var(--muted)">BC: ${escapeHtml(i.barcode)}</small>` : ''}
+            ${i.barcode ? `<br><small style="color:var(--muted)">ID: ${escapeHtml(i.barcode)}</small>` : ''}
             ${meta.length ? `<div class="meta-line">${meta.join('')}</div>` : ''}
             ${i.location ? '<small style="color:var(--muted)">' + escapeHtml(i.location) + '</small>' : ''}
           </td>
@@ -1494,7 +1549,7 @@ alter table document_counters enable row level security;
       document.getElementById('item-open-order').checked = false;
       const bcHint = document.getElementById('item-stable-barcode-hint');
       if (bcHint) bcHint.textContent = hasBarcodeColumn
-        ? 'A stable label barcode is assigned automatically when the part is created.'
+        ? 'A stable label ID is assigned when the part is created and used in QR deep-links.'
         : '';
       toggleOrderFields();
     }
@@ -1528,8 +1583,8 @@ alter table document_counters enable row level security;
         if (notes?.parentNode) notes.parentNode.insertBefore(bcHint, notes);
       }
       bcHint.textContent = item.barcode
-        ? `Stable label barcode: ${item.barcode} (does not change when name/part # is edited)`
-        : (hasBarcodeColumn ? 'Stable barcode will be assigned on next save/load if missing.' : '');
+        ? `Stable label ID: ${item.barcode} — QR deep-link key (unchanged if you edit name or part #)`
+        : (hasBarcodeColumn ? 'Stable label ID will be assigned on next save/load if missing (used in QR codes).' : '');
       toggleOrderFields();
       document.querySelector('[data-tab="add"]').click();
       setTimeout(() => {
@@ -1566,32 +1621,34 @@ alter table document_counters enable row level security;
     let lastScannedCode = null;
 
     // Lookup only — does NOT change inventory until Commit
-    async function processScan(code) {
+    async function processScan(rawCode) {
+      if (!rawCode) return;
+      const extracted = extractPartFromScanPayload(rawCode);
+      const code = String(extracted || rawCode).trim();
       if (!code) return;
-      code = String(code).trim();
       // Ignore rapid duplicate reads from the same camera session
       if (scanning && code === lastScannedCode) return;
       lastScannedCode = code;
 
-      const codeLower = code.toLowerCase();
-      const item = inventory.find(i =>
-        (i.barcode || '').toLowerCase() === codeLower ||
-        (i.part_number || '').toLowerCase() === codeLower
-      );
+      const item = findInventoryByKey(code);
       const resultEl = document.getElementById('scan-result');
 
       // Stop camera so the user can focus on the result
       await stopScanner();
 
+      // Ensure Scan tab is visible (deep links + after camera stop)
+      showScanTab();
+
       if (!item) {
         pendingScanItem = null;
+        const safe = escapeHtml(code).replace(/'/g, '&#39;');
         resultEl.innerHTML = `
           <div class="scan-result-card">
             <p style="margin:0 0 0.5rem;"><strong>Unknown part</strong></p>
             <code style="font-size:0.95rem;">${escapeHtml(code)}</code>
             <p style="font-size:0.85rem;color:var(--muted);margin:0.75rem 0 0.5rem;">Not in inventory yet.</p>
             <div class="btn-group">
-              <button onclick="prefillNew('${escapeHtml(code)}')">Add this part</button>
+              <button onclick="prefillNew('${safe}')">Add this part</button>
               <button class="secondary" onclick="startScanner()">Scan again</button>
             </div>
           </div>`;
@@ -1602,6 +1659,35 @@ alter table document_counters enable row level security;
       pendingScanItem = item;
       renderScanFoundCard(item);
       resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function showScanTab() {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      const tab = document.querySelector('[data-tab="scan"]');
+      const panel = document.getElementById('scan');
+      if (tab) tab.classList.add('active');
+      if (panel) panel.classList.add('active');
+    }
+
+    /** Handle ?part= / ?pn= deep links from phone Camera QR scans. */
+    async function handleDeepLinkPart() {
+      let part = '';
+      try {
+        const params = new URLSearchParams(window.location.search);
+        part = (params.get('part') || params.get('pn') || '').trim();
+      } catch (e) { return; }
+      if (!part) return;
+      await stopScanner();
+      showScanTab();
+      // Allow same code even if lastScannedCode set
+      lastScannedCode = null;
+      await processScan(part);
+      // Clean query so refresh does not re-fire; keep path for Pages
+      try {
+        const clean = window.location.pathname + (window.location.hash || '');
+        history.replaceState({}, document.title, clean || '/');
+      } catch (e2) { /* ignore */ }
     }
 
     function renderScanFoundCard(item) {
@@ -1622,7 +1708,7 @@ alter table document_counters enable row level security;
           </div>
           <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.15rem;">${escapeHtml(item.name)}</div>
           <code style="font-size:0.9rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
-          ${item.barcode ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">Label BC: <code>${escapeHtml(item.barcode)}</code></div>` : ''}
+          ${item.barcode ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">Label ID: <code>${escapeHtml(item.barcode)}</code> (QR deep-link)</div>` : ''}
           <div class="meta-line" style="margin-top:0.35rem;">
             ${item.source ? `<span class="badge source-tag">${escapeHtml(item.source)}</span>` : ''}
             ${item.category ? `<span class="badge category">${escapeHtml(item.category)}</span>` : ''}
@@ -1835,7 +1921,7 @@ alter table document_counters enable row level security;
           <span>
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
-            ${i.barcode ? `<br><small style="color:var(--muted)">BC ${escapeHtml(i.barcode)}</small>` : ''}
+            ${i.barcode ? `<br><small style="color:var(--muted)">ID ${escapeHtml(i.barcode)}</small>` : ''}
           </span>
         </label>
       `).join('');
@@ -1871,60 +1957,47 @@ alter table document_counters enable row level security;
         id: i.id,
         name: i.name,
         part_number: i.part_number,
-        barcode: labelBarcodeValue(i)
+        barcode: stablePartKey(i),
+        qrUrl: buildPartDeepLink(i)
       }));
       const preview = document.getElementById('batch-label-preview');
       const card = document.getElementById('batch-preview-card');
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
-      // Screen preview (approximate DK-1201 size)
-      preview.innerHTML = items.map((item, idx) => {
-        const shortName = shortLabelName(item.name, 38);
-        const pnShow = shortLabelPn(item.part_number, 28);
+      // DK-1201 landscape: QR left, name + large part # right
+      preview.innerHTML = lastLabelItems.map((item, idx) => {
+        const shortName = shortLabelName(item.name, 42);
+        const pnShow = shortLabelPn(item.part_number, 32);
         return `
         <div style="
-          color:#000; font-family:Arial,Helvetica,sans-serif; text-align:center;
+          color:#000; font-family:Arial,Helvetica,sans-serif;
           width:3.3in; max-width:3.3in; height:1.02in; margin:0 auto 12px;
-          padding:0.06in 0.14in 0.07in; border:1px dashed #ccc; box-sizing:border-box;
-          display:flex; flex-direction:column; justify-content:space-between; align-items:center; overflow:hidden;
+          padding:0.06in 0.1in; border:1px dashed #ccc; box-sizing:border-box;
+          display:flex; flex-direction:row; align-items:center; gap:0.1in; overflow:hidden;
         ">
-          <div style="flex:0 0 auto;width:100%;font-weight:700;font-size:10px;line-height:1.3;padding:1px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${escapeHtml(shortName)}
-          </div>
-          <div style="flex:1 1 auto;min-height:0;width:100%;max-width:2.9in;display:flex;justify-content:center;align-items:center;padding:1px 0;">
-            <svg id="bc-preview-${idx}" style="height:34px;display:block;image-rendering:pixelated;"></svg>
-          </div>
-          <div style="flex:0 0 auto;width:100%;font-size:12px;font-weight:700;line-height:1.3;letter-spacing:0.03em;padding:2px 0 1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${escapeHtml(pnShow)}
+          <canvas id="bc-preview-${idx}" width="88" height="88" style="width:0.85in;height:0.85in;flex:0 0 auto;"></canvas>
+          <div style="flex:1 1 auto;min-width:0;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:4px;">
+            <div style="font-weight:600;font-size:9px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;">
+              ${escapeHtml(shortName)}
+            </div>
+            <div style="font-weight:700;font-size:14px;line-height:1.2;letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${escapeHtml(pnShow)}
+            </div>
           </div>
         </div>`;
       }).join('');
 
-      items.forEach((item, idx) => {
-        const code = labelBarcodeValue(item);
-        if (!code) return;
-        try {
-          JsBarcode(`#bc-preview-${idx}`, code, {
-            format: 'CODE128',
-            width: barcodeModuleWidth(code),
-            height: 34,
-            displayValue: false,
-            margin: 6,
-            background: '#ffffff',
-            lineColor: '#000000'
-          });
-        } catch (e) { console.warn('Barcode error', code, e); }
+      lastLabelItems.forEach((item, idx) => {
+        renderQrToCanvas(`bc-preview-${idx}`, item.qrUrl, 88);
       });
 
       card.style.display = 'block';
-      showStatus(`${items.length} labels ready — choose Brother or letter paper print`, 'success');
+      showStatus(`${items.length} QR labels ready — Camera opens app to that part`, 'success');
     }
 
     /**
-     * Print only selected labels in a clean popup.
+     * Print labels in a clean popup.
      * mode: 'brother' = one DK-1201 page each; 'paper' = 8 large labels per US Letter (2×4).
-     * Using a popup avoids the old bug: visibility:hidden page content still occupied layout
-     * and advanced ~10–12 blank die-cut labels on the QL-710W.
      */
     function printLabelsBrother() {
       if (!lastLabelItems.length) {
@@ -1944,7 +2017,6 @@ alter table document_counters enable row level security;
 
     function openLabelPrintWindow(mode, items) {
       const isBrother = mode === 'brother';
-      // Paper: 2 columns × 4 rows = 8 per letter sheet (~3.5" × 2.4" usable each with 0.5" margins)
       const paperCss = `
         @page { size: letter; margin: 0.45in; }
         * { box-sizing: border-box; }
@@ -1964,20 +2036,18 @@ alter table document_counters enable row level security;
           border-radius: 4px;
           padding: 0.12in 0.14in;
           display: flex;
-          flex-direction: column;
-          justify-content: space-between;
+          flex-direction: row;
           align-items: center;
-          text-align: center;
+          gap: 0.12in;
           overflow: hidden;
           min-height: 0;
         }
-        .plabel .n { font-weight: 700; font-size: 13px; line-height: 1.25; width: 100%;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 2px 0; }
-        .plabel .bc { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
-          width: 100%; min-height: 0; padding: 4px 0; }
-        .plabel .bc svg { height: 56px; max-width: 100%; image-rendering: pixelated; }
-        .plabel .p { font-weight: 700; font-size: 14px; line-height: 1.25; letter-spacing: 0.03em;
-          width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 2px 0; }
+        .plabel canvas { flex: 0 0 auto; width: 1.05in; height: 1.05in; }
+        .plabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; }
+        .plabel .n { font-weight: 600; font-size: 12px; line-height: 1.25;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; color: #333; }
+        .plabel .p { font-weight: 700; font-size: 16px; line-height: 1.2; letter-spacing: 0.02em;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
       const brotherCss = `
         @page { size: 3.5in 1.1in; margin: 0.04in; }
@@ -1986,29 +2056,30 @@ alter table document_counters enable row level security;
         body { font-family: Arial, Helvetica, sans-serif; color: #000; }
         .blabel {
           width: 3.3in; height: 1.02in; margin: 0 auto;
-          padding: 0.06in 0.14in 0.07in;
+          padding: 0.06in 0.1in;
           page-break-after: always;
           page-break-inside: avoid;
-          display: flex; flex-direction: column; justify-content: space-between; align-items: center;
-          text-align: center; overflow: hidden;
+          display: flex; flex-direction: row; align-items: center; gap: 0.1in;
+          overflow: hidden;
         }
         .blabel:last-child { page-break-after: auto; }
-        .blabel .n { font-weight: 700; font-size: 10px; line-height: 1.3; width: 100%;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 1px 0 2px; }
-        .blabel .bc { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
-          width: 100%; max-width: 2.9in; min-height: 0; }
-        .blabel .bc svg { height: 34px; image-rendering: pixelated; }
-        .blabel .p { font-weight: 700; font-size: 12px; line-height: 1.3; letter-spacing: 0.03em; width: 100%;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 0 auto; padding: 2px 0 1px; }
+        .blabel canvas { flex: 0 0 auto; width: 0.85in; height: 0.85in; }
+        .blabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; }
+        .blabel .n { font-weight: 600; font-size: 9px; line-height: 1.25;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; color: #333; }
+        .blabel .p { font-weight: 700; font-size: 13px; line-height: 1.2; letter-spacing: 0.02em;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
 
       let bodyHtml = '';
       if (isBrother) {
         bodyHtml = items.map((item, idx) => `
           <div class="blabel">
-            <div class="n">${escapeHtml(shortLabelName(item.name, 38))}</div>
-            <div class="bc"><svg id="pbc-${idx}"></svg></div>
-            <div class="p">${escapeHtml(shortLabelPn(item.part_number, 28))}</div>
+            <canvas id="pbc-${idx}" width="96" height="96"></canvas>
+            <div class="txt">
+              <div class="n">${escapeHtml(shortLabelName(item.name, 40))}</div>
+              <div class="p">${escapeHtml(shortLabelPn(item.part_number, 30))}</div>
+            </div>
           </div>`).join('');
       } else {
         const pages = [];
@@ -2017,12 +2088,13 @@ alter table document_counters enable row level security;
           const cells = chunk.map((item, j) => {
             const idx = i + j;
             return `<div class="plabel">
-              <div class="n">${escapeHtml(shortLabelName(item.name, 48))}</div>
-              <div class="bc"><svg id="pbc-${idx}"></svg></div>
-              <div class="p">${escapeHtml(shortLabelPn(item.part_number, 36))}</div>
+              <canvas id="pbc-${idx}" width="128" height="128"></canvas>
+              <div class="txt">
+                <div class="n">${escapeHtml(shortLabelName(item.name, 48))}</div>
+                <div class="p">${escapeHtml(shortLabelPn(item.part_number, 36))}</div>
+              </div>
             </div>`;
           }).join('');
-          // pad empty cells so grid stays aligned on last page
           const pad = Array(Math.max(0, 8 - chunk.length)).fill('<div class="plabel" style="border:1px dashed #ccc;visibility:hidden;"></div>').join('');
           pages.push(`<div class="sheet">${cells}${pad}</div>`);
         }
@@ -2030,42 +2102,44 @@ alter table document_counters enable row level security;
       }
 
       const payload = JSON.stringify(items.map(i => ({
-        code: i.barcode || i.part_number || '',
-        len: String(i.barcode || i.part_number || '').length
+        url: i.qrUrl || buildPartDeepLink(i),
       })));
 
+      const qrSize = isBrother ? 96 : 128;
       const html = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
-<title>Labels ${isBrother ? 'Brother DK-1201' : 'Letter 8/sheet'}</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+<title>QR Labels ${isBrother ? 'Brother DK-1201' : 'Letter 8/sheet'}</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.js"><\/script>
 <style>${isBrother ? brotherCss : paperCss}</style>
 </head><body>
 ${bodyHtml}
 <script>
 (function(){
   var items = ${payload};
-  function modW(len) {
-    if (len <= 10) return ${isBrother ? '3.0' : '2.8'};
-    if (len <= 12) return ${isBrother ? '2.7' : '2.5'};
-    if (len <= 14) return ${isBrother ? '2.4' : '2.3'};
-    return ${isBrother ? '2.2' : '2.1'};
+  var size = ${qrSize};
+  function drawAll(i) {
+    if (i >= items.length) {
+      setTimeout(function(){ window.focus(); window.print(); }, 300);
+      return;
+    }
+    var it = items[i];
+    var el = document.getElementById('pbc-' + i);
+    if (!el || !it.url || typeof QRCode === 'undefined') {
+      drawAll(i + 1);
+      return;
+    }
+    QRCode.toCanvas(el, it.url, {
+      width: size,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#ffffff' }
+    }).then(function(){ drawAll(i + 1); }).catch(function(e){
+      console.warn(e);
+      drawAll(i + 1);
+    });
   }
-  items.forEach(function(it, idx) {
-    if (!it.code) return;
-    try {
-      JsBarcode('#pbc-' + idx, it.code, {
-        format: 'CODE128',
-        width: modW(it.len),
-        height: ${isBrother ? 34 : 56},
-        displayValue: false,
-        margin: ${isBrother ? 6 : 10},
-        background: '#ffffff',
-        lineColor: '#000000'
-      });
-    } catch (e) { console.warn(e); }
-  });
-  setTimeout(function(){ window.focus(); window.print(); }, 350);
+  drawAll(0);
 })();
 <\/script>
 </body></html>`;
@@ -2079,8 +2153,8 @@ ${bodyHtml}
       w.document.close();
       showStatus(
         isBrother
-          ? `Printing ${items.length} Brother label(s) — select QL-710W / DK-1201, scale 100%`
-          : `Printing ${items.length} shelf label(s) — ${Math.ceil(items.length / 8)} letter page(s), 8 per sheet`,
+          ? `Printing ${items.length} QR label(s) — QL-710W / DK-1201, scale 100%`
+          : `Printing ${items.length} shelf QR label(s) — ${Math.ceil(items.length / 8)} letter page(s)`,
         'success'
       );
     }
@@ -2691,7 +2765,12 @@ ${bodyHtml}
     });
 
     if (isConfigured) {
-      loadInventory().then(() => subscribeRealtime());
+      loadInventory()
+        .then(() => subscribeRealtime())
+        .then(() => handleDeepLinkPart());
+    } else {
+      // Still try deep link message if offline/unconfigured
+      handleDeepLinkPart();
     }
   </script>
 </body>
