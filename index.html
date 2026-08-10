@@ -832,8 +832,17 @@ alter table document_counters enable row level security;
       const el = typeof canvasOrId === 'string' ? document.getElementById(canvasOrId) : canvasOrId;
       if (!el || !text || typeof QRCode === 'undefined') return;
       const size = px || 140;
+      // Preserve CSS box size — QRCode.toCanvas overwrites width/height attributes and can
+      // make the canvas paint at full pixel size if style is lost.
+      const cssW = el.style.width || el.getAttribute('data-css-w') || '';
+      const cssH = el.style.height || el.getAttribute('data-css-h') || '';
       try {
         await QRCode.toCanvas(el, text, Object.assign({ width: size }, QR_PRINT_OPTS));
+        if (cssW) el.style.width = cssW;
+        if (cssH) el.style.height = cssH;
+        el.style.maxWidth = cssW || '100%';
+        el.style.maxHeight = cssH || '100%';
+        el.style.display = 'block';
         el.style.imageRendering = 'pixelated';
         el.style.imageRendering = 'crisp-edges';
       } catch (e) {
@@ -1987,25 +1996,45 @@ alter table document_counters enable row level security;
       const card = document.getElementById('batch-preview-card');
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
-      // Actual-size DK-1201 mock (3.5" × 1.1"). QR 0.95" leaves pad so nothing clips.
-      // Math: 1.1 − 2×0.06 pad = 0.98" content height → 0.95" QR fits with room.
+      // Actual-size DK-1201 mock. Use <img> PNG (same as print) so canvas pixel size cannot spill out.
+      // Geometry: 3.5" × 1.1" die-cut, 0.06" pad → 0.95" QR + text fits inside dashed zone.
       preview.innerHTML = `
-        <p style="margin:0 0 8px;font-size:0.8rem;color:var(--muted);">
-          Actual size · Brother DK-1201 die-cut <strong>3.5&quot; × 1.1&quot;</strong> (matches print)
-        </p>` + lastLabelItems.map((item, idx) => {
+        <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.35;">
+          Actual size · Brother DK-1201 die-cut <strong>3.5&quot; × 1.1&quot;</strong> (matches print layout)
+        </p>
+        <div id="batch-label-frames"></div>`;
+
+      const frames = document.getElementById('batch-label-frames');
+      frames.innerHTML = lastLabelItems.map((item, idx) => {
         const shortName = shortLabelName(item.name, 36);
         const pnShow = shortLabelPn(item.part_number, 28);
         return `
-        <div style="
+        <div class="dk1201-preview" style="
           color:#000; font-family:Arial,Helvetica,sans-serif;
-          width:3.5in; height:1.1in; margin:0 auto 14px;
-          padding:0.06in 0.08in; border:1px dashed #999; box-sizing:border-box;
+          width:3.5in; height:1.1in; max-width:100%;
+          margin:0 auto 14px;
+          padding:0.06in 0.08in;
+          border:1px dashed #999;
+          box-sizing:border-box;
           display:flex; flex-direction:row; align-items:center; gap:0.08in;
-          overflow:visible; background:#fff;
+          overflow:hidden; background:#fff;
         ">
-          <canvas id="bc-preview-${idx}" width="160" height="160"
-            style="width:0.95in;height:0.95in;flex:0 0 0.95in;image-rendering:pixelated;image-rendering:crisp-edges;"></canvas>
-          <div style="flex:1 1 auto;min-width:0;max-width:2.3in;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;">
+          <div style="
+            flex:0 0 0.95in; width:0.95in; height:0.95in;
+            overflow:hidden; position:relative;
+          ">
+            <img id="bc-preview-${idx}" alt="QR" width="200" height="200" style="
+              display:block; width:0.95in; height:0.95in;
+              max-width:0.95in; max-height:0.95in;
+              object-fit:fill;
+              image-rendering:pixelated; image-rendering:crisp-edges;
+            " />
+          </div>
+          <div style="
+            flex:1 1 auto; min-width:0; max-width:2.3in;
+            text-align:left; display:flex; flex-direction:column;
+            justify-content:center; gap:2px; overflow:hidden;
+          ">
             <div style="font-weight:600;font-size:9px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;">
               ${escapeHtml(shortName)}
             </div>
@@ -2017,8 +2046,12 @@ alter table document_counters enable row level security;
         </div>`;
       }).join('');
 
-      lastLabelItems.forEach((item, idx) => {
-        renderQrToCanvas(`bc-preview-${idx}`, item.qrUrl, 160);
+      // Fill QR images asynchronously (same high-res PNG path as print)
+      lastLabelItems.forEach(async (item, idx) => {
+        const img = document.getElementById(`bc-preview-${idx}`);
+        if (!img) return;
+        const dataUrl = await qrToPrintDataUrl(item.qrUrl, 280);
+        if (dataUrl) img.src = dataUrl;
       });
 
       card.style.display = 'block';
