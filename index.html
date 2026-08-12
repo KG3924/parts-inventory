@@ -323,6 +323,17 @@
         </div>
         <div class="row">
           <div>
+            <label>List price (£ GBP)</label>
+            <input type="number" id="item-list-gbp" step="0.01" min="0" placeholder="0.00" oninput="applyGbpSellFactor()">
+          </div>
+          <div>
+            <label>GBP → sell factor</label>
+            <input type="number" id="item-gbp-factor" step="0.001" min="0" oninput="applyGbpSellFactor()">
+          </div>
+        </div>
+        <p class="hint" id="gbp-sell-hint">Hepworth/Wynn list is in £. Sell $ = £ × <strong>2.585</strong> (exchange + tariff). Change the factor if the company rate changes. Buy $ is still entered separately (what you actually paid).</p>
+        <div class="row">
+          <div>
             <label>Buy Price ($)</label>
             <input type="number" id="item-buy-price" step="0.01" min="0" placeholder="0.00">
           </div>
@@ -701,6 +712,44 @@ alter table document_counters enable row level security;
     function money(n) {
       if (n == null || isNaN(n)) return '—';
       return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    /** Company sell factor: Hepworth £ list × this = customer sell $ (FX + tariff). */
+    const DEFAULT_GBP_SELL_FACTOR = 2.585;
+    const GBP_FACTOR_KEY = 'inv_gbp_sell_factor';
+
+    function getGbpSellFactor() {
+      const el = document.getElementById('item-gbp-factor');
+      let n = el ? parseFloat(el.value) : NaN;
+      if (!isFinite(n) || n <= 0) {
+        try {
+          const stored = parseFloat(localStorage.getItem(GBP_FACTOR_KEY));
+          if (isFinite(stored) && stored > 0) n = stored;
+        } catch (e) { /* ignore */ }
+      }
+      if (!isFinite(n) || n <= 0) n = DEFAULT_GBP_SELL_FACTOR;
+      return n;
+    }
+
+    function applyGbpSellFactor() {
+      const gbpEl = document.getElementById('item-list-gbp');
+      const factorEl = document.getElementById('item-gbp-factor');
+      const sellEl = document.getElementById('item-sell-price');
+      const hint = document.getElementById('gbp-sell-hint');
+      if (!gbpEl || !factorEl || !sellEl) return;
+      if (!factorEl.value) factorEl.value = String(getGbpSellFactor());
+      const factor = getGbpSellFactor();
+      try { localStorage.setItem(GBP_FACTOR_KEY, String(factor)); } catch (e) { /* ignore */ }
+      const gbp = parseFloat(gbpEl.value);
+      if (isFinite(gbp) && gbp > 0) {
+        const usd = Math.round(gbp * factor * 100) / 100;
+        sellEl.value = usd.toFixed(2);
+        if (hint) {
+          hint.innerHTML = `£${gbp.toFixed(2)} × <strong>${factor}</strong> = <strong>${money(usd)}</strong> sell. Buy $ is still entered separately (what you actually paid).`;
+        }
+      } else if (hint) {
+        hint.innerHTML = `Hepworth/Wynn list is in £. Sell $ = £ × <strong>${factor}</strong> (exchange + tariff). Change the factor if the company rate changes. Buy $ is still entered separately (what you actually paid).`;
+      }
     }
     function currentUser() { return sessionUser || ''; }
     function saveUser() {
@@ -1573,11 +1622,14 @@ alter table document_counters enable row level security;
     function clearForm() {
       document.getElementById('edit-id').value = '';
       document.getElementById('form-title').textContent = 'Add Part';
-      ['item-name','item-barcode','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
+      ['item-name','item-barcode','item-list-gbp','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
        'item-date-ordered','item-est-delivery','item-ordered-qty'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
+      const factorEl = document.getElementById('item-gbp-factor');
+      if (factorEl) factorEl.value = String(getGbpSellFactor());
+      applyGbpSellFactor();
       document.getElementById('item-qty').value = 0;
       document.getElementById('item-reorder').value = 5;
       document.getElementById('item-open-order').checked = false;
@@ -2955,6 +3007,9 @@ ${bodyHtml}
     });
 
     if (isConfigured) {
+      const factorEl = document.getElementById('item-gbp-factor');
+      if (factorEl && !factorEl.value) factorEl.value = String(getGbpSellFactor());
+      applyGbpSellFactor();
       loadInventory()
         .then(() => subscribeRealtime())
         .then(() => handleDeepLinkPart());
