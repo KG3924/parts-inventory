@@ -306,10 +306,11 @@
         <h2 id="form-title">Add Part</h2>
         <input type="hidden" id="edit-id">
         <label>Part Name *</label>
-        <input type="text" id="item-name" placeholder="e.g. Hydraulic Fitting 1/2&quot;">
+        <input type="text" id="item-name" placeholder="e.g. Hydraulic Fitting 1/2&quot;" maxlength="120">
+        <p class="hint">DK-1201 label fits <strong>56 characters</strong> (2 lines). Longer names clip on the label.</p>
         <label>Part Number / SKU *</label>
-        <input type="text" id="item-barcode" placeholder="Existing part # – letters & numbers OK">
-        <p class="hint">Human part # (no spaces). Labels use a separate stable QR ID that does not change when you edit the name or part #.</p>
+        <input type="text" id="item-barcode" placeholder="Existing part # – letters & numbers OK" maxlength="40">
+        <p class="hint">Human part # (no spaces). Label fits <strong>22 characters</strong> on one large line (up to 28 if it wraps). Labels also use a separate stable QR ID that does not change when you edit the name or part #.</p>
         <div class="row">
           <div>
             <label>Quantity on Hand</label>
@@ -473,8 +474,9 @@
           <button type="button" id="print-brother-btn" onclick="printLabelsBrother()">Print on Brother QL (DK-1201)</button>
           <button type="button" class="secondary" id="print-paper-btn" onclick="printLabelsPaper()">Print on letter paper (8 / sheet)</button>
         </div>
-                <p class="hint">Brother DK-1201: 1 large QR per die-cut (1.1&quot; × 3.5&quot;). Print at <strong>100% / Actual size</strong> — not Fit to Page. Screen-scan works when modules are sharp; paper fails if the printer shrinks or softens the QR.<br>
-          Letter paper: 8 large labels/sheet. Prefer phone Camera or in-app Scan with good light.</p>
+                <p class="hint">Brother DK-1201: 1 large QR per die-cut (1.1&quot; × 3.5&quot;). Print at <strong>100% / Actual size</strong> — not Fit to Page.<br>
+          <strong>Fits on this label (no cutoff):</strong> item name ≤ <strong>56</strong> characters (2 lines); part # ≤ <strong>22</strong> characters (1 large line), or ≤ <strong>28</strong> if it wraps. Longer text is clipped on print.<br>
+          Letter paper: 8 large labels/sheet.</p>
         <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.75rem; border:1px solid var(--border); overflow-x:auto;"></div>
       </div>
     </div>
@@ -1969,12 +1971,21 @@ alter table document_counters enable row level security;
     /** Last generated label payload for print windows (avoids re-selecting). */
     let lastLabelItems = [];
 
+    /**
+     * DK-1201 text budget (3.5" × 1.1", 0.95" QR, ~2.36" text column @ 96dpi ≈ 227px).
+     * Name 11px Arial ≈ 6.1px/char → ~37/line; 2 wrapped lines, word-safe ≈ 56.
+     * Part # 15px Arial Bold ≈ 9px/char → 22 on one line; rare long PNs wrap to 28.
+     */
+    const LABEL_DK_NAME_MAX = 56;
+    const LABEL_DK_PN_ONE_LINE = 22;
+    const LABEL_DK_PN_HARD = 28;
+
     function shortLabelName(name, max) {
-      const n = name || '';
+      const n = String(name || '');
       return n.length > max ? n.slice(0, max - 1) + '…' : n;
     }
     function shortLabelPn(pn, max) {
-      const n = pn || '';
+      const n = String(pn || '');
       return n.length > max ? n.slice(0, max - 1) + '…' : n;
     }
 
@@ -1997,26 +2008,28 @@ alter table document_counters enable row level security;
       document.getElementById('batch-count').textContent = `(${items.length} label${items.length > 1 ? 's' : ''})`;
 
       // Actual-size DK-1201 mock. Use <img> PNG (same as print) so canvas pixel size cannot spill out.
-      // Geometry: 3.5" × 1.1" die-cut, 0.06" pad → 0.95" QR + text fits inside dashed zone.
+      // Geometry: 3.5" × 1.1", pad 0.06, QR 0.95", gap 0.06 → text column ~2.37".
       preview.innerHTML = `
         <p style="margin:0 0 10px;font-size:0.8rem;color:var(--muted);line-height:1.35;">
-          Actual size · Brother DK-1201 die-cut <strong>3.5&quot; × 1.1&quot;</strong> (matches print layout)
+          Actual size · Brother DK-1201 <strong>3.5&quot; × 1.1&quot;</strong> ·
+          name ≤ ${LABEL_DK_NAME_MAX} chars (2 lines) ·
+          part # ≤ ${LABEL_DK_PN_ONE_LINE} chars (1 line)
         </p>
         <div id="batch-label-frames"></div>`;
 
       const frames = document.getElementById('batch-label-frames');
       frames.innerHTML = lastLabelItems.map((item, idx) => {
-        const shortName = shortLabelName(item.name, 36);
-        const pnShow = shortLabelPn(item.part_number, 28);
+        const shortName = shortLabelName(item.name, LABEL_DK_NAME_MAX);
+        const pnShow = shortLabelPn(item.part_number, LABEL_DK_PN_HARD);
         return `
         <div class="dk1201-preview" style="
           color:#000; font-family:Arial,Helvetica,sans-serif;
           width:3.5in; height:1.1in; max-width:100%;
           margin:0 auto 14px;
-          padding:0.06in 0.08in;
+          padding:0.06in 0.06in 0.06in 0.08in;
           border:1px dashed #999;
           box-sizing:border-box;
-          display:flex; flex-direction:row; align-items:center; gap:0.08in;
+          display:flex; flex-direction:row; align-items:center; gap:0.06in;
           overflow:hidden; background:#fff;
         ">
           <div style="
@@ -2031,17 +2044,20 @@ alter table document_counters enable row level security;
             " />
           </div>
           <div style="
-            flex:1 1 auto; min-width:0; max-width:2.3in;
+            flex:1 1 auto; min-width:0;
             text-align:left; display:flex; flex-direction:column;
-            justify-content:center; gap:2px; overflow:hidden;
+            justify-content:center; gap:3px; overflow:hidden;
           ">
-            <div style="font-weight:600;font-size:9px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;">
-              ${escapeHtml(shortName)}
-            </div>
-            <div style="font-weight:700;font-size:13px;line-height:1.15;letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              ${escapeHtml(pnShow)}
-            </div>
-            <div style="font-size:7px;color:#666;line-height:1.2;">Scan with phone Camera</div>
+            <div style="
+              font-weight:600;font-size:11px;line-height:1.2;color:#222;
+              overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+              word-break:break-word;
+            ">${escapeHtml(shortName)}</div>
+            <div style="
+              font-weight:700;font-size:15px;line-height:1.15;letter-spacing:0.01em;
+              overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+              word-break:break-all;
+            ">${escapeHtml(pnShow)}</div>
           </div>
         </div>`;
       }).join('');
@@ -2120,7 +2136,7 @@ alter table document_counters enable row level security;
         .plabel .p { font-weight: 700; font-size: 16px; line-height: 1.2;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `;
-      // DK-1201 die-cut ≈ 3.5" × 1.1". Keep QR ≤ 0.95" so pad + modules never clip.
+      // DK-1201 die-cut ≈ 3.5" × 1.1". QR 0.95"; leftover ~2.37" for name (2 lines) + PN.
       const brotherCss = `
         @page { size: 3.5in 1.1in; margin: 0; }
         * { box-sizing: border-box; }
@@ -2129,10 +2145,10 @@ alter table document_counters enable row level security;
           -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
         .blabel {
           width: 3.5in; height: 1.1in; margin: 0;
-          padding: 0.06in 0.08in;
+          padding: 0.06in 0.06in 0.06in 0.08in;
           page-break-after: always;
           page-break-inside: avoid;
-          display: flex; flex-direction: row; align-items: center; gap: 0.08in;
+          display: flex; flex-direction: row; align-items: center; gap: 0.06in;
           overflow: hidden; background: #fff;
         }
         .blabel:last-child { page-break-after: auto; }
@@ -2141,11 +2157,17 @@ alter table document_counters enable row level security;
           image-rendering: pixelated; image-rendering: crisp-edges;
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
-        .blabel .txt { flex: 1 1 auto; min-width: 0; max-width: 2.3in; text-align: left; overflow: hidden; }
-        .blabel .n { font-weight: 600; font-size: 9px; line-height: 1.2;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; color: #222; }
-        .blabel .p { font-weight: 700; font-size: 13px; line-height: 1.15;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .blabel .txt { flex: 1 1 auto; min-width: 0; text-align: left; overflow: hidden; }
+        .blabel .n {
+          font-weight: 600; font-size: 11px; line-height: 1.2; color: #222; margin-bottom: 3px;
+          overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+          word-break: break-word;
+        }
+        .blabel .p {
+          font-weight: 700; font-size: 15px; line-height: 1.15;
+          overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+          word-break: break-all;
+        }
       `;
 
       const qrImg = (src) => src
@@ -2158,8 +2180,8 @@ alter table document_counters enable row level security;
           <div class="blabel">
             ${qrImg(qrs[idx])}
             <div class="txt">
-              <div class="n">${escapeHtml(shortLabelName(item.name, 36))}</div>
-              <div class="p">${escapeHtml(shortLabelPn(item.part_number, 28))}</div>
+              <div class="n">${escapeHtml(shortLabelName(item.name, LABEL_DK_NAME_MAX))}</div>
+              <div class="p">${escapeHtml(shortLabelPn(item.part_number, LABEL_DK_PN_HARD))}</div>
             </div>
           </div>`).join('');
       } else {
