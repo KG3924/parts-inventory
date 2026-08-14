@@ -207,6 +207,19 @@
       background: transparent; border: 1px solid var(--open-order); color: var(--open-order);
     }
     button.quote-btn:hover { background: var(--open-order); color: white; }
+    button.adjust-btn {
+      background: transparent; border: 1px solid var(--success); color: var(--success);
+    }
+    button.adjust-btn:hover { background: var(--success); color: white; }
+    .badge.not-valued { background: rgba(100, 116, 139, 0.15); color: var(--muted); }
+    .scan-match-list { margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.4rem; }
+    .scan-match-row {
+      text-align: left; width: 100%; background: var(--card); border: 1px solid var(--border);
+      color: var(--text); padding: 0.55rem 0.7rem; border-radius: 8px; cursor: pointer;
+    }
+    .scan-match-row:hover { border-color: var(--accent); background: #eff6ff; }
+    .scan-match-row .mn { font-weight: 600; display: block; }
+    .scan-match-row .mp { font-size: 0.8rem; color: var(--muted); }
     @media (max-width: 520px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
       .tab { font-size: 0.65rem; padding: 0.45rem 0.2rem; }
@@ -280,17 +293,18 @@
     <div id="scan" class="panel">
       <div class="card">
         <h2>Phone Camera Scan</h2>
-        <p class="hint">Scan a QR label or type a part number / label ID. Camera stops when found — review notes and <strong>Commit change</strong> before qty updates. Phone Camera app can also open QR deep-links into this screen.</p>
+        <p class="hint">Scan a QR label, or type any part of a <strong>name</strong> or <strong>part #</strong> (e.g. <code>belt</code> or <code>1588</code>). Multiple matches are listed. Camera / QR still uses the exact label ID. <strong>Commit change</strong> before qty updates.</p>
         <div id="reader"></div>
         <div class="btn-group">
           <button id="start-scan-btn" onclick="startScanner()">Start Camera</button>
           <button class="secondary" id="stop-scan-btn" onclick="stopScanner()" style="display:none;">Stop Camera</button>
         </div>
         <hr style="border-color:var(--border); margin:1rem 0;">
-        <h2 style="font-size:0.95rem;">Or type / paste part number</h2>
+        <h2 style="font-size:0.95rem;">Or search name / part number</h2>
         <div class="row" style="align-items:flex-end;">
           <div style="flex:2;">
-            <input type="text" id="manual-scan" placeholder="Part number" autocomplete="off" style="margin-bottom:0;">
+            <input type="text" id="manual-scan" placeholder="e.g. belt, 1588, Artic 800" autocomplete="off" style="margin-bottom:0;"
+              oninput="onManualScanInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();processManualScan();}">
           </div>
           <div style="flex:0;">
             <button onclick="processManualScan()">Look up</button>
@@ -323,29 +337,8 @@
         </div>
         <div class="row">
           <div>
-            <label>List price (£ GBP)</label>
-            <input type="number" id="item-list-gbp" step="0.01" min="0" placeholder="0.00" oninput="applyGbpSellFactor()">
-          </div>
-          <div>
-            <label>GBP → sell factor</label>
-            <input type="number" id="item-gbp-factor" step="0.001" min="0" oninput="applyGbpSellFactor()">
-          </div>
-        </div>
-        <p class="hint" id="gbp-sell-hint">Hepworth/Wynn list is in £. Sell $ = £ × <strong>2.585</strong> (exchange + tariff). Change the factor if the company rate changes. Buy $ is still entered separately (what you actually paid).</p>
-        <div class="row">
-          <div>
-            <label>Buy Price ($)</label>
-            <input type="number" id="item-buy-price" step="0.01" min="0" placeholder="0.00">
-          </div>
-          <div>
-            <label>Sell Price ($)</label>
-            <input type="number" id="item-sell-price" step="0.01" min="0" placeholder="0.00">
-          </div>
-        </div>
-        <div class="row">
-          <div>
             <label>Source / Supplier</label>
-            <input type="text" id="item-source" list="source-suggestions" placeholder="e.g. Wynn, FFS, Alu Design">
+            <input type="text" id="item-source" list="source-suggestions" placeholder="e.g. Wynn, FFS, Alu Design" oninput="syncPricingUi()">
             <datalist id="source-suggestions"></datalist>
           </div>
           <div>
@@ -354,6 +347,33 @@
             <datalist id="category-suggestions"></datalist>
           </div>
         </div>
+        <div class="row">
+          <div>
+            <label id="item-list-price-label">List price ($ USD)</label>
+            <input type="number" id="item-list-price" step="0.01" min="0" placeholder="0.00" oninput="applySellFromList()">
+          </div>
+          <div>
+            <label id="item-sell-factor-label">Sell factor</label>
+            <input type="number" id="item-sell-factor" step="0.001" min="0" placeholder="optional" oninput="applySellFromList()">
+          </div>
+        </div>
+        <p class="hint" id="list-price-hint">List currency follows source: <strong>Wynn = £ GBP</strong> (factor 2.585), <strong>FFS = € EUR</strong> (enter factor when known), anything else = <strong>$ USD</strong>. Sell $ = list × factor. Factor is remembered per currency.</p>
+        <div class="row">
+          <div>
+            <label>Buy Price ($ USD) — optional</label>
+            <input type="number" id="item-buy-price" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div>
+            <label>Sell Price ($ USD)</label>
+            <input type="number" id="item-sell-price" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <p class="hint">Buy price is optional. It is <strong>what you paid</strong> (your cost in USD). It is used only for Home / Reports <em>inventory valuation</em> (qty × buy). Quotes use sell price. Leave blank if you do not know cost — value shows as —.</p>
+        <label style="display:flex;align-items:flex-start;gap:0.5rem;margin:0.15rem 0 0.75rem;">
+          <input type="checkbox" id="item-exclude-value" style="width:auto;margin:0.2rem 0 0;">
+          <span><strong>Exclude from inventory valuation</strong><br>
+          <span class="hint" style="margin:0.15rem 0 0;">Keep a buy/sell price for reference, but do not add this part’s on-hand qty into Inventory at Cost or At Sell Price (customer-owned, consignment, or leftover you do not want on the books).</span></span>
+        </label>
         <label>Location / Bin</label>
         <input type="text" id="item-location" placeholder="e.g. Shelf A-3">
         <label>Notes</label>
@@ -589,6 +609,10 @@
         <pre id="category-sql" style="font-size:0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;max-height:240px;">-- Inventory extras
 alter table inventory add column if not exists category text;
 alter table inventory add column if not exists barcode text;
+alter table inventory add column if not exists exclude_from_valuation boolean default false;
+alter table inventory add column if not exists list_price numeric;
+alter table inventory add column if not exists list_currency text;
+alter table inventory add column if not exists sell_factor numeric;
 create unique index if not exists inventory_barcode_uidx on inventory (barcode) where barcode is not null;
 create index if not exists inventory_category_idx on inventory (category);
 create index if not exists inventory_source_idx on inventory (source);
@@ -676,6 +700,8 @@ alter table document_counters enable row level security;
     let hasBarcodeColumn = true;
     let hasAdjustmentsTable = true;
     let hasQuotesTables = true;
+    let hasExcludeValueColumn = false;
+    let hasListPriceColumn = false;
     let lastAdjustmentRows = [];
     let quotesListCache = [];
     let quoteStatusFilter = 'all';
@@ -714,42 +740,85 @@ alter table document_counters enable row level security;
       return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    /** Company sell factor: Hepworth £ list × this = customer sell $ (FX + tariff). */
+    /** List-currency profiles. Wynn = GBP, FFS = EUR, everything else = USD. */
     const DEFAULT_GBP_SELL_FACTOR = 2.585;
-    const GBP_FACTOR_KEY = 'inv_gbp_sell_factor';
+    const FACTOR_KEYS = { GBP: 'inv_gbp_sell_factor', EUR: 'inv_eur_sell_factor', USD: 'inv_usd_sell_factor' };
 
-    function getGbpSellFactor() {
-      const el = document.getElementById('item-gbp-factor');
-      let n = el ? parseFloat(el.value) : NaN;
-      if (!isFinite(n) || n <= 0) {
-        try {
-          const stored = parseFloat(localStorage.getItem(GBP_FACTOR_KEY));
-          if (isFinite(stored) && stored > 0) n = stored;
-        } catch (e) { /* ignore */ }
+    function pricingProfile(source) {
+      const s = String(source || '').trim().toLowerCase();
+      if (s === 'wynn' || s.startsWith('wynn ') || s === 'hepworth') {
+        return { code: 'GBP', symbol: '£', label: 'List price (£ GBP)', factorLabel: 'GBP → sell factor', defaultFactor: DEFAULT_GBP_SELL_FACTOR };
       }
-      if (!isFinite(n) || n <= 0) n = DEFAULT_GBP_SELL_FACTOR;
-      return n;
+      if (s === 'ffs' || s.includes('fluid')) {
+        return { code: 'EUR', symbol: '€', label: 'List price (€ EUR)', factorLabel: 'EUR → sell factor', defaultFactor: null };
+      }
+      return { code: 'USD', symbol: '$', label: 'List price ($ USD)', factorLabel: 'USD sell factor (optional)', defaultFactor: 1 };
     }
 
-    function applyGbpSellFactor() {
-      const gbpEl = document.getElementById('item-list-gbp');
-      const factorEl = document.getElementById('item-gbp-factor');
+    function storedFactor(code) {
+      try {
+        const n = parseFloat(localStorage.getItem(FACTOR_KEYS[code] || ''));
+        if (isFinite(n) && n > 0) return n;
+      } catch (e) { /* ignore */ }
+      return null;
+    }
+
+    function persistFactor(code, n) {
+      if (!code || !isFinite(n) || n <= 0) return;
+      try { localStorage.setItem(FACTOR_KEYS[code], String(n)); } catch (e) { /* ignore */ }
+    }
+
+    function currentPricingProfile() {
+      return pricingProfile(document.getElementById('item-source')?.value);
+    }
+
+    function syncPricingUi() {
+      const p = currentPricingProfile();
+      const lab = document.getElementById('item-list-price-label');
+      const flab = document.getElementById('item-sell-factor-label');
+      const factorEl = document.getElementById('item-sell-factor');
+      if (lab) lab.textContent = p.label;
+      if (flab) flab.textContent = p.factorLabel;
+      if (factorEl) {
+        const stored = storedFactor(p.code);
+        if (stored != null) factorEl.value = String(stored);
+        else if (p.defaultFactor != null) factorEl.value = String(p.defaultFactor);
+        else factorEl.value = '';
+      }
+      applySellFromList();
+    }
+
+    function applySellFromList() {
+      const listEl = document.getElementById('item-list-price');
+      const factorEl = document.getElementById('item-sell-factor');
       const sellEl = document.getElementById('item-sell-price');
-      const hint = document.getElementById('gbp-sell-hint');
-      if (!gbpEl || !factorEl || !sellEl) return;
-      if (!factorEl.value) factorEl.value = String(getGbpSellFactor());
-      const factor = getGbpSellFactor();
-      try { localStorage.setItem(GBP_FACTOR_KEY, String(factor)); } catch (e) { /* ignore */ }
-      const gbp = parseFloat(gbpEl.value);
-      if (isFinite(gbp) && gbp > 0) {
-        const usd = Math.round(gbp * factor * 100) / 100;
+      const hint = document.getElementById('list-price-hint');
+      if (!listEl || !factorEl || !sellEl) return;
+      const p = currentPricingProfile();
+      const list = parseFloat(listEl.value);
+      let factor = parseFloat(factorEl.value);
+      if (isFinite(factor) && factor > 0) persistFactor(p.code, factor);
+      if (!(isFinite(factor) && factor > 0) && p.code === 'USD') factor = 1;
+      if (isFinite(list) && list > 0 && isFinite(factor) && factor > 0) {
+        const usd = Math.round(list * factor * 100) / 100;
         sellEl.value = usd.toFixed(2);
         if (hint) {
-          hint.innerHTML = `£${gbp.toFixed(2)} × <strong>${factor}</strong> = <strong>${money(usd)}</strong> sell. Buy $ is still entered separately (what you actually paid).`;
+          hint.innerHTML = `${p.symbol}${list.toFixed(2)} ${p.code} × <strong>${factor}</strong> = <strong>${money(usd)}</strong> sell. Buy $ is optional (what you actually paid).`;
         }
       } else if (hint) {
-        hint.innerHTML = `Hepworth/Wynn list is in £. Sell $ = £ × <strong>${factor}</strong> (exchange + tariff). Change the factor if the company rate changes. Buy $ is still entered separately (what you actually paid).`;
+        if (p.code === 'GBP') {
+          hint.innerHTML = `Wynn / Hepworth list is in <strong>£ GBP</strong>. Sell $ = £ × factor (default <strong>${DEFAULT_GBP_SELL_FACTOR}</strong> for FX + tariff).`;
+        } else if (p.code === 'EUR') {
+          hint.innerHTML = `FFS list is in <strong>€ EUR</strong>. Enter the company EUR → sell $ factor when you have it. Sell $ will fill automatically.`;
+        } else {
+          hint.innerHTML = `List is in <strong>$ USD</strong>. Leave factor at 1 to copy list into sell, or enter a markup factor. Buy $ is still optional.`;
+        }
       }
+    }
+
+    function applyGbpSellFactor() { applySellFromList(); }
+    function getGbpSellFactor() {
+      return storedFactor('GBP') || DEFAULT_GBP_SELL_FACTOR;
     }
     function currentUser() { return sessionUser || ''; }
     function saveUser() {
@@ -867,6 +936,53 @@ alter table document_counters enable row level security;
         (i.barcode || '').toLowerCase() === k ||
         (i.part_number || '').toLowerCase() === k
       ) || null;
+    }
+
+    function compactAlnum(s) {
+      return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+    function digitsOnly(s) {
+      return String(s || '').replace(/\D/g, '');
+    }
+
+    /** Partial name / part # search for typed Scan lookup (not camera). */
+    function itemMatchesQuery(item, raw) {
+      const q = String(raw || '').trim();
+      if (!q) return false;
+      const ql = q.toLowerCase();
+      const name = (item.name || '').toLowerCase();
+      const pn = (item.part_number || '').toLowerCase();
+      const bc = (item.barcode || '').toLowerCase();
+      if (name.includes(ql) || pn.includes(ql) || bc.includes(ql)) return true;
+      const qc = compactAlnum(q);
+      if (qc.length >= 2) {
+        if (compactAlnum(item.part_number).includes(qc) || compactAlnum(item.barcode).includes(qc)) return true;
+      }
+      const qd = digitsOnly(q);
+      if (qd.length >= 3 && digitsOnly(item.part_number).includes(qd)) return true;
+      return false;
+    }
+
+    function searchInventoryMatches(raw) {
+      const q = String(raw || '').trim();
+      if (!q) return [];
+      const ql = q.toLowerCase();
+      const qc = compactAlnum(q);
+      const scored = [];
+      inventory.forEach(i => {
+        if (!itemMatchesQuery(i, q)) return;
+        const pn = (i.part_number || '').toLowerCase();
+        const name = (i.name || '').toLowerCase();
+        let score = 10;
+        if (pn === ql || (i.barcode || '').toLowerCase() === ql) score = 100;
+        else if (pn.startsWith(ql)) score = 80;
+        else if (compactAlnum(i.part_number) === qc) score = 75;
+        else if (name.startsWith(ql)) score = 60;
+        else if (name.includes(ql)) score = 40;
+        scored.push({ item: i, score });
+      });
+      scored.sort((a, b) => b.score - a.score || String(a.item.name || '').localeCompare(b.item.name || ''));
+      return scored.map(s => s.item);
     }
 
     /**
@@ -992,13 +1108,20 @@ alter table document_counters enable row level security;
       }
       inventory = data || [];
       if (inventory.length > 0) {
-        hasCategoryColumn = Object.prototype.hasOwnProperty.call(inventory[0], 'category');
-        hasBarcodeColumn = Object.prototype.hasOwnProperty.call(inventory[0], 'barcode');
+        const row0 = inventory[0];
+        hasCategoryColumn = Object.prototype.hasOwnProperty.call(row0, 'category');
+        hasBarcodeColumn = Object.prototype.hasOwnProperty.call(row0, 'barcode');
+        hasExcludeValueColumn = Object.prototype.hasOwnProperty.call(row0, 'exclude_from_valuation');
+        hasListPriceColumn = Object.prototype.hasOwnProperty.call(row0, 'list_price');
       } else {
         const probeCat = await supabaseClient.from('inventory').select('category').limit(1);
         hasCategoryColumn = !probeCat.error;
         const probeBc = await supabaseClient.from('inventory').select('barcode').limit(1);
         hasBarcodeColumn = !probeBc.error;
+        const probeEx = await supabaseClient.from('inventory').select('exclude_from_valuation').limit(1);
+        hasExcludeValueColumn = !probeEx.error;
+        const probeLp = await supabaseClient.from('inventory').select('list_price').limit(1);
+        hasListPriceColumn = !probeLp.error;
       }
       // Probe adjustments table
       const probeAdj = await supabaseClient.from('inventory_adjustments').select('id').limit(1);
@@ -1018,6 +1141,8 @@ alter table document_counters enable row level security;
         bits.push(hasBarcodeColumn ? 'barcode ✓' : 'barcode missing');
         bits.push(hasAdjustmentsTable ? 'adjustments ✓' : 'adjustments missing');
         bits.push(hasQuotesTables ? 'quotes ✓' : 'quotes missing');
+        bits.push(hasExcludeValueColumn ? 'exclude-value ✓' : 'exclude-value missing');
+        bits.push(hasListPriceColumn ? 'list-price ✓' : 'list-price missing');
         const schemaOk = hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable && hasQuotesTables;
         schemaEl.textContent = 'Schema: ' + bits.join(' · ') + (schemaOk ? '' : ' — run SQL in More tab');
         schemaEl.style.color = schemaOk ? 'var(--success)' : 'var(--warning)';
@@ -1055,16 +1180,25 @@ alter table document_counters enable row level security;
         .subscribe();
     }
 
+    function isExcludedFromValue(i) {
+      return !!(i && (i.exclude_from_valuation === true || i.exclude_from_valuation === 'true'));
+    }
+
     function calcTotals() {
-      let cost = 0, sell = 0, units = 0, needsDate = 0;
+      let cost = 0, sell = 0, units = 0, needsDate = 0, excluded = 0, excludedUnits = 0;
       inventory.forEach(i => {
         const q = i.qty || 0;
         units += q;
-        cost += q * (Number(i.buy_price) || 0);
-        sell += q * (Number(i.sell_price) || 0);
+        if (isExcludedFromValue(i)) {
+          excluded++;
+          excludedUnits += q;
+        } else {
+          cost += q * (Number(i.buy_price) || 0);
+          sell += q * (Number(i.sell_price) || 0);
+        }
         if (i.open_order && !i.estimated_delivery) needsDate++;
       });
-      return { cost, sell, margin: sell - cost, units, needsDate };
+      return { cost, sell, margin: sell - cost, units, needsDate, excluded, excludedUnits };
     }
 
     function renderAll() {
@@ -1103,7 +1237,7 @@ alter table document_counters enable row level security;
     function renderValueSummary() {
       const t = calcTotals();
       document.getElementById('value-summary').innerHTML = `
-        <div class="value-card"><div class="label">Inventory at Cost</div><div class="amount">${money(t.cost)}</div></div>
+        <div class="value-card"><div class="label">Inventory at Cost</div><div class="amount">${money(t.cost)}</div>${t.excluded ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:0.2rem;">${t.excluded} part${t.excluded===1?'':'s'} excluded</div>` : ''}</div>
         <div class="value-card"><div class="label">At Sell Price</div><div class="amount">${money(t.sell)}</div></div>
         <div class="value-card"><div class="label">Potential Margin</div><div class="amount" style="color:var(--success)">${money(t.margin)}</div></div>
         ${t.needsDate ? `<div class="value-card clickable ${homeAttentionFilter === 'needs_date' ? 'active-filter' : ''}" onclick="setHomeFilter('needs_date')" title="Filter items needing delivery date"><div class="label">Needs Delivery Date</div><div class="amount" style="color:var(--danger)">${t.needsDate}</div></div>` : ''}
@@ -1226,6 +1360,7 @@ alter table document_counters enable row level security;
       empty.style.display = 'none';
       tbody.innerHTML = filtered.map(i => {
         const qtyClass = i.qty <= 0 ? 'out' : (i.qty <= (i.reorder_level || 0) ? 'low' : '');
+        const excluded = isExcludedFromValue(i);
         const costVal = (i.qty || 0) * (Number(i.buy_price) || 0);
         const badges = [];
         if (i.open_order) {
@@ -1234,6 +1369,7 @@ alter table document_counters enable row level security;
           else badges.push(`<span class="badge open-order">ETA ${i.estimated_delivery}</span>`);
         }
         if (i.qty > 0 && i.qty <= (i.reorder_level || 0)) badges.push(`<span class="badge low">Low</span>`);
+        if (excluded) badges.push(`<span class="badge not-valued">Not valued</span>`);
         const meta = [];
         if (i.source) meta.push(`<span class="badge source-tag">${escapeHtml(i.source)}</span>`);
         if (i.category) meta.push(`<span class="badge category">${escapeHtml(i.category)}</span>`);
@@ -1247,11 +1383,13 @@ alter table document_counters enable row level security;
           </td>
           <td class="qty ${qtyClass}">${i.qty}</td>
           <td style="font-size:0.8rem;">
-            ${i.buy_price != null ? money(costVal) : '—'}
-            ${i.buy_price != null ? '<br><small style="color:var(--muted)">@ ' + money(i.buy_price) + '</small>' : ''}
+            ${excluded
+              ? `<span style="color:var(--muted)">Not valued</span>${i.buy_price != null ? '<br><small style="color:var(--muted)">cost ' + money(i.buy_price) + '</small>' : ''}`
+              : `${i.buy_price != null ? money(costVal) : '—'}${i.buy_price != null ? '<br><small style="color:var(--muted)">@ ' + money(i.buy_price) + '</small>' : ''}`}
           </td>
           <td>${badges.join('') || '—'}</td>
           <td class="actions">
+            <button type="button" class="adjust-btn" onclick="adjustItem('${i.id}')">Adjust</button>
             <button class="secondary" onclick="quickAdjust('${i.id}', 1)">+</button>
             <button class="secondary" onclick="quickAdjust('${i.id}', -1)">−</button>
             <button class="quote-btn" onclick="addToQuote('${i.id}')">Quote</button>
@@ -1320,7 +1458,7 @@ alter table document_counters enable row level security;
         <div class="value-card">
           <div class="label">Total Inventory at Cost</div>
           <div class="amount">${money(t.cost)}</div>
-          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">Qty × Buy Price (balance-sheet style)</div>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">Qty × Buy Price (parts marked “exclude from valuation” omitted)${t.excluded ? ` · ${t.excluded} excluded` : ''}</div>
         </div>
         <div class="value-card">
           <div class="label">Total at Sell Price</div>
@@ -1549,6 +1687,10 @@ alter table document_counters enable row level security;
         sell_price: parseFloat(document.getElementById('item-sell-price').value) || null,
         source: document.getElementById('item-source').value.trim() || null,
         category: document.getElementById('item-category').value.trim() || null,
+        exclude_from_valuation: !!document.getElementById('item-exclude-value')?.checked,
+        list_price: parseFloat(document.getElementById('item-list-price')?.value) || null,
+        list_currency: currentPricingProfile().code,
+        sell_factor: parseFloat(document.getElementById('item-sell-factor')?.value) || null,
         location: document.getElementById('item-location').value.trim() || null,
         notes: document.getElementById('item-notes').value.trim() || null,
         open_order: openOrder,
@@ -1559,6 +1701,12 @@ alter table document_counters enable row level security;
         updated_at: new Date().toISOString()
       };
       if (!hasCategoryColumn) delete payload.category;
+      if (!hasExcludeValueColumn) delete payload.exclude_from_valuation;
+      if (!hasListPriceColumn) {
+        delete payload.list_price;
+        delete payload.list_currency;
+        delete payload.sell_factor;
+      }
       // Never overwrite barcode on edit; set only on create
       if (!id && hasBarcodeColumn) {
         payload.barcode = generateBarcode();
@@ -1578,6 +1726,28 @@ alter table document_counters enable row level security;
         if (error && /barcode/i.test(error.message || '')) {
           hasBarcodeColumn = false;
           delete payload.barcode;
+          const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
+          error = retry.error;
+          insertedId = retry.data?.id;
+        }
+      }
+      if (error && /exclude_from_valuation/i.test(error.message || '')) {
+        hasExcludeValueColumn = false;
+        delete payload.exclude_from_valuation;
+        if (id) ({ error } = await supabaseClient.from('inventory').update(payload).eq('id', id));
+        else {
+          const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
+          error = retry.error;
+          insertedId = retry.data?.id;
+        }
+      }
+      if (error && /list_price|list_currency|sell_factor/i.test(error.message || '')) {
+        hasListPriceColumn = false;
+        delete payload.list_price;
+        delete payload.list_currency;
+        delete payload.sell_factor;
+        if (id) ({ error } = await supabaseClient.from('inventory').update(payload).eq('id', id));
+        else {
           const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
           error = retry.error;
           insertedId = retry.data?.id;
@@ -1622,14 +1792,14 @@ alter table document_counters enable row level security;
     function clearForm() {
       document.getElementById('edit-id').value = '';
       document.getElementById('form-title').textContent = 'Add Part';
-      ['item-name','item-barcode','item-list-gbp','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
+      ['item-name','item-barcode','item-list-price','item-sell-factor','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
        'item-date-ordered','item-est-delivery','item-ordered-qty'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
-      const factorEl = document.getElementById('item-gbp-factor');
-      if (factorEl) factorEl.value = String(getGbpSellFactor());
-      applyGbpSellFactor();
+      const ex = document.getElementById('item-exclude-value');
+      if (ex) ex.checked = false;
+      syncPricingUi();
       document.getElementById('item-qty').value = 0;
       document.getElementById('item-reorder').value = 5;
       document.getElementById('item-open-order').checked = false;
@@ -1653,6 +1823,15 @@ alter table document_counters enable row level security;
       document.getElementById('item-sell-price').value = item.sell_price ?? '';
       document.getElementById('item-source').value = item.source || '';
       document.getElementById('item-category').value = item.category || '';
+      const ex = document.getElementById('item-exclude-value');
+      if (ex) ex.checked = isExcludedFromValue(item);
+      const listEl = document.getElementById('item-list-price');
+      const factorEl = document.getElementById('item-sell-factor');
+      syncPricingUi();
+      if (listEl) listEl.value = item.list_price ?? '';
+      if (factorEl && item.sell_factor != null) factorEl.value = item.sell_factor;
+      document.getElementById('item-sell-price').value = item.sell_price ?? '';
+      if (item.list_price != null && item.sell_factor != null) applySellFromList();
       document.getElementById('item-location').value = item.location || '';
       document.getElementById('item-notes').value = item.notes || '';
       document.getElementById('item-open-order').checked = !!item.open_order;
@@ -1938,15 +2117,91 @@ alter table document_counters enable row level security;
       await loadInventory();
     }
 
+    function adjustItem(id) {
+      const item = inventory.find(i => i.id === id);
+      if (!item) return;
+      lastScannedCode = null;
+      pendingScanItem = item;
+      showScanTab();
+      renderScanFoundCard(item);
+      const resultEl = document.getElementById('scan-result');
+      if (resultEl) resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function pickScanMatch(id) {
+      const item = inventory.find(i => i.id === id);
+      if (!item) return;
+      lastScannedCode = null;
+      pendingScanItem = item;
+      renderScanFoundCard(item);
+    }
+
+    function renderScanMatchList(query, matches) {
+      const resultEl = document.getElementById('scan-result');
+      if (!resultEl) return;
+      if (!matches.length) {
+        pendingScanItem = null;
+        const safe = escapeHtml(query).replace(/'/g, '&#39;');
+        resultEl.innerHTML = `
+          <div class="scan-result-card">
+            <p style="margin:0 0 0.5rem;"><strong>No matches</strong> for “${escapeHtml(query)}”</p>
+            <p class="hint" style="margin:0 0 0.5rem;">Searches name, part # (punctuation optional), and label ID.</p>
+            <div class="btn-group">
+              <button onclick="prefillNew('${safe}')">Add this as a new part</button>
+            </div>
+          </div>`;
+        return;
+      }
+      if (matches.length === 1) {
+        pendingScanItem = matches[0];
+        renderScanFoundCard(matches[0]);
+        return;
+      }
+      pendingScanItem = null;
+      resultEl.innerHTML = `
+        <div class="scan-result-card">
+          <p style="margin:0 0 0.45rem;"><strong>${matches.length} matches</strong> for “${escapeHtml(query)}”</p>
+          <div class="scan-match-list">
+            ${matches.slice(0, 40).map(i => `
+              <button type="button" class="scan-match-row" onclick="pickScanMatch('${i.id}')">
+                <span class="mn">${escapeHtml(i.name)}</span>
+                <span class="mp">${escapeHtml(i.part_number || '')}${i.source ? ' · ' + escapeHtml(i.source) : ''} · qty ${i.qty || 0}</span>
+              </button>`).join('')}
+          </div>
+          ${matches.length > 40 ? `<p class="hint" style="margin:0.5rem 0 0;">Showing first 40 — type more to narrow.</p>` : ''}
+        </div>`;
+    }
+
+    let manualScanTimer = null;
+    function onManualScanInput() {
+      clearTimeout(manualScanTimer);
+      manualScanTimer = setTimeout(() => {
+        const q = document.getElementById('manual-scan')?.value.trim() || '';
+        if (q.length < 2) return;
+        const exact = findInventoryByKey(q);
+        if (exact) return; // wait for Look up / Enter
+        const matches = searchInventoryMatches(q);
+        if (matches.length > 1) renderScanMatchList(q, matches);
+      }, 180);
+    }
+
     function processManualScan() {
       const code = document.getElementById('manual-scan').value.trim();
       if (!code) {
-        showStatus('Enter a part number', 'error');
+        showStatus('Type a name or part number', 'error');
         return;
       }
-      lastScannedCode = null; // allow same code after typing
-      processScan(code);
-      document.getElementById('manual-scan').value = '';
+      lastScannedCode = null;
+      const extracted = extractPartFromScanPayload(code);
+      const exact = findInventoryByKey(extracted) || findInventoryByKey(code);
+      if (exact) {
+        pendingScanItem = exact;
+        showScanTab();
+        renderScanFoundCard(exact);
+        return;
+      }
+      const matches = searchInventoryMatches(code);
+      renderScanMatchList(code, matches);
     }
 
     function prefillNew(code) {
@@ -2437,6 +2692,10 @@ ${bodyHtml}
               sell_price: row.sell_price ?? null,
               source: row.source || null,
               category: row.category || null,
+              exclude_from_valuation: !!row.exclude_from_valuation,
+              list_price: row.list_price ?? null,
+              list_currency: row.list_currency || null,
+              sell_factor: row.sell_factor ?? null,
               location: row.location || null,
               notes: row.notes || null,
               open_order: !!(row.open_order || row.on_order),
@@ -2446,6 +2705,12 @@ ${bodyHtml}
               updated_by: currentUser()
             };
             if (!hasCategoryColumn) delete payload.category;
+            if (!hasExcludeValueColumn) delete payload.exclude_from_valuation;
+            if (!hasListPriceColumn) {
+              delete payload.list_price;
+              delete payload.list_currency;
+              delete payload.sell_factor;
+            }
             if (hasBarcodeColumn) payload.barcode = row.barcode || generateBarcode();
             const { data: inserted, error } = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
             if (error) {
@@ -3007,9 +3272,7 @@ ${bodyHtml}
     });
 
     if (isConfigured) {
-      const factorEl = document.getElementById('item-gbp-factor');
-      if (factorEl && !factorEl.value) factorEl.value = String(getGbpSellFactor());
-      applyGbpSellFactor();
+      syncPricingUi();
       loadInventory()
         .then(() => subscribeRealtime())
         .then(() => handleDeepLinkPart());
