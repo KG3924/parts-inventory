@@ -51,7 +51,7 @@ On the iPad, open `http://YOUR-MAC-LAN-IP:8000/count.html`. Fine for a test; Pag
 
 1. Tap **Rename** → e.g. `Parts room 2026-08-14`.
 2. Search a name or part # → tap the match → enter **shelf qty** → **Save line**.  
-   Catalog names are a starting point — **Change name for this count** if the seed wording is messy.
+   Catalog / live-app **name, notes, source, category, location, and prices** fill in so you can keep or edit them. Shelf **qty** is always what you type (old app qty is shown only as a reference).
 3. **+ New part** for something not in the catalog (`Generic, specific…`, no spaces in the part #).
 4. On any saved line, tap **Edit** to change name, qty, source, prices, or notes. Searching a part already in the count opens that line to edit.
 4. Draft **auto-saves**. Tap **Save draft** if you want a confirmation toast.

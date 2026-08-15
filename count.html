@@ -174,10 +174,11 @@
       <h2 id="sheet-title">Add part</h2>
       <p class="hint">Name order: <strong>Generic, specific, more specific</strong>. Example: <code>Motor, 0.55kW, Siemens</code> — not “Siemens Motor”.</p>
       <div id="catalog-name-box" class="card" style="display:none;margin:0.4rem 0;padding:0.6rem 0.7rem;background:#fff7ed;border-color:#fed7aa;">
-        <div style="font-size:0.72rem;color:var(--muted);font-weight:600;">Catalog name (you can change it)</div>
-        <div id="catalog-name-orig" style="font-size:0.88rem;margin:0.2rem 0 0.45rem;"></div>
+        <div style="font-size:0.72rem;color:var(--muted);font-weight:600;">Known data (keep or edit below)</div>
+        <div id="catalog-name-orig" style="font-size:0.88rem;margin:0.2rem 0;"></div>
+        <div id="catalog-known" style="font-size:0.78rem;color:var(--text);margin:0.35rem 0 0.45rem;white-space:pre-wrap;"></div>
         <button class="secondary" type="button" style="width:100%;font-size:0.82rem;padding:0.5rem;" onclick="focusNameEdit()">Change name for this count</button>
-        <button class="secondary" type="button" id="reset-catalog-name" style="width:100%;font-size:0.82rem;padding:0.45rem;margin-top:0.35rem;" onclick="resetCatalogName()">Reset to catalog name</button>
+        <button class="secondary" type="button" id="reset-catalog-name" style="width:100%;font-size:0.82rem;padding:0.45rem;margin-top:0.35rem;" onclick="resetCatalogName()">Reset name to catalog</button>
       </div>
       <div class="preview" id="name-preview">Blade, …</div>
       <p class="hint" id="name-edit-hint">This count’s name is what gets exported. Catalog names are only a starting point.</p>
@@ -235,8 +236,11 @@
       </div>
       <p class="hint" id="price-hint">Buy = what you paid (valuation). Sell = what you charge (quotes). Leave blank if unknown.</p>
 
-      <label>Notes</label>
+      <label>Notes (from app / catalog — edit if needed)</label>
       <textarea id="f-notes" placeholder="Optional"></textarea>
+
+      <label>Reorder level</label>
+      <input id="f-reorder" type="number" inputmode="numeric" min="0" step="1" value="5">
 
       <label style="display:flex;align-items:flex-start;gap:0.5rem;font-weight:500;color:var(--text);">
         <input type="checkbox" id="f-exclude" style="width:auto;margin-top:0.2rem;">
@@ -259,7 +263,7 @@
     const PN_MAX = 40;
     const NAME_LABEL_MAX = 32;
     const DRAFT_KEY = 'inv_physical_count_v1';
-    const SEED_CACHE_KEY = 'inv_physical_seed_v1';
+    const SEED_CACHE_KEY = 'inv_physical_seed_v2';
     const REORDER_DEFAULT = 5;
 
     const FALLBACK = {
@@ -451,9 +455,23 @@
     function showCatalogNameBox(hit) {
       const box = document.getElementById('catalog-name-box');
       const orig = document.getElementById('catalog-name-orig');
+      const known = document.getElementById('catalog-known');
       if (!box || !orig || !hit) return;
       box.style.display = 'block';
       orig.textContent = hit.name || '(no catalog name)';
+      const bits = [];
+      if (hit.source) bits.push('Source: ' + hit.source);
+      if (hit.category) bits.push('Category: ' + hit.category);
+      if (hit.location) bits.push('Location: ' + hit.location);
+      if (hit.buy_price != null) bits.push('Buy $: ' + hit.buy_price);
+      if (hit.sell_price != null) bits.push('Sell $: ' + hit.sell_price);
+      if (hit.list_price != null) bits.push('List: ' + hit.list_price + (hit.list_currency ? ' ' + hit.list_currency : ''));
+      if (hit.reorder_level != null) bits.push('Reorder: ' + hit.reorder_level);
+      if (hit.app_qty != null) bits.push('App qty (not used as count): ' + hit.app_qty);
+      if (hit.exclude_from_valuation) bits.push('Excluded from valuation');
+      if (hit.manufacturer_part_number) bits.push('Mfr PN: ' + hit.manufacturer_part_number);
+      if (hit.notes) bits.push('Notes: ' + hit.notes);
+      if (known) known.textContent = bits.join('\n') || 'No extra fields on file.';
     }
 
     function hideCatalogNameBox() {
@@ -503,8 +521,13 @@
       const cat = canonVocab(allCategories(), hit.category);
       if (src) document.getElementById('f-source').value = src;
       if (cat) document.getElementById('f-category').value = cat;
+      if (hit.location) document.getElementById('f-location').value = hit.location;
       if (hit.buy_price != null) document.getElementById('f-buy').value = hit.buy_price;
       if (hit.sell_price != null) document.getElementById('f-sell').value = hit.sell_price;
+      if (hit.notes && (!opts || !opts.keepName)) document.getElementById('f-notes').value = hit.notes;
+      if (hit.reorder_level != null) document.getElementById('f-reorder').value = hit.reorder_level;
+      else document.getElementById('f-reorder').value = REORDER_DEFAULT;
+      document.getElementById('f-exclude').checked = !!hit.exclude_from_valuation;
       const box = document.getElementById('conflict-box');
       if (hit.conflicts && hit.conflicts.length) {
         box.style.display = 'block';
@@ -540,6 +563,7 @@
       hideCatalogNameBox();
       populateVocabSelects();
       ['f-specific', 'f-pn', 'f-buy', 'f-sell', 'f-notes', 'f-location'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('f-reorder').value = REORDER_DEFAULT;
       document.getElementById('f-generic').value = '';
       document.getElementById('f-source').value = '';
       document.getElementById('f-category').value = '';
@@ -596,6 +620,7 @@
       document.getElementById('f-buy').value = it.buy_price ?? '';
       document.getElementById('f-sell').value = it.sell_price ?? '';
       document.getElementById('f-notes').value = it.notes || '';
+      document.getElementById('f-reorder').value = it.reorder_level != null ? it.reorder_level : REORDER_DEFAULT;
       document.getElementById('f-exclude').checked = !!it.exclude_from_valuation;
       document.getElementById('conflict-box').style.display = 'none';
       document.getElementById('form-err').textContent = '';
@@ -632,7 +657,8 @@
         part_number: pn,
         name,
         qty,
-        reorder_level: REORDER_DEFAULT,
+        reorder_level: Number.isInteger(parseInt(document.getElementById('f-reorder').value, 10))
+          ? parseInt(document.getElementById('f-reorder').value, 10) : REORDER_DEFAULT,
         source: src || null,
         category: cat || null,
         location: loc || null,
@@ -642,6 +668,7 @@
         exclude_from_valuation: !!document.getElementById('f-exclude').checked,
         list_price: (pickedCatalog && pickedCatalog.list_price != null) ? pickedCatalog.list_price : (prev && prev.list_price != null ? prev.list_price : null),
         list_currency: (pickedCatalog && pickedCatalog.list_currency) || (prev && prev.list_currency) || null,
+        sell_factor: (pickedCatalog && pickedCatalog.sell_factor != null) ? pickedCatalog.sell_factor : (prev && prev.sell_factor != null ? prev.sell_factor : null),
         manufacturer_part_number: (pickedCatalog && pickedCatalog.manufacturer_part_number) || (prev && prev.manufacturer_part_number) || null,
         from_catalog: !!(pickedCatalog && pickedCatalog.part_number && pickedCatalog.part_number.toLowerCase() === pn.toLowerCase())
       };
@@ -831,6 +858,7 @@
         };
         if (it.list_price != null) row.list_price = it.list_price;
         if (it.list_currency) row.list_currency = it.list_currency;
+        if (it.sell_factor != null) row.sell_factor = it.sell_factor;
         return row;
       });
     }
