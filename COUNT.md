@@ -29,10 +29,12 @@ They are **not live yet** until they are committed and pushed to `main`. After t
 
 ### B. First launch on the iPad (Safari)
 
-1. Open the URL above in **Safari** (not a Files preview).
+1. Open the URL above in **Safari or Chrome** (not a Files preview). Pick **one** browser and stay in it for the whole count — drafts do not sync between Safari and Chrome.
 2. Confirm search finds known parts (try `belt` or `1588`). If search is empty, tap **Load catalog file…** and choose `count-seed.json` (AirDrop or Files).
-3. **Add to Home Screen:** Share → **Add to Home Screen** → name it `Parts count`. Use that icon in the warehouse so Safari does not lose the tab.
-4. Leave the iPad on this same Safari profile. Drafts are saved **in this browser only**. Clearing Safari data or using Private mode will lose the count.
+3. **Add to Home Screen:**
+   - **Safari:** Share → **Add to Home Screen** → name it `Parts count`.
+   - **Chrome:** Share → **Add to Home Screen** (or Chrome’s menu). Open that icon later, not a new blank Chrome tab to a different URL.
+4. Drafts are saved **in that browser only**. Clearing that browser’s data, using Incognito/Private, or switching browsers mid-count will lose or hide the draft.
 
 ### C. Optional: same Wi‑Fi from your Mac (if not using Pages)
 
@@ -58,7 +60,7 @@ On the iPad, open `http://YOUR-MAC-LAN-IP:8000/count.html`. Fine for a test; Pag
 5. You can lock the iPad or switch apps. Re-open the **same Home Screen icon** and the draft should still be there.
 6. **End of each day:** tap **Backup file…** and AirDrop / save to Files. A multi-day count is not safe with only the on-device draft.
 
-Do **not** use Private Browsing. Do **not** clear Safari history/website data until you have a backup file. A lost or wiped iPad cannot recover an un-backed-up draft.
+Do **not** use Private / Incognito. Do **not** clear Safari or Chrome website data until you have a backup file. A lost or wiped iPad cannot recover an un-backed-up draft.
 
 **Restore:** **Restore backup…** and pick a `*-backup.json` (or a previously exported count JSON).
 
