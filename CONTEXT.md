@@ -231,7 +231,10 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 | `CONTEXT.md` | This file |
 | `Consolidated Parts Inventory.xlsx` | Clean parts workbook |
 | `consolidated-import.json` | Bulk import |
+| `count.html` | Mobile physical-count capture (no Supabase writes) |
+| `count-seed.json` | Known-parts lookup for the count tool |
+| `COUNT.md` | How to count on phone and import JSON |
 
 ---
 
-*Last updated: 2026-08-09 — QR deep-link labels (?part= stable barcode ID); Camera app opens Scan with Commit.*
+*Last updated: 2026-08-14 — physical count tool (`count.html` + `count-seed.json`); import still skips existing PNs.*

@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#2563eb">
+  <title>Physical Count – In-Mar</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --pad: max(0.85rem, env(safe-area-inset-left));
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg); color: var(--text); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.4;
+      min-height: 100dvh;
+      padding-bottom: 5.75rem;
+    }
+    header {
+      position: sticky; top: 0; z-index: 20;
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0.7rem var(--pad);
+    }
+    header h1 { font-size: 1.05rem; font-weight: 700; }
+    header .sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+    .wrap { padding: 0.75rem var(--pad); max-width: 640px; margin: 0 auto; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 0.85rem; margin-bottom: 0.7rem;
+    }
+    label { display: block; font-size: 0.75rem; color: var(--muted); font-weight: 600; margin: 0.45rem 0 0.2rem; }
+    input, select, textarea {
+      width: 100%; font-size: 1rem; padding: 0.7rem 0.75rem; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      -webkit-appearance: none; appearance: none;
+    }
+    textarea { min-height: 4.2rem; resize: vertical; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    .hint { font-size: 0.75rem; color: var(--muted); margin: 0.25rem 0 0.4rem; }
+    .err { color: var(--danger); font-size: 0.78rem; margin: 0.25rem 0; }
+    .warn { color: var(--warning); font-size: 0.78rem; margin: 0.25rem 0; }
+    .ok { color: var(--success); font-size: 0.78rem; }
+    button {
+      border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600;
+      padding: 0.75rem 1rem; cursor: pointer; min-height: 44px;
+    }
+    button.primary { background: var(--accent); color: #fff; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+    button.danger { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+    button:disabled { opacity: 0.45; }
+    .row { display: flex; gap: 0.5rem; }
+    .row > * { flex: 1; min-width: 0; }
+    .dock {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      background: var(--card); border-top: 1px solid var(--border);
+      padding: 0.55rem var(--pad) max(0.55rem, env(safe-area-inset-bottom));
+      display: flex; gap: 0.45rem;
+    }
+    .dock button { flex: 1; }
+    .search-box { position: relative; }
+    .hits {
+      margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; max-height: 40vh; overflow: auto;
+    }
+    .hit {
+      text-align: left; width: 100%; background: var(--card); border: 1px solid var(--border);
+      padding: 0.65rem 0.75rem; border-radius: 10px;
+    }
+    .hit strong { display: block; font-size: 0.95rem; }
+    .hit small { color: var(--muted); font-size: 0.75rem; }
+    .item {
+      display: flex; justify-content: space-between; gap: 0.6rem; align-items: flex-start;
+      padding: 0.7rem 0; border-bottom: 1px solid var(--border);
+    }
+    .item:last-child { border-bottom: none; }
+    .qty-big { font-size: 1.35rem; font-weight: 800; min-width: 2.2rem; text-align: right; }
+    .stepper { display: flex; align-items: center; gap: 0.35rem; }
+    .stepper button { min-width: 44px; padding: 0.45rem; font-size: 1.2rem; }
+    .badge {
+      display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px;
+      background: #eff6ff; color: var(--accent); font-weight: 600; margin-right: 0.25rem;
+    }
+    .preview {
+      background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+      padding: 0.55rem 0.7rem; font-weight: 700; margin: 0.35rem 0 0.5rem;
+    }
+    .overlay {
+      display: none; position: fixed; inset: 0; z-index: 40; background: rgba(15,23,42,0.45);
+    }
+    .overlay.show { display: block; }
+    .sheet {
+      position: absolute; left: 0; right: 0; bottom: 0; max-height: 94dvh; overflow: auto;
+      background: var(--card); border-radius: 16px 16px 0 0; padding: 0.85rem var(--pad) 1.25rem;
+    }
+    .sheet h2 { font-size: 1.05rem; margin-bottom: 0.35rem; }
+    .toast {
+      display: none; position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 6.2rem; z-index: 50; background: #1e293b; color: #fff;
+      padding: 0.55rem 0.85rem; border-radius: 999px; font-size: 0.82rem; max-width: 90%;
+    }
+    .toast.show { display: block; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 0.7rem; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem; text-align: center; }
+    .stat b { display: block; font-size: 1.15rem; }
+    .stat span { font-size: 0.68rem; color: var(--muted); }
+    @media print {
+      .dock, header button, .no-print { display: none !important; }
+      body { padding: 0; background: #fff; }
+      .item { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+      <div>
+        <h1>Physical count</h1>
+        <div class="sub" id="count-sub">New count — draft auto-saves</div>
+      </div>
+      <button class="secondary" type="button" onclick="renameCount()" style="padding:0.45rem 0.65rem;font-size:0.8rem;">Rename</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="stats">
+      <div class="stat"><b id="stat-lines">0</b><span>Line items</span></div>
+      <div class="stat"><b id="stat-units">0</b><span>Units counted</span></div>
+      <div class="stat"><b id="stat-new">0</b><span>New (not in catalog)</span></div>
+    </div>
+
+    <div class="card no-print">
+      <label for="q">Find a known part or start a new one</label>
+      <div class="search-box">
+        <input id="q" type="search" placeholder="Name or part # — belt, 1588, Artic…" autocomplete="off" enterkeyhint="search">
+      </div>
+      <p class="hint">Tap a match to count it. Catalog qty is ignored — you enter what is on the shelf.</p>
+      <div class="hits" id="hits"></div>
+      <button class="primary" type="button" style="width:100%;margin-top:0.55rem;" onclick="openNew()">+ New part</button>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:0.95rem;margin-bottom:0.25rem;">This count</h2>
+      <p class="hint" id="list-hint">Nothing counted yet.</p>
+      <div id="list"></div>
+    </div>
+
+    <p class="hint no-print" style="text-align:center;">
+      <button class="secondary" type="button" style="font-size:0.78rem;padding:0.4rem 0.65rem;min-height:36px;" onclick="document.getElementById('seed-file').click()">Load catalog file…</button>
+      <button class="danger" type="button" style="font-size:0.78rem;padding:0.4rem 0.65rem;min-height:36px;" onclick="clearCount()">Clear this count…</button>
+      <input type="file" id="seed-file" accept="application/json,.json" style="display:none;">
+    </p>
+  </div>
+
+  <div class="dock no-print">
+    <button class="secondary" type="button" onclick="saveDraft(true)">Save draft</button>
+    <button class="secondary" type="button" onclick="printSummary()">Print</button>
+    <button class="primary" type="button" onclick="exportJson()">Export JSON</button>
+  </div>
+
+  <div class="overlay" id="overlay" onclick="if(event.target===this) closeSheet()">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <h2 id="sheet-title">Add part</h2>
+      <p class="hint">Name order: <strong>Generic, specific, more specific</strong>. Example: <code>Motor, 0.55kW, Siemens</code> — not “Siemens Motor”.</p>
+      <div id="catalog-name-box" class="card" style="display:none;margin:0.4rem 0;padding:0.6rem 0.7rem;background:#fff7ed;border-color:#fed7aa;">
+        <div style="font-size:0.72rem;color:var(--muted);font-weight:600;">Catalog name (you can change it)</div>
+        <div id="catalog-name-orig" style="font-size:0.88rem;margin:0.2rem 0 0.45rem;"></div>
+        <button class="secondary" type="button" style="width:100%;font-size:0.82rem;padding:0.5rem;" onclick="focusNameEdit()">Change name for this count</button>
+        <button class="secondary" type="button" id="reset-catalog-name" style="width:100%;font-size:0.82rem;padding:0.45rem;margin-top:0.35rem;" onclick="resetCatalogName()">Reset to catalog name</button>
+      </div>
+      <div class="preview" id="name-preview">Blade, …</div>
+      <p class="hint" id="name-edit-hint">This count’s name is what gets exported. Catalog names are only a starting point.</p>
+
+      <label>Generic type *</label>
+      <div class="row">
+        <select id="f-generic" onchange="onGenericChange(); nameTouched=true;"></select>
+      </div>
+      <button class="secondary" type="button" style="margin-top:0.35rem;width:100%;font-size:0.82rem;padding:0.5rem;" onclick="addGeneric()">Add new generic type…</button>
+
+      <label>Specifics * <span style="font-weight:400;">(after the comma)</span></label>
+      <input id="f-specific" placeholder="Artic 800mm" oninput="nameTouched=true; refreshPreview()">
+
+      <label>Part number * <span style="font-weight:400;">(no spaces)</span></label>
+      <input id="f-pn" placeholder="1279-553-800" maxlength="40" autocapitalize="off" autocomplete="off" oninput="onPnInput()">
+      <p class="hint">Max 40 characters. Spaces are stripped. Must be unique in this count.</p>
+      <div id="pn-msg"></div>
+
+      <label>Counted qty *</label>
+      <div class="stepper">
+        <button class="secondary" type="button" onclick="bumpQty(-1)">−</button>
+        <input id="f-qty" type="number" inputmode="numeric" min="0" step="1" value="1" style="text-align:center;font-size:1.25rem;font-weight:800;">
+        <button class="secondary" type="button" onclick="bumpQty(1)">+</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Source</label>
+          <select id="f-source"></select>
+        </div>
+        <div>
+          <label>Category</label>
+          <select id="f-category"></select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:0.35rem;">
+        <button class="secondary" type="button" style="font-size:0.8rem;padding:0.45rem;" onclick="addVocab('source')">Add source…</button>
+        <button class="secondary" type="button" style="font-size:0.8rem;padding:0.45rem;" onclick="addVocab('category')">Add category…</button>
+      </div>
+
+      <label>Location / bin</label>
+      <input id="f-location" list="loc-list" placeholder="Shelf A-3">
+      <datalist id="loc-list"></datalist>
+      <button class="secondary" type="button" style="margin-top:0.35rem;width:100%;font-size:0.8rem;padding:0.45rem;" onclick="addVocab('location')">Add location to list…</button>
+
+      <div class="row">
+        <div>
+          <label>Buy $ (optional)</label>
+          <input id="f-buy" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        </div>
+        <div>
+          <label>Sell $ (optional)</label>
+          <input id="f-sell" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        </div>
+      </div>
+      <p class="hint" id="price-hint">Buy = what you paid (valuation). Sell = what you charge (quotes). Leave blank if unknown.</p>
+
+      <label>Notes</label>
+      <textarea id="f-notes" placeholder="Optional"></textarea>
+
+      <label style="display:flex;align-items:flex-start;gap:0.5rem;font-weight:500;color:var(--text);">
+        <input type="checkbox" id="f-exclude" style="width:auto;margin-top:0.2rem;">
+        <span>Exclude from inventory valuation<br><span class="hint" style="margin:0;">Keep prices for reference; do not add qty × buy into totals.</span></span>
+      </label>
+
+      <div id="conflict-box" class="warn" style="display:none;"></div>
+      <div id="form-err" class="err"></div>
+
+      <div class="row" style="margin-top:0.75rem;">
+        <button class="secondary" type="button" onclick="closeSheet()">Cancel</button>
+        <button class="primary" type="button" id="save-btn" onclick="saveLine()">Save line</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const PN_MAX = 40;
+    const NAME_LABEL_MAX = 32;
+    const DRAFT_KEY = 'inv_physical_count_v1';
+    const SEED_CACHE_KEY = 'inv_physical_seed_v1';
+    const REORDER_DEFAULT = 5;
+
+    const FALLBACK = {
+      sources: ['Alu Design', 'FFS', 'In-Mar', 'Skum', 'Triplex', 'Versa', 'Wynn', 'Amazon', 'Uline'],
+      categories: [
+        'Alarm', 'Arm', 'Bearing', 'Blade', 'Cable', 'Chair Parts', 'Complete System',
+        'Control Unit', 'Cylinder Seal Kit', 'Electrical', 'Filter', 'Fitting/Hose',
+        'Gasket', 'Gasket/Seal', 'Hardware', 'Heater', 'Motor', 'Nozzle', 'O-Ring',
+        'Packaging', 'Packing/Seal', 'Proximity Switch', 'Pump', 'Pump Parts',
+        'Seal/Service Kit', 'Spring', 'Spring/Strut', 'V-Belt', 'Valve', 'Unclassified'
+      ],
+      generics: [
+        'Alarm', 'Arm', 'Bearing', 'Belt', 'Blade', 'Bolt', 'Box', 'Bracket', 'Brush',
+        'Cable', 'Capacitor', 'Carriage', 'Clip', 'Connector', 'Control', 'Cover',
+        'Cylinder', 'Filter', 'Fitting', 'Fuse', 'Gasket', 'Grommet', 'Hardware',
+        'Heater', 'Hose', 'Idler', 'Kit', 'Motor', 'Nozzle', 'Nut', 'O-Ring',
+        'Packaging', 'Pin', 'Plate', 'Pump', 'Relay', 'Rod', 'Roller', 'Screw',
+        'Seal', 'Shaft', 'Spring', 'Switch', 'Tank', 'Tool', 'Tubing', 'Valve',
+        'Washer', 'Wiper'
+      ],
+      locations: [],
+      brands: ['Wynn', 'Hepworth', 'FFS', 'Alu', 'Alu Design', 'Amazon', 'Uline', 'Versa', 'Skum', 'Triplex', 'In-Mar', 'Inmar', 'Siemens', 'Danfoss', 'Parker', 'Bosch'],
+      parts: []
+    };
+
+    let seed = JSON.parse(JSON.stringify(FALLBACK));
+    let state = emptyState();
+    let editingIndex = -1;
+    let pickedCatalog = null;
+    let nameTouched = false;
+
+    function emptyState() {
+      const d = new Date();
+      const stamp = d.toISOString().slice(0, 10);
+      return {
+        name: 'Parts room ' + stamp,
+        created_at: d.toISOString(),
+        updated_at: d.toISOString(),
+        items: [],
+        extras: { sources: [], categories: [], locations: [], generics: [] }
+      };
+    }
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove('show'), 2200);
+    }
+
+    function normKey(s) {
+      return String(s || '').trim().toLowerCase().replace(/[.\s]+/g, ' ').replace(/\s+/g, ' ');
+    }
+    function canonVocab(list, value) {
+      const v = String(value || '').trim();
+      if (!v) return '';
+      const nk = normKey(v).replace(/\s/g, '');
+      const hit = list.find(x => normKey(x).replace(/\s/g, '') === nk);
+      return hit || v;
+    }
+    function stripPn(s) {
+      return String(s || '').replace(/\s+/g, '').slice(0, PN_MAX);
+    }
+    function allSources() {
+      return uniqueKeep([].concat(seed.sources || [], state.extras.sources || []));
+    }
+    function allCategories() {
+      return uniqueKeep([].concat(seed.categories || [], state.extras.categories || []));
+    }
+    function allGenerics() {
+      return uniqueKeep([].concat(seed.generics || [], state.extras.generics || []));
+    }
+    function allLocations() {
+      return uniqueKeep([].concat(seed.locations || [], state.extras.locations || []));
+    }
+    function uniqueKeep(arr) {
+      const seen = new Set();
+      const out = [];
+      arr.forEach(x => {
+        const t = String(x || '').trim();
+        if (!t) return;
+        const k = normKey(t);
+        if (seen.has(k)) return;
+        seen.add(k);
+        out.push(t);
+      });
+      return out.sort((a, b) => a.localeCompare(b));
+    }
+
+    function fillSelect(sel, values, emptyLabel) {
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">${emptyLabel || '—'}</option>` +
+        values.map(v => `<option value="${escAttr(v)}">${esc(v)}</option>`).join('');
+      if (cur && values.includes(cur)) sel.value = cur;
+    }
+    function esc(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function escAttr(s) {
+      return esc(s).replace(/"/g, '&quot;');
+    }
+
+    function composedName() {
+      const g = document.getElementById('f-generic').value.trim();
+      const spec = document.getElementById('f-specific').value.trim().replace(/^,\s*/, '');
+      if (!g) return spec;
+      if (!spec) return g + ', ';
+      return g + ', ' + spec;
+    }
+
+    function refreshPreview() {
+      const n = composedName();
+      document.getElementById('name-preview').textContent = n || 'Generic, specific…';
+    }
+
+    function onGenericChange() {
+      const g = document.getElementById('f-generic').value;
+      const cat = document.getElementById('f-category');
+      if (g && !cat.value) {
+        const cats = allCategories();
+        const hit = cats.find(c => c.toLowerCase() === g.toLowerCase()) ||
+          cats.find(c => c.toLowerCase().startsWith(g.toLowerCase()));
+        if (hit) cat.value = hit;
+      }
+      refreshPreview();
+    }
+
+    function splitName(name) {
+      const n = String(name || '').trim();
+      const i = n.indexOf(',');
+      if (i < 0) return { generic: '', specific: n };
+      return { generic: n.slice(0, i).trim(), specific: n.slice(i + 1).trim() };
+    }
+
+    function validateName(name) {
+      const n = String(name || '').trim();
+      if (!n) return { ok: false, hard: true, msg: 'Name is required.' };
+      if (!n.includes(',')) {
+        return { ok: false, hard: true, msg: 'Use Generic, specific… (comma after the type). Example: Blade, Artic 800mm' };
+      }
+      const lead = n.split(',')[0].trim();
+      const gens = allGenerics();
+      const known = gens.some(g => g.toLowerCase() === lead.toLowerCase());
+      if (!known) {
+        return { ok: false, hard: true, msg: `“${lead}” is not a generic type. Pick one from the list or tap Add new generic type.` };
+      }
+      const brands = seed.brands || FALLBACK.brands;
+      const first = lead.toLowerCase();
+      if (brands.some(b => b.toLowerCase() === first)) {
+        return { ok: false, hard: true, msg: `Name starts with a brand (“${lead}”). Put the generic type first: Motor, 0.55kW, ${lead}` };
+      }
+      const warn = n.length > NAME_LABEL_MAX ? `Name is ${n.length} chars (labels fit ${NAME_LABEL_MAX}). OK to save.` : '';
+      return { ok: true, hard: false, msg: warn };
+    }
+
+    function validatePn(pn, skipIndex) {
+      const p = stripPn(pn);
+      if (!p) return { ok: false, msg: 'Part number is required.' };
+      if (/\s/.test(String(pn || ''))) return { ok: false, msg: 'Part numbers cannot contain spaces (they are stripped).' };
+      if (p.length > PN_MAX) return { ok: false, msg: `Part number max is ${PN_MAX} characters.` };
+      const dup = state.items.findIndex((it, i) => i !== skipIndex && it.part_number.toLowerCase() === p.toLowerCase());
+      if (dup >= 0) return { ok: false, msg: `Already in this count: ${state.items[dup].name}` };
+      return { ok: true, msg: '' };
+    }
+
+    function onPnInput() {
+      const el = document.getElementById('f-pn');
+      const caret = el.selectionStart;
+      const before = el.value;
+      el.value = stripPn(el.value);
+      const v = validatePn(el.value, editingIndex);
+      const box = document.getElementById('pn-msg');
+      box.className = v.ok ? 'ok' : 'err';
+      box.textContent = v.ok ? '' : v.msg;
+      if (el.value !== before && typeof caret === 'number') {
+        try { el.setSelectionRange(caret, caret); } catch (e) {}
+      }
+      maybePrefillFromCatalog(el.value);
+    }
+
+    function maybePrefillFromCatalog(pn) {
+      if (pickedCatalog && pickedCatalog.part_number.toLowerCase() === pn.toLowerCase()) return;
+      const hit = (seed.parts || []).find(p => (p.part_number || '').toLowerCase() === pn.toLowerCase());
+      if (!hit) return;
+      applyCatalog(hit, { keepQty: true, silent: true, keepName: nameTouched });
+    }
+
+    function showCatalogNameBox(hit) {
+      const box = document.getElementById('catalog-name-box');
+      const orig = document.getElementById('catalog-name-orig');
+      if (!box || !orig || !hit) return;
+      box.style.display = 'block';
+      orig.textContent = hit.name || '(no catalog name)';
+    }
+
+    function hideCatalogNameBox() {
+      const box = document.getElementById('catalog-name-box');
+      if (box) box.style.display = 'none';
+    }
+
+    function focusNameEdit() {
+      const spec = document.getElementById('f-specific');
+      spec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      spec.focus();
+      spec.select();
+    }
+
+    function fillNameFromCatalog(hit) {
+      const { generic, specific } = splitName(hit.name);
+      const gens = allGenerics();
+      const gMatch = gens.find(g => g.toLowerCase() === generic.toLowerCase());
+      if (gMatch) {
+        document.getElementById('f-generic').value = gMatch;
+        document.getElementById('f-specific').value = specific;
+      } else {
+        const guess = gens.find(g => (hit.category || '').toLowerCase().startsWith(g.toLowerCase())) ||
+          gens.find(g => (hit.name || '').toLowerCase().startsWith(g.toLowerCase() + ' '));
+        document.getElementById('f-generic').value = guess || '';
+        document.getElementById('f-specific').value = guess && (hit.name || '').toLowerCase().startsWith(guess.toLowerCase())
+          ? hit.name.slice(guess.length).replace(/^[\s,:-]+/, '')
+          : (hit.name || '');
+      }
+      nameTouched = false;
+      refreshPreview();
+    }
+
+    function resetCatalogName() {
+      if (!pickedCatalog) return;
+      fillNameFromCatalog(pickedCatalog);
+      toast('Name reset to catalog');
+    }
+
+    function applyCatalog(hit, opts) {
+      pickedCatalog = hit;
+      showCatalogNameBox(hit);
+      if (!opts || !opts.keepName) fillNameFromCatalog(hit);
+      document.getElementById('f-pn').value = stripPn(hit.part_number);
+      if (!opts || !opts.keepQty) document.getElementById('f-qty').value = 1;
+      const src = canonVocab(allSources(), hit.source);
+      const cat = canonVocab(allCategories(), hit.category);
+      if (src) document.getElementById('f-source').value = src;
+      if (cat) document.getElementById('f-category').value = cat;
+      if (hit.buy_price != null) document.getElementById('f-buy').value = hit.buy_price;
+      if (hit.sell_price != null) document.getElementById('f-sell').value = hit.sell_price;
+      const box = document.getElementById('conflict-box');
+      if (hit.conflicts && hit.conflicts.length) {
+        box.style.display = 'block';
+        box.textContent = 'Catalog note (choose what is on the shelf): ' + hit.conflicts.join(' · ') +
+          (hit.hint ? ' — ' + hit.hint : '');
+      } else if (hit.hint && !opts?.silent) {
+        box.style.display = 'block';
+        box.textContent = hit.hint + '. Qty from old sheets is not used.';
+      } else {
+        box.style.display = 'none';
+      }
+      refreshPreview();
+    }
+
+    function bumpQty(d) {
+      const el = document.getElementById('f-qty');
+      const n = Math.max(0, (parseInt(el.value, 10) || 0) + d);
+      el.value = n;
+    }
+
+    function populateVocabSelects() {
+      fillSelect(document.getElementById('f-generic'), allGenerics(), 'Select type…');
+      fillSelect(document.getElementById('f-source'), allSources(), 'Select source…');
+      fillSelect(document.getElementById('f-category'), allCategories(), 'Select category…');
+      document.getElementById('loc-list').innerHTML = allLocations().map(l => `<option value="${escAttr(l)}">`).join('');
+    }
+
+    function openNew() {
+      editingIndex = -1;
+      pickedCatalog = null;
+      document.getElementById('sheet-title').textContent = 'New part';
+      nameTouched = false;
+      hideCatalogNameBox();
+      populateVocabSelects();
+      ['f-specific', 'f-pn', 'f-buy', 'f-sell', 'f-notes', 'f-location'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('f-generic').value = '';
+      document.getElementById('f-source').value = '';
+      document.getElementById('f-category').value = '';
+      document.getElementById('f-qty').value = 1;
+      document.getElementById('f-exclude').checked = false;
+      document.getElementById('conflict-box').style.display = 'none';
+      document.getElementById('form-err').textContent = '';
+      document.getElementById('pn-msg').textContent = '';
+      refreshPreview();
+      document.getElementById('overlay').classList.add('show');
+      setTimeout(() => document.getElementById('f-generic').focus(), 50);
+    }
+
+    function openFromCatalog(pn) {
+      const hit = (seed.parts || []).find(p => p.part_number.toLowerCase() === String(pn).toLowerCase());
+      openNew();
+      document.getElementById('sheet-title').textContent = 'Count known part';
+      if (hit) applyCatalog(hit);
+      document.getElementById('f-qty').focus();
+    }
+
+    function openEdit(i) {
+      const it = state.items[i];
+      if (!it) return;
+      editingIndex = i;
+      pickedCatalog = null;
+      document.getElementById('sheet-title').textContent = 'Edit line';
+      nameTouched = true;
+      populateVocabSelects();
+      const seedHit = (seed.parts || []).find(p => p.part_number.toLowerCase() === String(it.part_number).toLowerCase());
+      if (seedHit) {
+        pickedCatalog = seedHit;
+        showCatalogNameBox(seedHit);
+      } else {
+        pickedCatalog = null;
+        hideCatalogNameBox();
+      }
+      const { generic, specific } = splitName(it.name);
+      const gMatch = allGenerics().find(g => g.toLowerCase() === generic.toLowerCase());
+      document.getElementById('f-generic').value = gMatch || '';
+      document.getElementById('f-specific').value = gMatch ? specific : it.name;
+      document.getElementById('f-pn').value = it.part_number;
+      document.getElementById('f-qty').value = it.qty;
+      document.getElementById('f-source').value = canonVocab(allSources(), it.source);
+      document.getElementById('f-category').value = canonVocab(allCategories(), it.category);
+      document.getElementById('f-location').value = it.location || '';
+      document.getElementById('f-buy').value = it.buy_price ?? '';
+      document.getElementById('f-sell').value = it.sell_price ?? '';
+      document.getElementById('f-notes').value = it.notes || '';
+      document.getElementById('f-exclude').checked = !!it.exclude_from_valuation;
+      document.getElementById('conflict-box').style.display = 'none';
+      document.getElementById('form-err').textContent = '';
+      refreshPreview();
+      document.getElementById('overlay').classList.add('show');
+    }
+
+    function closeSheet() {
+      document.getElementById('overlay').classList.remove('show');
+    }
+
+    function saveLine() {
+      const name = composedName().replace(/,\s*$/, '').trim();
+      const pn = stripPn(document.getElementById('f-pn').value);
+      document.getElementById('f-pn').value = pn;
+      const qty = parseInt(document.getElementById('f-qty').value, 10);
+      const nv = validateName(name);
+      const pv = validatePn(pn, editingIndex);
+      const err = document.getElementById('form-err');
+      if (!nv.ok) { err.textContent = nv.msg; return; }
+      if (!pv.ok) { err.textContent = pv.msg; return; }
+      if (!Number.isInteger(qty) || qty < 0) { err.textContent = 'Qty must be a whole number 0 or more.'; return; }
+
+      const src = canonVocab(allSources(), document.getElementById('f-source').value);
+      const cat = canonVocab(allCategories(), document.getElementById('f-category').value);
+      const loc = document.getElementById('f-location').value.trim();
+      const buy = parseFloat(document.getElementById('f-buy').value);
+      const sell = parseFloat(document.getElementById('f-sell').value);
+      const notes = document.getElementById('f-notes').value.trim();
+      const line = {
+        part_number: pn,
+        name,
+        qty,
+        reorder_level: REORDER_DEFAULT,
+        source: src || null,
+        category: cat || null,
+        location: loc || null,
+        buy_price: Number.isFinite(buy) ? buy : null,
+        sell_price: Number.isFinite(sell) ? sell : null,
+        notes: notes || null,
+        exclude_from_valuation: !!document.getElementById('f-exclude').checked,
+        list_price: pickedCatalog && pickedCatalog.list_price != null ? pickedCatalog.list_price : null,
+        list_currency: pickedCatalog && pickedCatalog.list_currency ? pickedCatalog.list_currency : null,
+        manufacturer_part_number: pickedCatalog && pickedCatalog.manufacturer_part_number ? pickedCatalog.manufacturer_part_number : null,
+        from_catalog: !!(pickedCatalog && pickedCatalog.part_number && pickedCatalog.part_number.toLowerCase() === pn.toLowerCase())
+      };
+      if (editingIndex >= 0) state.items[editingIndex] = line;
+      else state.items.push(line);
+      saveDraft(false);
+      closeSheet();
+      document.getElementById('q').value = '';
+      document.getElementById('hits').innerHTML = '';
+      render();
+      toast(editingIndex >= 0 ? 'Line updated' : 'Added ' + pn);
+    }
+
+    function removeLine(i) {
+      const it = state.items[i];
+      if (!it) return;
+      if (!confirm('Remove ' + it.part_number + ' from this count?')) return;
+      state.items.splice(i, 1);
+      saveDraft(false);
+      render();
+    }
+
+    function addGeneric() {
+      const v = prompt('New generic lead term (one word / type, e.g. Solenoid):');
+      if (!v) return;
+      const t = v.trim();
+      if (!t || t.includes(',')) { alert('Use a single type word, no commas.'); return; }
+      if ((seed.brands || []).some(b => b.toLowerCase() === t.toLowerCase())) {
+        alert('That looks like a brand. Generic type is Motor, Valve, Blade…');
+        return;
+      }
+      if (!confirm('Add “' + t + '” as an allowed generic type? Names will start with: ' + t + ', …')) return;
+      state.extras.generics.push(t);
+      populateVocabSelects();
+      document.getElementById('f-generic').value = t;
+      refreshPreview();
+      saveDraft(false);
+    }
+
+    function addVocab(kind) {
+      const labels = { source: 'source / supplier', category: 'category', location: 'location / bin' };
+      const v = prompt('New ' + labels[kind] + ':');
+      if (!v) return;
+      const t = v.trim();
+      if (!t) return;
+      const list = kind === 'source' ? allSources() : kind === 'category' ? allCategories() : allLocations();
+      const existing = canonVocab(list, t);
+      if (existing && list.some(x => x === existing) && normKey(existing) !== normKey(t)) {
+        if (!confirm('Looks like “' + existing + '”. Use that instead of “' + t + '”?')) {
+          /* keep t */
+        } else {
+          if (kind === 'source') document.getElementById('f-source').value = existing;
+          if (kind === 'category') document.getElementById('f-category').value = existing;
+          if (kind === 'location') document.getElementById('f-location').value = existing;
+          return;
+        }
+      }
+      if (!confirm('Add “' + t + '” to ' + kind + ' list?')) return;
+      state.extras[kind === 'source' ? 'sources' : kind === 'category' ? 'categories' : 'locations'].push(t);
+      populateVocabSelects();
+      if (kind === 'source') document.getElementById('f-source').value = t;
+      if (kind === 'category') document.getElementById('f-category').value = t;
+      if (kind === 'location') document.getElementById('f-location').value = t;
+      saveDraft(false);
+    }
+
+    function searchBits(q) {
+      const ql = q.toLowerCase().trim();
+      if (ql.length < 1) return [];
+      const compact = ql.replace(/[^a-z0-9]/g, '');
+      const digits = ql.replace(/\D/g, '');
+      const pool = (seed.parts || []).concat(state.items.map(it => ({
+        part_number: it.part_number, name: it.name, source: it.source, category: it.category, counted: true
+      })));
+      const seen = new Set();
+      const out = [];
+      pool.forEach(p => {
+        const pn = (p.part_number || '').toLowerCase();
+        const name = (p.name || '').toLowerCase();
+        const pnc = pn.replace(/[^a-z0-9]/g, '');
+        const pnd = pn.replace(/\D/g, '');
+        const hit = name.includes(ql) || pn.includes(ql) || (compact.length >= 2 && pnc.includes(compact)) ||
+          (digits.length >= 3 && pnd.includes(digits));
+        if (!hit) return;
+        const k = pn;
+        if (seen.has(k)) return;
+        seen.add(k);
+        out.push(p);
+      });
+      return out.slice(0, 30);
+    }
+
+    function renderHits() {
+      const q = document.getElementById('q').value;
+      const box = document.getElementById('hits');
+      if (!q.trim()) { box.innerHTML = ''; return; }
+      const rows = searchBits(q);
+      if (!rows.length) {
+        box.innerHTML = '<p class="hint">No catalog match. Use + New part.</p>';
+        return;
+      }
+      box.innerHTML = rows.map(p => {
+        const already = state.items.some(i => i.part_number.toLowerCase() === p.part_number.toLowerCase());
+        return `<button type="button" class="hit" onclick="openFromCatalog('${escAttr(p.part_number)}')">
+          <strong>${esc(p.name)}</strong>
+          <small>${esc(p.part_number)}${p.source ? ' · ' + esc(p.source) : ''}${already ? ' · already in count' : ''}${p.counted ? ' · this count' : ''}</small>
+        </button>`;
+      }).join('');
+    }
+
+    function render() {
+      document.getElementById('count-sub').textContent = state.name + ' · ' + state.items.length + ' lines · draft in this browser';
+      const units = state.items.reduce((s, i) => s + (i.qty || 0), 0);
+      const known = new Set((seed.parts || []).map(p => p.part_number.toLowerCase()));
+      const neu = state.items.filter(i => !known.has(i.part_number.toLowerCase())).length;
+      document.getElementById('stat-lines').textContent = state.items.length;
+      document.getElementById('stat-units').textContent = units;
+      document.getElementById('stat-new').textContent = neu;
+      const list = document.getElementById('list');
+      const hint = document.getElementById('list-hint');
+      if (!state.items.length) {
+        list.innerHTML = '';
+        hint.textContent = 'Nothing counted yet.';
+        return;
+      }
+      hint.textContent = 'Tap a line to edit. Qty is what you counted on the shelf.';
+      list.innerHTML = state.items.map((it, i) => `
+        <div class="item">
+          <div style="min-width:0;flex:1;" onclick="openEdit(${i})">
+            <div style="font-weight:700;">${esc(it.name)}</div>
+            <div style="font-size:0.78rem;color:var(--muted);">${esc(it.part_number)}</div>
+            <div style="margin-top:0.2rem;">
+              ${it.source ? `<span class="badge">${esc(it.source)}</span>` : ''}
+              ${it.category ? `<span class="badge">${esc(it.category)}</span>` : ''}
+              ${it.location ? `<span class="badge">${esc(it.location)}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="qty-big">${it.qty}</div>
+            <button class="secondary" type="button" style="margin-top:0.35rem;padding:0.35rem 0.5rem;font-size:0.75rem;min-height:36px;" onclick="removeLine(${i})">Remove</button>
+          </div>
+        </div>`).join('');
+    }
+
+    function saveDraft(manual) {
+      state.updated_at = new Date().toISOString();
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(state));
+        if (manual) toast('Draft saved on this device');
+      } catch (e) {
+        if (manual) toast('Could not save draft (storage full?)');
+      }
+    }
+
+    function loadDraft() {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        const d = JSON.parse(raw);
+        if (d && Array.isArray(d.items)) state = d;
+      } catch (e) {}
+    }
+
+    function renameCount() {
+      const n = prompt('Count name:', state.name);
+      if (!n) return;
+      state.name = n.trim();
+      saveDraft(false);
+      render();
+    }
+
+    function exportPayload() {
+      return state.items.map(it => {
+        const row = {
+          part_number: it.part_number,
+          name: it.name,
+          qty: it.qty,
+          reorder_level: it.reorder_level != null ? it.reorder_level : REORDER_DEFAULT,
+          source: it.source || null,
+          category: it.category || null,
+          location: it.location || null,
+          buy_price: it.buy_price,
+          sell_price: it.sell_price,
+          notes: it.notes,
+          exclude_from_valuation: !!it.exclude_from_valuation
+        };
+        if (it.list_price != null) row.list_price = it.list_price;
+        if (it.list_currency) row.list_currency = it.list_currency;
+        return row;
+      });
+    }
+
+    function exportJson() {
+      if (!state.items.length) { toast('Nothing to export'); return; }
+      const bad = [];
+      state.items.forEach((it, i) => {
+        const nv = validateName(it.name);
+        const pv = validatePn(it.part_number, i);
+        if (!nv.ok || !pv.ok || !Number.isInteger(it.qty) || it.qty < 0) {
+          bad.push((i + 1) + '. ' + (it.part_number || '?') + ' — ' + (nv.msg || pv.msg || 'bad qty'));
+        }
+      });
+      if (bad.length) {
+        alert('Fix these before export:\n\n' + bad.join('\n'));
+        return;
+      }
+      const blob = new Blob([JSON.stringify(exportPayload(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      const slug = (state.name || 'count').replace(/[^\w\-]+/g, '_').slice(0, 40);
+      a.href = URL.createObjectURL(blob);
+      a.download = slug + '.json';
+      a.click();
+      toast('JSON downloaded — import in the web app (More)');
+    }
+
+    function printSummary() {
+      window.print();
+    }
+
+    function clearCount() {
+      if (!confirm('Erase this entire count from this phone? This cannot be undone.')) return;
+      if (!confirm('Really clear all ' + state.items.length + ' lines?')) return;
+      state = emptyState();
+      saveDraft(false);
+      render();
+    }
+
+    async function loadSeed() {
+      let data = null;
+      try {
+        const cached = localStorage.getItem(SEED_CACHE_KEY);
+        if (cached) data = JSON.parse(cached);
+      } catch (e) {}
+      try {
+        const res = await fetch('count-seed.json', { cache: 'reload' });
+        if (res.ok) {
+          data = await res.json();
+          try { localStorage.setItem(SEED_CACHE_KEY, JSON.stringify(data)); } catch (e2) {}
+        }
+      } catch (e) { /* file:// or offline — use cache / fallback */ }
+      if (data && Array.isArray(data.parts)) {
+        seed = Object.assign({}, FALLBACK, data);
+      }
+    }
+
+    document.getElementById('seed-file').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (!data || !Array.isArray(data.parts)) throw new Error('Need a count-seed.json with a parts array');
+          seed = Object.assign({}, FALLBACK, data);
+          try { localStorage.setItem(SEED_CACHE_KEY, JSON.stringify(data)); } catch (err) {}
+          toast('Catalog loaded: ' + data.parts.length + ' known parts');
+          renderHits();
+        } catch (err) {
+          alert('Could not load catalog: ' + err.message);
+        }
+      };
+      reader.readAsText(f);
+    });
+
+    document.getElementById('q').addEventListener('input', renderHits);
+    document.getElementById('q').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const rows = searchBits(document.getElementById('q').value);
+        if (rows.length === 1) openFromCatalog(rows[0].part_number);
+        else if (!rows.length) openNew();
+      }
+    });
+
+    (async function init() {
+      loadDraft();
+      await loadSeed();
+      render();
+    })();
+  </script>
+</body>
+</html>

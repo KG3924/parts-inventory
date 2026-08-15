@@ -19,6 +19,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **Reports** | Inventory valuation; **adjustment report** (who/when/action — needs adjustments table); items needing attention with filters (Out of Stock, Needs Delivery Date, Low, Open Orders) |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
 | **More** | Export/Import JSON; connection + schema status; setup SQL; clear all inventory |
+| **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
 **Users (required before changes):** Toby, Glynn, Ricky, Grant, Kyle — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes.
 
@@ -128,4 +129,16 @@ Document numbers look like `Q-2026-001`. The working cart is still in the browse
 
 ---
 
-*Last updated: 2026-08-09 — QR deep-link labels*
+## Physical count (phone)
+
+Use **`count.html`** in the parts room (iPhone / iPad). Draft stays on the device. **Export JSON** → this app **More → Import JSON**.
+
+- Names: `Generic, specific…` (enforced). Part #s: no spaces, max 40.
+- Catalog lookup: `count-seed.json` (Wynn 2026 prices + consolidated names). Old qtys are not imported.
+- Existing part numbers in Supabase are **skipped** on import — use a clean DB or only new PNs.
+
+Details: [`COUNT.md`](COUNT.md).
+
+---
+
+*Last updated: 2026-08-14 — physical count tool (`count.html`)*
