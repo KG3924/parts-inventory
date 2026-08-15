@@ -548,12 +548,19 @@
       document.getElementById('conflict-box').style.display = 'none';
       document.getElementById('form-err').textContent = '';
       document.getElementById('pn-msg').textContent = '';
+      document.getElementById('save-btn').textContent = 'Save line';
       refreshPreview();
       document.getElementById('overlay').classList.add('show');
       setTimeout(() => document.getElementById('f-generic').focus(), 50);
     }
 
     function openFromCatalog(pn) {
+      const idx = state.items.findIndex(it => it.part_number.toLowerCase() === String(pn).toLowerCase());
+      if (idx >= 0) {
+        openEdit(idx);
+        toast('Already in this count — edit the line');
+        return;
+      }
       const hit = (seed.parts || []).find(p => p.part_number.toLowerCase() === String(pn).toLowerCase());
       openNew();
       document.getElementById('sheet-title').textContent = 'Count known part';
@@ -592,6 +599,7 @@
       document.getElementById('f-exclude').checked = !!it.exclude_from_valuation;
       document.getElementById('conflict-box').style.display = 'none';
       document.getElementById('form-err').textContent = '';
+      document.getElementById('save-btn').textContent = 'Save changes';
       refreshPreview();
       document.getElementById('overlay').classList.add('show');
     }
@@ -618,6 +626,8 @@
       const buy = parseFloat(document.getElementById('f-buy').value);
       const sell = parseFloat(document.getElementById('f-sell').value);
       const notes = document.getElementById('f-notes').value.trim();
+      const prev = editingIndex >= 0 ? state.items[editingIndex] : null;
+      const wasEdit = editingIndex >= 0;
       const line = {
         part_number: pn,
         name,
@@ -630,19 +640,19 @@
         sell_price: Number.isFinite(sell) ? sell : null,
         notes: notes || null,
         exclude_from_valuation: !!document.getElementById('f-exclude').checked,
-        list_price: pickedCatalog && pickedCatalog.list_price != null ? pickedCatalog.list_price : null,
-        list_currency: pickedCatalog && pickedCatalog.list_currency ? pickedCatalog.list_currency : null,
-        manufacturer_part_number: pickedCatalog && pickedCatalog.manufacturer_part_number ? pickedCatalog.manufacturer_part_number : null,
+        list_price: (pickedCatalog && pickedCatalog.list_price != null) ? pickedCatalog.list_price : (prev && prev.list_price != null ? prev.list_price : null),
+        list_currency: (pickedCatalog && pickedCatalog.list_currency) || (prev && prev.list_currency) || null,
+        manufacturer_part_number: (pickedCatalog && pickedCatalog.manufacturer_part_number) || (prev && prev.manufacturer_part_number) || null,
         from_catalog: !!(pickedCatalog && pickedCatalog.part_number && pickedCatalog.part_number.toLowerCase() === pn.toLowerCase())
       };
-      if (editingIndex >= 0) state.items[editingIndex] = line;
+      if (wasEdit) state.items[editingIndex] = line;
       else state.items.push(line);
       saveDraft(false);
       closeSheet();
       document.getElementById('q').value = '';
       document.getElementById('hits').innerHTML = '';
       render();
-      toast(editingIndex >= 0 ? 'Line updated' : 'Added ' + pn);
+      toast(wasEdit ? 'Line updated' : 'Added ' + pn);
     }
 
     function removeLine(i) {
@@ -737,7 +747,7 @@
         const already = state.items.some(i => i.part_number.toLowerCase() === p.part_number.toLowerCase());
         return `<button type="button" class="hit" onclick="openFromCatalog('${escAttr(p.part_number)}')">
           <strong>${esc(p.name)}</strong>
-          <small>${esc(p.part_number)}${p.source ? ' · ' + esc(p.source) : ''}${already ? ' · already in count' : ''}${p.counted ? ' · this count' : ''}</small>
+          <small>${esc(p.part_number)}${p.source ? ' · ' + esc(p.source) : ''}${already ? ' · already in count — tap to edit' : ''}</small>
         </button>`;
       }).join('');
     }
@@ -757,10 +767,10 @@
         hint.textContent = 'Nothing counted yet.';
         return;
       }
-      hint.textContent = 'Tap a line to edit. Qty is what you counted on the shelf.';
+      hint.textContent = 'Use Edit to change name, qty, source, or prices. Qty is the shelf count.';
       list.innerHTML = state.items.map((it, i) => `
         <div class="item">
-          <div style="min-width:0;flex:1;" onclick="openEdit(${i})">
+          <div style="min-width:0;flex:1;">
             <div style="font-weight:700;">${esc(it.name)}</div>
             <div style="font-size:0.78rem;color:var(--muted);">${esc(it.part_number)}</div>
             <div style="margin-top:0.2rem;">
@@ -768,11 +778,12 @@
               ${it.category ? `<span class="badge">${esc(it.category)}</span>` : ''}
               ${it.location ? `<span class="badge">${esc(it.location)}</span>` : ''}
             </div>
+            <div class="row" style="margin-top:0.45rem;">
+              <button type="button" class="primary" style="padding:0.5rem 0.65rem;font-size:0.85rem;" onclick="openEdit(${i})">Edit</button>
+              <button type="button" class="danger" style="padding:0.5rem 0.65rem;font-size:0.85rem;" onclick="removeLine(${i})">Remove</button>
+            </div>
           </div>
-          <div style="text-align:right;">
-            <div class="qty-big">${it.qty}</div>
-            <button class="secondary" type="button" style="margin-top:0.35rem;padding:0.35rem 0.5rem;font-size:0.75rem;min-height:36px;" onclick="removeLine(${i})">Remove</button>
-          </div>
+          <div class="qty-big">${it.qty}</div>
         </div>`).join('');
     }
 

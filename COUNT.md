@@ -53,6 +53,7 @@ On the iPad, open `http://YOUR-MAC-LAN-IP:8000/count.html`. Fine for a test; Pag
 2. Search a name or part # → tap the match → enter **shelf qty** → **Save line**.  
    Catalog names are a starting point — **Change name for this count** if the seed wording is messy.
 3. **+ New part** for something not in the catalog (`Generic, specific…`, no spaces in the part #).
+4. On any saved line, tap **Edit** to change name, qty, source, prices, or notes. Searching a part already in the count opens that line to edit.
 4. Draft **auto-saves**. Tap **Save draft** if you want a confirmation toast.
 5. You can lock the iPad or switch apps. Re-open the Home Screen icon and the draft should still be there.
 
