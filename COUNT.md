@@ -54,10 +54,13 @@ On the iPad, open `http://YOUR-MAC-LAN-IP:8000/count.html`. Fine for a test; Pag
    Catalog / live-app **name, notes, source, category, location, and prices** fill in so you can keep or edit them. Shelf **qty** is always what you type (old app qty is shown only as a reference).
 3. **+ New part** for something not in the catalog (`Generic, specific…`, no spaces in the part #).
 4. On any saved line, tap **Edit** to change name, qty, source, prices, or notes. Searching a part already in the count opens that line to edit.
-4. Draft **auto-saves**. Tap **Save draft** if you want a confirmation toast.
-5. You can lock the iPad or switch apps. Re-open the Home Screen icon and the draft should still be there.
+4. Draft **auto-saves on this iPad**. Tap **Save draft** if you want a confirmation toast.
+5. You can lock the iPad or switch apps. Re-open the **same Home Screen icon** and the draft should still be there.
+6. **End of each day:** tap **Backup file…** and AirDrop / save to Files. A multi-day count is not safe with only the on-device draft.
 
-Do **not** use Private Browsing. Do **not** clear Safari history/website data until you have exported.
+Do **not** use Private Browsing. Do **not** clear Safari history/website data until you have a backup file. A lost or wiped iPad cannot recover an un-backed-up draft.
+
+**Restore:** **Restore backup…** and pick a `*-backup.json` (or a previously exported count JSON).
 
 ---
 

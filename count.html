@@ -134,6 +134,17 @@
   </header>
 
   <div class="wrap">
+    <div class="card no-print" id="backup-banner" style="background:#eff6ff;border-color:#bfdbfe;">
+      <strong style="font-size:0.88rem;">Multi-day counts</strong>
+      <p class="hint" style="margin:0.3rem 0 0.5rem;">The draft stays on <em>this iPad / this Safari</em>. It survives overnight if you reopen the same Home Screen icon. It will <strong>not</strong> survive clearing Safari data, Private mode, or a lost iPad.</p>
+      <p class="hint" id="save-meta" style="margin:0 0 0.5rem;">Not saved yet.</p>
+      <div class="row">
+        <button class="primary" type="button" onclick="backupNow()">Backup file…</button>
+        <button class="secondary" type="button" onclick="document.getElementById('restore-file').click()">Restore backup…</button>
+      </div>
+      <input type="file" id="restore-file" accept="application/json,.json" style="display:none;">
+    </div>
+
     <div class="stats">
       <div class="stat"><b id="stat-lines">0</b><span>Line items</span></div>
       <div class="stat"><b id="stat-units">0</b><span>Units counted</span></div>
@@ -263,7 +274,10 @@
     const PN_MAX = 40;
     const NAME_LABEL_MAX = 32;
     const DRAFT_KEY = 'inv_physical_count_v1';
+    const SNAP_KEY = 'inv_physical_count_snaps_v1';
+    const LAST_BACKUP_KEY = 'inv_physical_count_last_backup';
     const SEED_CACHE_KEY = 'inv_physical_seed_v2';
+    const SNAP_KEEP = 8;
     const REORDER_DEFAULT = 5;
 
     const FALLBACK = {
@@ -780,7 +794,8 @@
     }
 
     function render() {
-      document.getElementById('count-sub').textContent = state.name + ' · ' + state.items.length + ' lines · draft in this browser';
+      document.getElementById('count-sub').textContent = state.name + ' · ' + state.items.length + ' lines · saved on this iPad ' + fmtWhen(state.updated_at);
+      updateSaveMeta();
       const units = state.items.reduce((s, i) => s + (i.qty || 0), 0);
       const known = new Set((seed.parts || []).map(p => p.part_number.toLowerCase()));
       const neu = state.items.filter(i => !known.has(i.part_number.toLowerCase())).length;
@@ -818,19 +833,143 @@
       state.updated_at = new Date().toISOString();
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(state));
-        if (manual) toast('Draft saved on this device');
+        snapshotDraft();
+        if (manual) toast('Draft saved on this iPad');
       } catch (e) {
-        if (manual) toast('Could not save draft (storage full?)');
+        toast('Could not save draft — tap Backup file now');
       }
+      updateSaveMeta();
+    }
+
+    function snapshotDraft() {
+      if (!state.items.length) return;
+      let snaps = [];
+      try { snaps = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]'); } catch (e) { snaps = []; }
+      if (!Array.isArray(snaps)) snaps = [];
+      const last = snaps[0];
+      const now = Date.now();
+      // Keep at most one snapshot per 2 minutes unless line count changed
+      if (last && last.n === state.items.length && now - Date.parse(last.at || 0) < 120000) {
+        snaps[0] = { at: new Date().toISOString(), n: state.items.length, draft: state };
+      } else {
+        snaps.unshift({ at: new Date().toISOString(), n: state.items.length, draft: state });
+      }
+      snaps = snaps.slice(0, SNAP_KEEP);
+      try { localStorage.setItem(SNAP_KEY, JSON.stringify(snaps)); } catch (e) { /* keep main draft */ }
     }
 
     function loadDraft() {
       try {
         const raw = localStorage.getItem(DRAFT_KEY);
-        if (!raw) return;
-        const d = JSON.parse(raw);
-        if (d && Array.isArray(d.items)) state = d;
+        if (raw) {
+          const d = JSON.parse(raw);
+          if (d && Array.isArray(d.items)) {
+            state = d;
+            return;
+          }
+        }
       } catch (e) {}
+      // Recover newest snapshot if the main draft is gone
+      try {
+        const snaps = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]');
+        if (Array.isArray(snaps) && snaps[0] && snaps[0].draft && snaps[0].draft.items) {
+          state = snaps[0].draft;
+          toast('Restored last on-device snapshot (' + state.items.length + ' lines)');
+        }
+      } catch (e2) {}
+    }
+
+    function fmtWhen(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+
+    function updateSaveMeta() {
+      const el = document.getElementById('save-meta');
+      if (!el) return;
+      let lastBackup = null;
+      try { lastBackup = localStorage.getItem(LAST_BACKUP_KEY); } catch (e) {}
+      const n = state.items.length;
+      let msg = n + ' line' + (n === 1 ? '' : 's') + ' · last saved on this iPad ' + fmtWhen(state.updated_at);
+      if (lastBackup) msg += ' · last backup file ' + fmtWhen(lastBackup);
+      else if (n) msg += ' · no backup file yet — tap Backup file at the end of each day';
+      el.textContent = msg;
+    }
+
+    function backupBlob() {
+      return {
+        _physical_count_backup: 1,
+        saved_at: new Date().toISOString(),
+        draft: state,
+        export: exportPayload()
+      };
+    }
+
+    function backupFilename() {
+      const slug = (state.name || 'count').replace(/[^\w\-]+/g, '_').slice(0, 40);
+      const day = new Date().toISOString().slice(0, 10);
+      return slug + '-' + day + '-backup.json';
+    }
+
+    async function backupNow() {
+      if (!state.items.length) { toast('Nothing to back up yet'); return; }
+      saveDraft(false);
+      const text = JSON.stringify(backupBlob(), null, 2);
+      const name = backupFilename();
+      try { localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString()); } catch (e) {}
+      updateSaveMeta();
+      try {
+        const file = new File([text], name, { type: 'application/json' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: state.name + ' backup' });
+          toast('Backup shared — save it to Files or AirDrop');
+          return;
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.download = name;
+      a.click();
+      toast('Backup downloaded — keep that file until the count is imported');
+    }
+
+    function restoreBackupObject(data) {
+      if (data && data._physical_count_backup && data.draft && Array.isArray(data.draft.items)) {
+        if (state.items.length && !confirm('Replace the current count (' + state.items.length + ' lines) with this backup (' + data.draft.items.length + ' lines)?')) return;
+        state = data.draft;
+        saveDraft(false);
+        render();
+        toast('Backup restored · ' + state.items.length + ' lines');
+        return;
+      }
+      if (Array.isArray(data) && data.length && data[0] && data[0].part_number) {
+        if (state.items.length && !confirm('Replace the current count with ' + data.length + ' exported lines?')) return;
+        state.items = data.map(row => ({
+          part_number: String(row.part_number).replace(/\s+/g, ''),
+          name: row.name,
+          qty: row.qty || 0,
+          reorder_level: row.reorder_level != null ? row.reorder_level : REORDER_DEFAULT,
+          source: row.source || null,
+          category: row.category || null,
+          location: row.location || null,
+          buy_price: row.buy_price ?? null,
+          sell_price: row.sell_price ?? null,
+          notes: row.notes || null,
+          exclude_from_valuation: !!row.exclude_from_valuation,
+          list_price: row.list_price ?? null,
+          list_currency: row.list_currency || null,
+          sell_factor: row.sell_factor ?? null
+        }));
+        saveDraft(false);
+        render();
+        toast('Exported list restored · ' + state.items.length + ' lines');
+        return;
+      }
+      throw new Error('Not a count backup or import JSON');
     }
 
     function renameCount() {
@@ -891,8 +1030,10 @@
     }
 
     function clearCount() {
-      if (!confirm('Erase this entire count from this phone? This cannot be undone.')) return;
-      if (!confirm('Really clear all ' + state.items.length + ' lines?')) return;
+      if (state.items.length) {
+        if (!confirm('Erase this entire count from this iPad? Export or Backup first if you still need it.')) return;
+        if (!confirm('Really clear all ' + state.items.length + ' lines?')) return;
+      }
       state = emptyState();
       saveDraft(false);
       render();
@@ -915,6 +1056,18 @@
         seed = Object.assign({}, FALLBACK, data);
       }
     }
+
+    document.getElementById('restore-file').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { restoreBackupObject(JSON.parse(reader.result)); }
+        catch (err) { alert('Could not restore: ' + err.message); }
+      };
+      reader.readAsText(f);
+    });
 
     document.getElementById('seed-file').addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
@@ -947,9 +1100,20 @@
     });
 
     (async function init() {
+      try {
+        if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+      } catch (e) {}
       loadDraft();
       await loadSeed();
       render();
+      if (state.items.length) {
+        let lastBackup = null;
+        try { lastBackup = localStorage.getItem(LAST_BACKUP_KEY); } catch (e) {}
+        const stale = !lastBackup || (Date.now() - Date.parse(lastBackup) > 18 * 3600 * 1000);
+        if (stale) {
+          toast('Reminder: make a Backup file before you put the iPad down for the night');
+        }
+      }
     })();
   </script>
 </body>
