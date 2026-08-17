@@ -15,13 +15,13 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **Home** | Live list; search (name, part #, barcode, source, category); **source + category** filter chips; badges; clickable **Open Orders / Low / Needs Delivery Date** tiles; quick +/−; cost value; **Quote**, **Edit**, **Del** |
 | **Scan** | Camera or type part # / barcode → review → **Commit** stock in/out/set; **notes** view/edit; **Quote** and **Edit part** on the result card |
 | **Add / Edit** | Name, part #, qty, reorder, buy/sell, source, category, location, notes, open order (order date, est. delivery, qty ordered) |
-| **Quote** | Cart (browser) + **saved quotes in Supabase** (when tables are installed): list by status, open/edit, save, duplicate, void, print branded PDF; free-text customer with optional save to **Customers** |
+| **Quote** | Cart + saved quotes: **customer vs project**, RFQ #, FOB, payment terms, lead time, 90-day validity, prepared-by = logged-in user; **Print quote**, **Packing list**, **Invoice**; free-text customer with optional save |
 | **Reports** | Inventory valuation; **adjustment report** (who/when/action — needs adjustments table); items needing attention with filters (Out of Stock, Needs Delivery Date, Low, Open Orders) |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
-| **More** | Export/Import JSON; connection + schema status; setup SQL; clear all inventory |
+| **More** | Export/Import JSON; **global Wynn / FFS sell factors** (apply to all matching parts); connection + schema status; setup SQL; clear all inventory |
 | **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
-**Users (required before changes):** Toby, Glynn, Ricky, Grant, Kyle — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes.
+**Users (required before changes):** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes and defaults **Prepared By** on quotes.
 
 **Theme:** Light (white background)
 
@@ -43,6 +43,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
    - `inventory` extras (`category`, `barcode`)
    - `inventory_adjustments`
    - Phase 1 quotes: `customers`, `quotes`, `quote_lines`, `document_counters`
+   - Phase 2: quote extras (project, RFQ, FOB, terms, lead time), `app_settings`, `app_lookups`, packing lists, invoices
 3. **Project Settings → API** → copy Project URL and `anon` public key into `index.html` (do not overwrite existing production keys unless intentional).
 
 Open RLS policies are used for trusted internal access (same model as the live app).
@@ -98,15 +99,34 @@ The value is the part’s **stable label ID** (`barcode` in Supabase), not the h
 ---
 
 
-## 4. Quotes
+## 4. Quotes, packing lists, and invoices
+
+These are three related documents that share the same cart and look similar, but they are not the same thing:
+
+| Document | Job | Shows money? |
+|----------|-----|----------------|
+| **Quote** | Offer to sell. Valid 90 days. | Yes — unit prices and quoted total. Notes 3.5% CC fee if a card is used later. |
+| **Packing list** | What was physically shipped (warehouse / receiver). | **No.** No prices, payment terms, lead time, or CC note. |
+| **Invoice** | Request for payment after the sale. | Yes — merchandise, shipping, duty, tariffs, optional 3.5% CC fee, amount due. |
 
 1. Add lines from Home or Scan with **Quote**.
-2. On the **Quote** tab: fill header (customer/project, dates, prepared by, status).
-3. **Save quote** stores it in Supabase (after Phase 1 SQL is run).
-4. Open from the saved list to edit; **Print / PDF** for the branded layout; **Void** instead of delete.
-5. Optional: check **Also save this name to Customers**.
+2. On the **Quote** tab fill: **Customer** (separate from **Project**), RFQ #, dates (valid until defaults to **+90 days**), FOB (Origin / Destination / type-and-save), payment terms (can be stored on the customer), lead time, prepared by (defaults to whoever is logged in).
+3. **Save quote** stores it in Supabase (after Phase 1 SQL). New header fields need **Phase 2 SQL**.
+4. **Print quote** — branded offer. **Packing list** — items + qty only (`PL-YYYY-###`). **Invoice…** — adds PO, ship-to, due date (from quote valid-until), shipping/duty/tariffs, optional CC fee (`INV-YYYY-###`).
+5. Open from the saved list to edit; **Void** instead of delete.
+6. Optional: check **Also save this customer (and payment terms)**.
 
-Document numbers look like `Q-2026-001`. The working cart is still in the browser until you save; **quotes never change inventory qty**.
+Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart is still in the browser until you save; **none of these documents change inventory qty**.
+
+---
+
+## 4b. Pricing (list → sell / buy)
+
+- **Wynn** list is £ GBP. **FFS** list is € EUR. Everything else is $ USD.
+- **Sell $** = list × sell factor, then **rounded up to the next $5** (130.01 → 135.00; 129.99 → 130.00).
+- You can still change the factor on an individual item.
+- **More → Global sell factors:** set Wynn and FFS, then **Apply to all Wynn / FFS parts** that have a list price.
+- **Wynn buy $** auto-fills as converted list minus 30% (list × factor × 0.70). Buy stays optional on other sources.
 
 ---
 
@@ -141,4 +161,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-08-14 — physical count tool (`count.html`)*
+*Last updated: 2026-08-17 — global sell factors, Wynn buy auto-fill, $5 sell rounding, packing lists, invoices*

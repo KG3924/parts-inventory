@@ -38,12 +38,12 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 | Piece | Detail |
 |-------|--------|
 | UI | Single `index.html`, light theme |
-| Backend | Supabase JS v2: `inventory`, `inventory_adjustments`, Phase 1 `customers` / `quotes` / `quote_lines` / `document_counters` |
+| Backend | Supabase JS v2: `inventory`, `inventory_adjustments`, Phase 1 quotes, Phase 2 packing lists / invoices / `app_settings` / `app_lookups` |
 | Labels | QR (`qrcode` CDN) deep-link `?part=` stable `barcode` ID; human part # printed beside QR |
 | Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate; deep-link `?part=` |
 | Hosting | GitHub Pages from `main` |
 | Auth | None; open RLS for trusted internal use |
-| Users | Toby, Glynn, Ricky, Grant, Kyle — must select each session |
+| Users | Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — must select each session |
 
 ---
 
@@ -57,6 +57,8 @@ name (text, not null)
 part_number (text, unique, not null)   -- human / catalog PN; may change
 barcode (text, unique)                 -- STABLE label code; never change on edit
 qty, reorder_level, buy_price, sell_price
+list_price, list_currency, sell_factor
+exclude_from_valuation
 source, category, location, notes
 open_order, date_ordered, estimated_delivery, ordered_qty
 updated_by, created_at, updated_at
@@ -75,22 +77,35 @@ details (text)
 created_at (timestamptz)
 ```
 
-**One-time SQL** is on the **More** tab in the app (Copy SQL). Also `schema/quotes_phase1.sql` for quotes.
+**One-time SQL** is on the **More** tab in the app (Copy SQL). Also:
+- `schema/quotes_phase1.sql` — customers / quotes / quote_lines / document_counters
+- `schema/quotes_phase2.sql` — quote extras, packing lists, invoices, settings, lookups
 
-App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`.  
+App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
 
 ### Phase 1 sales docs (additive — safe alongside inventory)
 
 ```
-customers (name, company, email, phone, notes)
+customers (name, company, email, phone, notes, payment_terms)
 quotes (number Q-YYYY-###, customer_id?, customer_name, status, dates, prepared_by, notes, created_by)
 quote_lines (quote_id, line_no, inventory_id?, part_number, name, qty, unit_price)
 document_counters (doc_type, year, last_value)
 ```
 
+### Phase 2 (additive — run after Phase 1)
+
+```
+quotes extras: project, rfq_number, fob_point, payment_terms, lead_time
+customers.payment_terms
+app_settings (key, value)           -- global Wynn / FFS sell factors
+app_lookups (kind, value)           -- saved FOB points and payment terms
+packing_lists / packing_list_lines  -- PL-YYYY-###, no prices
+invoices / invoice_lines            -- INV-YYYY-### + PO, ship-to, due date, fees
+```
+
 Status enum (app): draft | sent | accepted | expired | void.  
-**Main branch safety:** only CREATE TABLE IF NOT EXISTS — does not drop/alter inventory. Old Pages builds ignore new tables.
+**Main branch safety:** only CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS — does not drop inventory. Old Pages builds ignore new tables. User must run Phase 2 SQL for packing/invoice saves and global factors in Supabase.
 
 ---
 
@@ -98,6 +113,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### User selection
 - Header dropdown always defaults to **— Select —** on open
+- Full names: Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield
 - Not persisted across browser restarts (clears `localStorage.inv_user`)
 - Banner + red outline when empty; blocks qty/save/delete/scan commit/import/clear
 
@@ -118,16 +134,27 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Same form; **barcode never edited by user** — generated on create, shown as read-only hint on edit
 - Create / update / qty change on form → adjustment log
 
-### Quote (Phase 1 — saved quotes)
+### Pricing
+- List currency follows source: **Wynn = £ GBP**, **FFS = € EUR**, else **$ USD**
+- Sell $ = list × sell factor, then **rounded up to the next $5** (130.01 → 135.00; 129.99 → 130.00; 130.00 stays 130.00)
+- Per-item sell factor can still be edited on Add/Edit
+- **More → Global sell factors:** Wynn and FFS fields; Save factors, or **Apply to all Wynn / FFS parts** that have a list price (other sources untouched)
+- **Wynn buy $** auto-fills as converted list minus 30% (`list × factor × 0.70`), still editable
+- FFS EUR factor is a field only until a number is known
+
+### Quote (Phase 2 — quote / packing list / invoice)
 - Working **cart** still in `localStorage` (`inv_quote`) until Save
 - **Saved Quotes** list from Supabase (status filter chips)
-- Builder: number, status (draft/sent/accepted/expired/void), dates, customer free-text, prepared by, notes, lines
-- **Save quote** / Print / Duplicate / Void (no hard delete)
-- Customer free-text + optional “Also save to Customers”
-- Document numbers: `Q-YYYY-###` via `document_counters` (fallback: max existing)
+- Builder fields: number, status, date, **valid until (default +90 days)**, **Customer** and **Project** (separate), **RFQ #**, **Prepared By** (defaults to logged-in full name), FOB dropdown (Origin / Destination / type-and-save), payment terms dropdown (customer-specific when saved), lead time, notes
+- Printed quote includes a **3.5% credit-card fee** notice
+- **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / Void (no hard delete)
+- Packing list (`PL-YYYY-###`): items + qty only. No prices, CC note, lead time, or payment terms. Packed-by / received-by lines.
+- Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (from quote valid-until), optional 3.5% CC fee, shipping, duty, tariffs. Same visual family as the quote.
+- Customer free-text + optional “Also save this customer (and payment terms)”
+- Document numbers via `document_counters` (fallback: max existing)
 - Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
 - **Does not change inventory qty**
-- Tables optional: if missing, inventory app still works; quote list prompts for SQL
+- Tables optional: if missing, inventory still works; print still works; save of extra fields / packing / invoices prompts for Phase 2 SQL
 
 ### Labels (QR deep-links)
 - QR codes (library: `qrcode` CDN), **not** Code 128
@@ -149,8 +176,9 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### More
 - Export/Import JSON (import generates barcode if column exists)
-- Schema status line
-- Full setup SQL + clear all inventory
+- **Global sell factors** (Wynn GBP → $, FFS EUR → $) + apply-all
+- Schema status line (includes quotes + docs/factors)
+- Full setup SQL (inventory extras + Phase 1 + Phase 2) + clear all inventory
 
 ---
 
@@ -192,7 +220,7 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 - Company: In-Mar Systems & Solutions  
 - Address: 3011 S. Ruby Ave, Gonzales, LA 70737  
 - Phone: (225) 430-9111 · Email: info@inmarsystems.com  
-- Prepared By: **blank by default** (user fills in)
+- Prepared By: defaults to the **logged-in user** (full name) when the quote is generated
 
 ---
 
@@ -209,12 +237,10 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 
 ## Possible next work
 
-- User runs More-tab SQL if barcode/adjustments not yet in Supabase
-- Reprint Brother labels once after barcodes backfilled (one-time migration)
-- Optional future: further Brother barcode size tuning (user asked to hold for now)
-- Phase 2 sales orders from accepted quotes
-- Phase 3 invoices; Phase 4 purchase orders
-- Quote multi-page terms / email
+- User must run **More-tab / `schema/quotes_phase2.sql`** so packing lists, invoices, and global factors persist
+- Enter FFS EUR → $ factor when known, then Apply on More
+- Sales orders from accepted quotes
+- Email / multi-page terms
 - Real auth / tighter RLS
 - `config.js` + gitignore for secrets
 - Optional helper scripts: export-from-supabase, sheet-to-json, db-vs-sheet diff
@@ -234,7 +260,9 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 | `count.html` | Mobile physical-count capture (no Supabase writes) |
 | `count-seed.json` | Known-parts lookup for the count tool |
 | `COUNT.md` | How to count on phone and import JSON |
+| `schema/quotes_phase1.sql` | Additive quotes + customers |
+| `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
 
 ---
 
-*Last updated: 2026-08-14 — physical count tool (`count.html` + `count-seed.json`); import still skips existing PNs.*
+*Last updated: 2026-08-17 — global Wynn/FFS sell factors, Wynn buy auto-fill, $5 sell rounding, quote extras, packing lists, invoices.*

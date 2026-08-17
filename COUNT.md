@@ -77,6 +77,8 @@ Do **not** use Private / Incognito. Do **not** clear Safari or Chrome website da
 
 **Existing part numbers in Supabase are skipped.** Qty on those rows is **not** updated. Use this export to load a **clean** list (empty database, or only PNs that are not already in the app). If the 609 old rows are still live and you want this count to be the new truth, export a backup from **More** first, then **Clear all inventory…**, then import the count JSON.
 
+After import, the live app owns pricing: Wynn sell = £ × factor rounded **up to the next $5**; Wynn buy auto-fills as converted list minus 30%. Use **More → Global sell factors** to set or apply Wynn / FFS factors in bulk.
+
 7. Spot-check Home: names, sources, qtys. Then print labels from the **Labels** tab when you are ready.
 8. Keep the exported JSON as the archive of that count. You can **Clear this count…** on the iPad after you know the import succeeded (two confirms). That only wipes the iPad draft.
 

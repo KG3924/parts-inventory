@@ -235,11 +235,11 @@
         <span style="color:var(--muted)">User:</span>
         <select id="current-user" onchange="saveUser()" required title="Required before making inventory changes">
           <option value="">— Select —</option>
-          <option value="Toby">Toby</option>
-          <option value="Glynn">Glynn</option>
-          <option value="Ricky">Ricky</option>
-          <option value="Grant">Grant</option>
-          <option value="Kyle">Kyle</option>
+          <option value="Glynn Grantham">Glynn Grantham</option>
+          <option value="Kyle Grantham">Kyle Grantham</option>
+          <option value="Toby Whitfield">Toby Whitfield</option>
+          <option value="Grant Adams">Grant Adams</option>
+          <option value="Ricky Whitfield">Ricky Whitfield</option>
         </select>
       </div>
     </header>
@@ -350,11 +350,11 @@
         <div class="row">
           <div>
             <label id="item-list-price-label">List price ($ USD)</label>
-            <input type="number" id="item-list-price" step="0.01" min="0" placeholder="0.00" oninput="applySellFromList()">
+            <input type="number" id="item-list-price" step="0.01" min="0" placeholder="0.00" oninput="applySellFromList(true)">
           </div>
           <div>
             <label id="item-sell-factor-label">Sell factor</label>
-            <input type="number" id="item-sell-factor" step="0.001" min="0" placeholder="optional" oninput="applySellFromList()">
+            <input type="number" id="item-sell-factor" step="0.001" min="0" placeholder="optional" oninput="applySellFromList(true)">
           </div>
         </div>
         <p class="hint" id="list-price-hint">List currency follows source: <strong>Wynn = £ GBP</strong> (factor 2.585), <strong>FFS = € EUR</strong> (enter factor when known), anything else = <strong>$ USD</strong>. Sell $ = list × factor. Factor is remembered per currency.</p>
@@ -368,7 +368,7 @@
             <input type="number" id="item-sell-price" step="0.01" min="0" placeholder="0.00">
           </div>
         </div>
-        <p class="hint">Buy price is optional. It is <strong>what you paid</strong> (your cost in USD). It is used only for Home / Reports <em>inventory valuation</em> (qty × buy). Quotes use sell price. Leave blank if you do not know cost — value shows as —.</p>
+        <p class="hint">Buy price is optional except on <strong>Wynn</strong> parts, where it auto-fills as converted list minus 30% (you can still edit it). It is used only for Home / Reports <em>inventory valuation</em> (qty × buy). Quotes use sell price. Leave blank if you do not know cost — value shows as —.</p>
         <label style="display:flex;align-items:flex-start;gap:0.5rem;margin:0.15rem 0 0.75rem;">
           <input type="checkbox" id="item-exclude-value" style="width:auto;margin:0.2rem 0 0;">
           <span><strong>Exclude from inventory valuation</strong><br>
@@ -530,7 +530,7 @@
 
       <div class="card">
         <h2>Quote Builder <span id="quote-count-badge" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
-        <p class="hint">Add parts from Home or Scan. Save to the database, print, or void — stock qty is never changed by quotes.</p>
+        <p class="hint">Add parts from Home or Scan. Customer and project are separate. Save, print a quote, packing list, or invoice — stock qty is never changed.</p>
         <input type="hidden" id="quote-edit-id" value="">
 
         <div class="row">
@@ -558,33 +558,116 @@
           </div>
         </div>
         <div class="row">
-          <div style="flex:2;">
-            <label>Customer / Project</label>
-            <input type="text" id="quote-customer" list="customer-suggestions" placeholder="Customer, vessel, or project name">
+          <div>
+            <label>Customer</label>
+            <input type="text" id="quote-customer" list="customer-suggestions" placeholder="Customer name" onchange="onQuoteCustomerChange()">
             <datalist id="customer-suggestions"></datalist>
           </div>
           <div>
+            <label>Project</label>
+            <input type="text" id="quote-project" placeholder="Vessel, job, or project">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>RFQ #</label>
+            <input type="text" id="quote-rfq" placeholder="Customer RFQ / request #">
+          </div>
+          <div>
             <label>Prepared By</label>
-            <input type="text" id="quote-by" value="" placeholder="Your name">
+            <input type="text" id="quote-by" value="" placeholder="Defaults to logged-in user">
           </div>
         </div>
         <label style="display:flex;align-items:center;gap:0.45rem;margin-bottom:0.7rem;font-size:0.85rem;color:var(--muted);">
           <input type="checkbox" id="quote-save-customer" style="width:auto;margin:0;">
-          Also save this name to Customers (for reuse later)
+          Also save this customer (and payment terms) for reuse
         </label>
+        <div class="row">
+          <div>
+            <label>FOB point</label>
+            <select id="quote-fob-select" onchange="onComboSelect('fob')">
+              <option value="">— Select —</option>
+              <option value="Origin">Origin</option>
+              <option value="Destination">Destination</option>
+              <option value="__custom__">Other (type and save)…</option>
+            </select>
+            <input type="text" id="quote-fob" placeholder="Type a custom FOB point" style="display:none;margin-top:0.4rem;">
+          </div>
+          <div>
+            <label>Payment terms</label>
+            <select id="quote-terms-select" onchange="onComboSelect('terms')">
+              <option value="">— Select —</option>
+              <option value="Due on receipt">Due on receipt</option>
+              <option value="Net 15">Net 15</option>
+              <option value="Net 30">Net 30</option>
+              <option value="Net 45">Net 45</option>
+              <option value="Net 60">Net 60</option>
+              <option value="__custom__">Other (type and save)…</option>
+            </select>
+            <input type="text" id="quote-terms" placeholder="Type terms — saved with the customer" style="display:none;margin-top:0.4rem;">
+          </div>
+        </div>
+        <p class="hint">FOB: Origin or Destination, or type another point to keep it in the list. Payment terms follow the customer when you pick a saved name; check “Also save this customer” to store terms on that customer.</p>
+        <div>
+          <label>Lead time</label>
+          <input type="text" id="quote-lead" placeholder="If ordered today, when to expect delivery">
+        </div>
         <div>
           <label>Notes</label>
-          <textarea id="quote-notes" rows="2" placeholder="Delivery, terms, or special notes..."></textarea>
+          <textarea id="quote-notes" rows="2" placeholder="Delivery or special notes..."></textarea>
         </div>
+        <p class="hint">Printed quotes include: a 3.5% fee is added if payment is made by credit card.</p>
 
         <div id="quote-lines" style="margin:1rem 0;"></div>
 
         <div class="btn-group">
           <button type="button" onclick="saveQuoteToDb()">Save quote</button>
-          <button type="button" class="secondary" onclick="generateQuote()">Print / PDF</button>
+          <button type="button" class="secondary" onclick="generateQuote()">Print quote</button>
+          <button type="button" class="secondary" onclick="printPackingList()">Packing list</button>
+          <button type="button" class="secondary" onclick="openInvoiceForm()">Invoice…</button>
           <button type="button" class="secondary" onclick="duplicateCurrentQuote()">Duplicate</button>
           <button type="button" class="secondary" onclick="voidCurrentQuote()">Void</button>
           <button type="button" class="secondary" onclick="clearQuote()">Clear cart</button>
+        </div>
+
+        <div id="invoice-box" class="order-box" style="display:none;margin-top:1rem;">
+          <h2 style="font-size:0.95rem;">Invoice from this quote</h2>
+          <p class="hint">Commercial invoice: amounts due, PO, ship-to. Valid-until on the quote becomes the due date.</p>
+          <div class="row">
+            <div>
+              <label>Customer PO #</label>
+              <input type="text" id="inv-po" placeholder="PO number">
+            </div>
+            <div>
+              <label>Due date</label>
+              <input type="date" id="inv-due">
+            </div>
+          </div>
+          <label>Ship to address</label>
+          <textarea id="inv-ship" rows="2" placeholder="Name, street, city, state, ZIP"></textarea>
+          <div class="row">
+            <div>
+              <label>Shipping fee ($)</label>
+              <input type="number" id="inv-shipfee" step="0.01" min="0" value="0">
+            </div>
+            <div>
+              <label>Duty ($)</label>
+              <input type="number" id="inv-duty" step="0.01" min="0" value="0">
+            </div>
+            <div>
+              <label>Tariffs ($)</label>
+              <input type="number" id="inv-tariffs" step="0.01" min="0" value="0">
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:0.45rem;font-size:0.85rem;">
+            <input type="checkbox" id="inv-cc" style="width:auto;margin:0;" onchange="updateInvoicePreview()">
+            Customer paying by credit card (add 3.5% fee)
+          </label>
+          <p class="hint" id="inv-preview">Totals update when you print / save.</p>
+          <div class="btn-group">
+            <button type="button" onclick="saveAndPrintInvoice()">Save &amp; print invoice</button>
+            <button type="button" class="secondary" onclick="document.getElementById('invoice-box').style.display='none'">Close</button>
+          </div>
         </div>
       </div>
     </div>
@@ -599,6 +682,24 @@
           <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
         </div>
         <p class="hint">Import includes optional <code>category</code>. Existing part numbers are skipped.</p>
+        <hr style="border-color:var(--border); margin:1.25rem 0;">
+        <h2 style="font-size:0.95rem;">Global sell factors</h2>
+        <p class="hint">Used when adding parts and when you apply to all matching items. Wynn list is £ GBP; FFS list is € EUR. Sell $ = list × factor, then <strong>rounded up to the next $5</strong>. Wynn buy $ = converted list × 0.70 (30% off converted list).</p>
+        <div class="row">
+          <div>
+            <label>Wynn sell factor (GBP → $)</label>
+            <input type="number" id="global-wynn-factor" step="0.001" min="0" placeholder="2.585">
+          </div>
+          <div>
+            <label>FFS sell factor (EUR → $)</label>
+            <input type="number" id="global-ffs-factor" step="0.001" min="0" placeholder="enter when known">
+          </div>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="secondary" onclick="saveGlobalFactorsOnly()">Save factors</button>
+          <button type="button" onclick="applyGlobalFactorsToInventory()">Apply to all Wynn / FFS parts</button>
+        </div>
+        <p class="hint" id="global-factor-status">Applies only to parts with a list price and source Wynn or FFS. Other sources are not changed.</p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Supabase Connection</h2>
         <p class="hint" id="conn-status">Checking…</p>
@@ -662,7 +763,66 @@ alter table document_counters enable row level security;
 -- create policy "Allow all quotes" on quotes for all using (true) with check (true);
 -- create policy "Allow all quote_lines" on quote_lines for all using (true) with check (true);
 -- create policy "Allow all document_counters" on document_counters for all using (true) with check (true);
--- create policy "Allow all for anon adj" on inventory_adjustments for all using (true) with check (true);</pre>
+-- create policy "Allow all for anon adj" on inventory_adjustments for all using (true) with check (true);
+
+-- Phase 2 quote extras / packing lists / invoices (additive)
+alter table quotes add column if not exists project text;
+alter table quotes add column if not exists rfq_number text;
+alter table quotes add column if not exists fob_point text;
+alter table quotes add column if not exists payment_terms text;
+alter table quotes add column if not exists lead_time text;
+alter table customers add column if not exists payment_terms text;
+create index if not exists quotes_customer_id_idx on quotes (customer_id);
+create table if not exists app_settings (key text primary key, value text, updated_at timestamptz default now());
+create table if not exists app_lookups (kind text not null, value text not null, created_at timestamptz default now(), primary key (kind, value));
+create table if not exists packing_lists (
+  id uuid primary key default gen_random_uuid(), number text not null unique,
+  quote_id uuid references quotes(id) on delete set null, customer_name text, project text,
+  pack_date date, prepared_by text, notes text, created_by text, created_at timestamptz default now());
+create table if not exists packing_list_lines (
+  id uuid primary key default gen_random_uuid(), packing_list_id uuid not null references packing_lists(id) on delete cascade,
+  line_no integer not null default 1, inventory_id uuid, part_number text, name text not null, qty numeric not null default 1);
+create table if not exists invoices (
+  id uuid primary key default gen_random_uuid(), number text not null unique,
+  quote_id uuid references quotes(id) on delete set null,
+  customer_name text, project text, po_number text, ship_to text, invoice_date date, due_date date,
+  fob_point text, payment_terms text, cc_used boolean default false, cc_fee_rate numeric default 0.035,
+  cc_fee_amount numeric default 0, shipping_fee numeric default 0, duty numeric default 0, tariffs numeric default 0,
+  subtotal numeric default 0, total numeric default 0, prepared_by text, notes text,
+  status text not null default 'draft', created_by text,
+  created_at timestamptz default now(), updated_at timestamptz default now());
+create table if not exists invoice_lines (
+  id uuid primary key default gen_random_uuid(), invoice_id uuid not null references invoices(id) on delete cascade,
+  line_no integer not null default 1, inventory_id uuid, part_number text, name text not null,
+  qty numeric not null default 1, unit_price numeric not null default 0);
+create index if not exists packing_lists_quote_id_idx on packing_lists (quote_id);
+create index if not exists packing_list_lines_pl_id_idx on packing_list_lines (packing_list_id);
+create index if not exists invoices_quote_id_idx on invoices (quote_id);
+create index if not exists invoice_lines_invoice_id_idx on invoice_lines (invoice_id);
+insert into app_lookups (kind, value) values
+  ('fob','Origin'),('fob','Destination'),
+  ('payment_terms','Due on receipt'),('payment_terms','Net 15'),
+  ('payment_terms','Net 30'),('payment_terms','Net 45'),('payment_terms','Net 60')
+on conflict do nothing;
+alter table app_settings enable row level security;
+alter table app_lookups enable row level security;
+alter table packing_lists enable row level security;
+alter table packing_list_lines enable row level security;
+alter table invoices enable row level security;
+alter table invoice_lines enable row level security;
+do $$ begin create policy "Allow all app_settings" on app_settings for all using (true) with check (true); exception when duplicate_object then null; end $$;
+do $$ begin create policy "Allow all app_lookups" on app_lookups for all using (true) with check (true); exception when duplicate_object then null; end $$;
+do $$ begin create policy "Allow all packing_lists" on packing_lists for all using (true) with check (true); exception when duplicate_object then null; end $$;
+do $$ begin create policy "Allow all packing_list_lines" on packing_list_lines for all using (true) with check (true); exception when duplicate_object then null; end $$;
+do $$ begin create policy "Allow all invoices" on invoices for all using (true) with check (true); exception when duplicate_object then null; end $$;
+do $$ begin create policy "Allow all invoice_lines" on invoice_lines for all using (true) with check (true); exception when duplicate_object then null; end $$;
+grant select, insert, update, delete on table app_settings to anon, authenticated, service_role;
+grant select, insert, update, delete on table app_lookups to anon, authenticated, service_role;
+grant select, insert, update, delete on table packing_lists to anon, authenticated, service_role;
+grant select, insert, update, delete on table packing_list_lines to anon, authenticated, service_role;
+grant select, insert, update, delete on table invoices to anon, authenticated, service_role;
+grant select, insert, update, delete on table invoice_lines to anon, authenticated, service_role;
+notify pgrst, 'reload schema';</pre>
         <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
         <div class="danger-zone">
           <h2 style="font-size:0.95rem;color:var(--danger);">Danger zone</h2>
@@ -700,6 +860,7 @@ alter table document_counters enable row level security;
     let hasBarcodeColumn = true;
     let hasAdjustmentsTable = true;
     let hasQuotesTables = true;
+    let hasPhase2Tables = false;
     let hasExcludeValueColumn = false;
     let hasListPriceColumn = false;
     let lastAdjustmentRows = [];
@@ -768,6 +929,117 @@ alter table document_counters enable row level security;
       try { localStorage.setItem(FACTOR_KEYS[code], String(n)); } catch (e) { /* ignore */ }
     }
 
+    /** Round sell $ up to the next $5 increment (130.01 → 135, 129.99 → 130, 130 → 130). */
+    function ceilTo5(n) {
+      const x = Number(n);
+      if (!isFinite(x) || x <= 0) return 0;
+      return Math.ceil(x / 5 - 1e-9) * 5;
+    }
+
+    function wynnBuyFromList(listGbp, factor) {
+      const listUsd = Number(listGbp) * Number(factor);
+      if (!isFinite(listUsd) || listUsd <= 0) return null;
+      return Math.round(listUsd * 0.70 * 100) / 100;
+    }
+
+    function isWynnSource(src) {
+      const s = String(src || '').trim().toLowerCase();
+      return s === 'wynn' || s.startsWith('wynn ') || s === 'hepworth';
+    }
+    function isFfsSource(src) {
+      const s = String(src || '').trim().toLowerCase();
+      return s === 'ffs' || s.includes('fluid');
+    }
+
+    async function persistSetting(key, value) {
+      try { localStorage.setItem('inv_setting_' + key, value == null ? '' : String(value)); } catch (e) {}
+      if (!supabaseClient) return;
+      try {
+        await supabaseClient.from('app_settings').upsert({ key, value: value == null ? '' : String(value), updated_at: new Date().toISOString() });
+      } catch (e) { /* table optional */ }
+    }
+
+    async function loadSetting(key) {
+      if (supabaseClient) {
+        try {
+          const { data } = await supabaseClient.from('app_settings').select('value').eq('key', key).maybeSingle();
+          if (data && data.value != null && data.value !== '') return data.value;
+        } catch (e) {}
+      }
+      try { return localStorage.getItem('inv_setting_' + key); } catch (e) { return null; }
+    }
+
+    async function loadGlobalFactorInputs() {
+      const wynnEl = document.getElementById('global-wynn-factor');
+      const ffsEl = document.getElementById('global-ffs-factor');
+      if (!wynnEl || !ffsEl) return;
+      const w = await loadSetting('wynn_sell_factor');
+      const f = await loadSetting('ffs_sell_factor');
+      wynnEl.value = (w && parseFloat(w) > 0) ? w : String(storedFactor('GBP') || DEFAULT_GBP_SELL_FACTOR);
+      ffsEl.value = (f && parseFloat(f) > 0) ? f : (storedFactor('EUR') || '');
+      const wv = parseFloat(wynnEl.value);
+      const fv = parseFloat(ffsEl.value);
+      if (isFinite(wv) && wv > 0) persistFactor('GBP', wv);
+      if (isFinite(fv) && fv > 0) persistFactor('EUR', fv);
+    }
+
+    async function saveGlobalFactorsOnly() {
+      const w = parseFloat(document.getElementById('global-wynn-factor')?.value);
+      const f = parseFloat(document.getElementById('global-ffs-factor')?.value);
+      if (isFinite(w) && w > 0) {
+        persistFactor('GBP', w);
+        await persistSetting('wynn_sell_factor', w);
+      }
+      if (isFinite(f) && f > 0) {
+        persistFactor('EUR', f);
+        await persistSetting('ffs_sell_factor', f);
+      } else {
+        await persistSetting('ffs_sell_factor', '');
+      }
+      const st = document.getElementById('global-factor-status');
+      if (st) st.textContent = 'Factors saved. Use Apply to recalculate existing Wynn / FFS parts.';
+      showStatus('Sell factors saved', 'success');
+    }
+
+    async function applyGlobalFactorsToInventory() {
+      if (!requireUser('applying sell factors')) return;
+      if (!supabaseClient) { showStatus('Not connected', 'error'); return; }
+      if (!hasListPriceColumn) {
+        showStatus('List price column missing — run More tab SQL first', 'error');
+        return;
+      }
+      const w = parseFloat(document.getElementById('global-wynn-factor')?.value);
+      const f = parseFloat(document.getElementById('global-ffs-factor')?.value);
+      if (!(isFinite(w) && w > 0) && !(isFinite(f) && f > 0)) {
+        showStatus('Enter at least one factor', 'error');
+        return;
+      }
+      await saveGlobalFactorsOnly();
+      if (!confirm('Recalculate sell $ on all Wynn/FFS parts that have a list price?\n\nWynn buy $ will also be set to 70% of converted list.\nSell $ rounds up to the next $5.')) return;
+      let updated = 0, skipped = 0, failed = 0;
+      for (const item of inventory) {
+        let factor = null;
+        let doBuy = false;
+        if (isWynnSource(item.source) && isFinite(w) && w > 0) { factor = w; doBuy = true; }
+        else if (isFfsSource(item.source) && isFinite(f) && f > 0) { factor = f; }
+        else { skipped++; continue; }
+        const list = Number(item.list_price);
+        if (!isFinite(list) || list <= 0) { skipped++; continue; }
+        const payload = {
+          sell_price: ceilTo5(list * factor),
+          sell_factor: factor,
+          updated_by: currentUser(),
+          updated_at: new Date().toISOString()
+        };
+        if (doBuy) payload.buy_price = wynnBuyFromList(list, factor);
+        const { error } = await supabaseClient.from('inventory').update(payload).eq('id', item.id);
+        if (error) { failed++; console.warn(error); }
+        else updated++;
+      }
+      showStatus(`Factors applied: ${updated} updated, ${skipped} skipped, ${failed} failed`, failed ? 'error' : 'success');
+      await loadInventory();
+    }
+
     function currentPricingProfile() {
       return pricingProfile(document.getElementById('item-source')?.value);
     }
@@ -788,7 +1060,7 @@ alter table document_counters enable row level security;
       applySellFromList();
     }
 
-    function applySellFromList() {
+    function applySellFromList(forceWynnBuy) {
       const listEl = document.getElementById('item-list-price');
       const factorEl = document.getElementById('item-sell-factor');
       const sellEl = document.getElementById('item-sell-price');
@@ -800,18 +1072,25 @@ alter table document_counters enable row level security;
       if (isFinite(factor) && factor > 0) persistFactor(p.code, factor);
       if (!(isFinite(factor) && factor > 0) && p.code === 'USD') factor = 1;
       if (isFinite(list) && list > 0 && isFinite(factor) && factor > 0) {
-        const usd = Math.round(list * factor * 100) / 100;
+        const raw = list * factor;
+        const usd = ceilTo5(raw);
         sellEl.value = usd.toFixed(2);
+        const buyEl = document.getElementById('item-buy-price');
+        if (p.code === 'GBP' && buyEl) {
+          const buy = wynnBuyFromList(list, factor);
+          if (buy != null && (forceWynnBuy || buyEl.value === '')) buyEl.value = buy.toFixed(2);
+        }
         if (hint) {
-          hint.innerHTML = `${p.symbol}${list.toFixed(2)} ${p.code} × <strong>${factor}</strong> = <strong>${money(usd)}</strong> sell. Buy $ is optional (what you actually paid).`;
+          const buyBit = p.code === 'GBP' ? ` Wynn buy $ = converted list × 0.70 = <strong>${money(wynnBuyFromList(list, factor))}</strong>.` : ' Buy $ is optional.';
+          hint.innerHTML = `${p.symbol}${list.toFixed(2)} ${p.code} × <strong>${factor}</strong> = ${money(raw)} → sell <strong>${money(usd)}</strong> (up to next $5).${buyBit}`;
         }
       } else if (hint) {
         if (p.code === 'GBP') {
-          hint.innerHTML = `Wynn / Hepworth list is in <strong>£ GBP</strong>. Sell $ = £ × factor (default <strong>${DEFAULT_GBP_SELL_FACTOR}</strong> for FX + tariff).`;
+          hint.innerHTML = `Wynn list is <strong>£ GBP</strong>. Sell $ = £ × factor, rounded up to the next $5. Buy $ auto-fills as converted list minus 30%.`;
         } else if (p.code === 'EUR') {
-          hint.innerHTML = `FFS list is in <strong>€ EUR</strong>. Enter the company EUR → sell $ factor when you have it. Sell $ will fill automatically.`;
+          hint.innerHTML = `FFS list is <strong>€ EUR</strong>. Enter the EUR → sell $ factor when you have it. Sell rounds up to the next $5.`;
         } else {
-          hint.innerHTML = `List is in <strong>$ USD</strong>. Leave factor at 1 to copy list into sell, or enter a markup factor. Buy $ is still optional.`;
+          hint.innerHTML = `List is <strong>$ USD</strong>. Factor 1 copies list into sell (then up to next $5). Buy $ is optional.`;
         }
       }
     }
@@ -826,6 +1105,8 @@ alter table document_counters enable row level security;
       try { localStorage.removeItem('inv_user'); } catch (e) {}
       sessionUser = document.getElementById('current-user').value || '';
       updateUserUI();
+      const by = document.getElementById('quote-by');
+      if (by && sessionUser) by.value = sessionUser;
     }
     function updateUserUI() {
       const sel = document.getElementById('current-user');
@@ -1128,6 +1409,8 @@ alter table document_counters enable row level security;
       hasAdjustmentsTable = !probeAdj.error;
       const probeQuotes = await supabaseClient.from('quotes').select('id').limit(1);
       hasQuotesTables = !probeQuotes.error;
+      const probePhase2 = await supabaseClient.from('app_settings').select('key').limit(1);
+      hasPhase2Tables = !probePhase2.error;
 
       // Backfill stable barcodes when column exists
       if (hasBarcodeColumn) {
@@ -1141,9 +1424,10 @@ alter table document_counters enable row level security;
         bits.push(hasBarcodeColumn ? 'barcode ✓' : 'barcode missing');
         bits.push(hasAdjustmentsTable ? 'adjustments ✓' : 'adjustments missing');
         bits.push(hasQuotesTables ? 'quotes ✓' : 'quotes missing');
+        bits.push(hasPhase2Tables ? 'docs/factors ✓' : 'docs/factors missing');
         bits.push(hasExcludeValueColumn ? 'exclude-value ✓' : 'exclude-value missing');
         bits.push(hasListPriceColumn ? 'list-price ✓' : 'list-price missing');
-        const schemaOk = hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable && hasQuotesTables;
+        const schemaOk = hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable && hasQuotesTables && hasPhase2Tables;
         schemaEl.textContent = 'Schema: ' + bits.join(' · ') + (schemaOk ? '' : ' — run SQL in More tab');
         schemaEl.style.color = schemaOk ? 'var(--success)' : 'var(--warning)';
       }
@@ -2787,6 +3071,8 @@ ${bodyHtml}
           unit_price: item.sell_price != null ? Number(item.sell_price) : 0
         });
       }
+      const by = document.getElementById('quote-by');
+      if (by && !by.value && currentUser()) by.value = currentUser();
       saveQuoteCart();
       showStatus(`Added “${item.part_number}” to quote`, 'success');
     }
@@ -2852,9 +3138,139 @@ ${bodyHtml}
       return quoteCart.reduce((s, c) => s + (c.qty || 1) * (c.unit_price || 0), 0);
     }
 
+    function addDaysIso(iso, days) {
+      const d = iso ? new Date(iso + 'T12:00:00') : new Date();
+      if (isNaN(d.getTime())) return '';
+      d.setDate(d.getDate() + days);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function defaultQuoteValid() {
+      const dt = document.getElementById('quote-date')?.value;
+      return addDaysIso(dt || new Date().toISOString().slice(0, 10), 90);
+    }
+
+    function lookupStoreKey(kind) {
+      return 'inv_lookups_' + kind;
+    }
+
+    function localLookups(kind) {
+      try {
+        const arr = JSON.parse(localStorage.getItem(lookupStoreKey(kind)) || '[]');
+        return Array.isArray(arr) ? arr : [];
+      } catch (e) { return []; }
+    }
+
+    function saveLocalLookup(kind, value) {
+      const v = String(value || '').trim();
+      if (!v) return;
+      const arr = localLookups(kind);
+      if (!arr.some(x => x.toLowerCase() === v.toLowerCase())) {
+        arr.push(v);
+        try { localStorage.setItem(lookupStoreKey(kind), JSON.stringify(arr)); } catch (e) {}
+      }
+      if (supabaseClient) {
+        supabaseClient.from('app_lookups').upsert({ kind, value: v }).then(() => {}, () => {});
+      }
+    }
+
+    function comboValue(prefix) {
+      const sel = document.getElementById('quote-' + prefix + '-select');
+      const inp = document.getElementById('quote-' + prefix);
+      if (sel && sel.value && sel.value !== '__custom__') return sel.value.trim();
+      return (inp?.value || '').trim();
+    }
+
+    function setComboValue(prefix, value) {
+      const sel = document.getElementById('quote-' + prefix + '-select');
+      const inp = document.getElementById('quote-' + prefix);
+      const v = String(value || '').trim();
+      if (!sel) {
+        if (inp) inp.value = v;
+        return;
+      }
+      const match = [...sel.options].some(o => o.value === v && o.value !== '' && o.value !== '__custom__');
+      if (match) {
+        sel.value = v;
+        if (inp) { inp.value = v; inp.style.display = 'none'; }
+      } else if (v) {
+        sel.value = '__custom__';
+        if (inp) { inp.value = v; inp.style.display = ''; }
+      } else {
+        sel.value = '';
+        if (inp) { inp.value = ''; inp.style.display = 'none'; }
+      }
+    }
+
+    function onComboSelect(prefix) {
+      const sel = document.getElementById('quote-' + prefix + '-select');
+      const inp = document.getElementById('quote-' + prefix);
+      if (!sel || !inp) return;
+      if (sel.value === '__custom__') {
+        inp.style.display = '';
+        inp.value = '';
+        inp.focus();
+      } else {
+        inp.value = sel.value;
+        inp.style.display = 'none';
+      }
+    }
+
+    async function fillComboSelect(prefix, extras) {
+      const sel = document.getElementById('quote-' + prefix + '-select');
+      if (!sel) return;
+      const current = comboValue(prefix);
+      const kind = prefix === 'fob' ? 'fob' : 'payment_terms';
+      const set = new Set(extras || []);
+      localLookups(kind).forEach(v => set.add(v));
+      if (supabaseClient) {
+        try {
+          const { data } = await supabaseClient.from('app_lookups').select('value').eq('kind', kind);
+          (data || []).forEach(r => { if (r.value) set.add(r.value); });
+        } catch (e) {}
+      }
+      const opts = ['<option value="">— Select —</option>'];
+      [...set].filter(Boolean).sort((a, b) => a.localeCompare(b)).forEach(v => {
+        opts.push(`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`);
+      });
+      opts.push('<option value="__custom__">Other (type and save)…</option>');
+      sel.innerHTML = opts.join('');
+      setComboValue(prefix, current);
+    }
+
+    async function refreshQuoteLookups() {
+      await fillComboSelect('fob', ['Origin', 'Destination']);
+      const termExtras = ['Due on receipt', 'Net 15', 'Net 30', 'Net 45', 'Net 60'];
+      if (supabaseClient && hasQuotesTables) {
+        try {
+          const { data } = await supabaseClient.from('customers').select('payment_terms');
+          (data || []).forEach(c => { if (c.payment_terms) termExtras.push(c.payment_terms); });
+        } catch (e) {}
+      }
+      await fillComboSelect('terms', termExtras);
+    }
+
+    async function findCustomerByName(name) {
+      if (!name || !supabaseClient || !hasQuotesTables) return null;
+      try {
+        const { data } = await supabaseClient.from('customers')
+          .select('id,payment_terms,name').ilike('name', name).limit(1);
+        return (data && data[0]) || null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function onQuoteCustomerChange() {
+      const name = (document.getElementById('quote-customer')?.value || '').trim();
+      if (!name) return;
+      const row = await findCustomerByName(name);
+      if (row && row.payment_terms) setComboValue('terms', row.payment_terms);
+    }
+
     async function nextDocNumber(docType) {
       const year = new Date().getFullYear();
-      const prefix = docType === 'quote' ? 'Q' : docType === 'order' ? 'SO' : docType === 'invoice' ? 'INV' : 'DOC';
+      const prefix = docType === 'quote' ? 'Q' : docType === 'order' ? 'SO' : docType === 'invoice' ? 'INV' : docType === 'packing_list' ? 'PL' : 'DOC';
       if (!supabaseClient || !hasQuotesTables) {
         return `${prefix}-${year}-001`;
       }
@@ -2872,13 +3288,18 @@ ${bodyHtml}
       } catch (e) {
         console.warn('counter failed', e);
       }
-      const { data: existing } = await supabaseClient.from('quotes').select('number').like('number', `${prefix}-${year}-%`);
-      let max = 0;
-      (existing || []).forEach(r => {
-        const m = String(r.number || '').match(/-(\d+)$/);
-        if (m) max = Math.max(max, parseInt(m[1], 10));
-      });
-      return `${prefix}-${year}-${String(max + 1).padStart(3, '0')}`;
+      const table = docType === 'invoice' ? 'invoices' : docType === 'packing_list' ? 'packing_lists' : 'quotes';
+      try {
+        const { data: existing } = await supabaseClient.from(table).select('number').like('number', `${prefix}-${year}-%`);
+        let max = 0;
+        (existing || []).forEach(r => {
+          const m = String(r.number || '').match(/-(\d+)$/);
+          if (m) max = Math.max(max, parseInt(m[1], 10));
+        });
+        return `${prefix}-${year}-${String(max + 1).padStart(3, '0')}`;
+      } catch (e2) {
+        return `${prefix}-${year}-001`;
+      }
     }
 
     async function ensureQuotesTables() {
@@ -2984,15 +3405,23 @@ ${bodyHtml}
       document.getElementById('quote-edit-id').value = '';
       document.getElementById('quote-status').value = 'draft';
       document.getElementById('quote-number').value = '';
-      if (!document.getElementById('quote-date').value) {
-        document.getElementById('quote-date').value = new Date().toISOString().slice(0, 10);
-      }
-      if (currentUser() && !document.getElementById('quote-by').value) {
-        document.getElementById('quote-by').value = currentUser();
-      }
-      if (hasQuotesTables && !document.getElementById('quote-number').value) {
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('quote-date').value = today;
+      document.getElementById('quote-valid').value = addDaysIso(today, 90);
+      document.getElementById('quote-by').value = currentUser() || '';
+      document.getElementById('quote-project').value = '';
+      document.getElementById('quote-rfq').value = '';
+      document.getElementById('quote-lead').value = '';
+      document.getElementById('quote-notes').value = '';
+      document.getElementById('quote-customer').value = '';
+      const invBox = document.getElementById('invoice-box');
+      if (invBox) invBox.style.display = 'none';
+      if (hasQuotesTables) {
         document.getElementById('quote-number').value = await nextDocNumber('quote');
       }
+      await refreshQuoteLookups();
+      setComboValue('fob', '');
+      setComboValue('terms', '');
       renderQuotePanel();
       showStatus('Builder ready — add lines then Save quote', 'info');
     }
@@ -3016,8 +3445,17 @@ ${bodyHtml}
       document.getElementById('quote-date').value = q.quote_date || '';
       document.getElementById('quote-valid').value = q.valid_until || '';
       document.getElementById('quote-customer').value = q.customer_name || '';
-      document.getElementById('quote-by').value = q.prepared_by || '';
+      const proj = document.getElementById('quote-project');
+      if (proj) proj.value = q.project || '';
+      const rfq = document.getElementById('quote-rfq');
+      if (rfq) rfq.value = q.rfq_number || '';
+      const lead = document.getElementById('quote-lead');
+      if (lead) lead.value = q.lead_time || '';
+      document.getElementById('quote-by').value = q.prepared_by || currentUser() || '';
       document.getElementById('quote-notes').value = q.notes || '';
+      await refreshQuoteLookups();
+      setComboValue('fob', q.fob_point || '');
+      setComboValue('terms', q.payment_terms || '');
       document.getElementById('quote-save-customer').checked = false;
       quoteCart = (lines || []).map(l => ({
         id: l.inventory_id || l.id,
@@ -3047,15 +3485,22 @@ ${bodyHtml}
         document.getElementById('quote-number').value = number;
       }
       const customerName = (document.getElementById('quote-customer').value || '').trim();
+      const project = (document.getElementById('quote-project')?.value || '').trim();
+      const rfq = (document.getElementById('quote-rfq')?.value || '').trim();
+      const fob = comboValue('fob');
+      const terms = comboValue('terms');
+      const lead = (document.getElementById('quote-lead')?.value || '').trim();
+      if (fob) saveLocalLookup('fob', fob);
+      if (terms) saveLocalLookup('payment_terms', terms);
       let customerId = null;
       if (document.getElementById('quote-save-customer')?.checked && customerName) {
-        const { data: existing } = await supabaseClient.from('customers')
-          .select('id').ilike('name', customerName).maybeSingle();
+        const existing = await findCustomerByName(customerName);
         if (existing?.id) {
           customerId = existing.id;
+          await supabaseClient.from('customers').update({ payment_terms: terms || null, updated_at: new Date().toISOString() }).eq('id', customerId);
         } else {
           const { data: created, error: cErr } = await supabaseClient.from('customers')
-            .insert({ name: customerName }).select('id').maybeSingle();
+            .insert({ name: customerName, payment_terms: terms || null }).select('id').maybeSingle();
           if (cErr) console.warn(cErr);
           else customerId = created?.id;
         }
@@ -3064,6 +3509,11 @@ ${bodyHtml}
         number,
         customer_id: customerId,
         customer_name: customerName || null,
+        project: project || null,
+        rfq_number: rfq || null,
+        fob_point: fob || null,
+        payment_terms: terms || null,
+        lead_time: lead || null,
         status: document.getElementById('quote-status').value || 'draft',
         quote_date: document.getElementById('quote-date').value || null,
         valid_until: document.getElementById('quote-valid').value || null,
@@ -3084,8 +3534,23 @@ ${bodyHtml}
         error = res.error;
         quoteId = res.data?.id;
       }
+      if (error && /project|rfq_number|fob_point|payment_terms|lead_time/i.test(error.message || '')) {
+        delete payload.project;
+        delete payload.rfq_number;
+        delete payload.fob_point;
+        delete payload.payment_terms;
+        delete payload.lead_time;
+        if (quoteId) {
+          ({ error } = await supabaseClient.from('quotes').update(payload).eq('id', quoteId));
+          if (!error) await supabaseClient.from('quote_lines').delete().eq('quote_id', quoteId);
+        } else {
+          const retry = await supabaseClient.from('quotes').insert(payload).select('id').maybeSingle();
+          error = retry.error;
+          quoteId = retry.data?.id;
+        }
+      }
       if (error) {
-        showStatus('Save failed: ' + error.message, 'error');
+        showStatus('Save failed: ' + error.message + ' — run Phase 2 SQL on the More tab for new quote fields', 'error');
         return;
       }
       const lineRows = quoteCart.map((c, i) => ({
@@ -3138,7 +3603,11 @@ ${bodyHtml}
       document.getElementById('quote-edit-id').value = '';
       document.getElementById('quote-status').value = 'draft';
       document.getElementById('quote-number').value = await nextDocNumber('quote');
-      document.getElementById('quote-date').value = new Date().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('quote-date').value = today;
+      document.getElementById('quote-valid').value = addDaysIso(today, 90);
+      const by = document.getElementById('quote-by');
+      if (by && currentUser()) by.value = currentUser();
       showStatus('Duplicated as new draft — click Save quote', 'info');
     }
 
@@ -3152,99 +3621,48 @@ ${bodyHtml}
       generateQuote();
     }
 
-    function generateQuote() {
-      if (quoteCart.length === 0) {
-        showStatus('Add at least one part to the quote first', 'error');
-        return;
-      }
-      const data = {
-        number: document.getElementById('quote-number').value || 'Q-XXXX',
-        date: document.getElementById('quote-date').value || new Date().toISOString().slice(0,10),
-        valid: document.getElementById('quote-valid').value || '',
-        customer: document.getElementById('quote-customer').value || '',
-        by: document.getElementById('quote-by').value || '',
-        notes: document.getElementById('quote-notes').value || '',
-        status: document.getElementById('quote-status')?.value || 'draft'
+    function collectQuoteHeader() {
+      return {
+        number: document.getElementById('quote-number')?.value || 'Q-XXXX',
+        date: document.getElementById('quote-date')?.value || new Date().toISOString().slice(0, 10),
+        valid: document.getElementById('quote-valid')?.value || '',
+        customer: document.getElementById('quote-customer')?.value || '',
+        project: document.getElementById('quote-project')?.value || '',
+        rfq: document.getElementById('quote-rfq')?.value || '',
+        by: document.getElementById('quote-by')?.value || currentUser() || '',
+        notes: document.getElementById('quote-notes')?.value || '',
+        status: document.getElementById('quote-status')?.value || 'draft',
+        fob: comboValue('fob'),
+        terms: comboValue('terms'),
+        lead: document.getElementById('quote-lead')?.value || ''
       };
-      let total = 0;
-      const rows = quoteCart.map(c => {
-        const line = (c.qty || 1) * (c.unit_price || 0);
-        total += line;
-        return `<tr>
-          <td style="padding:8px;border:1px solid #cbd5e1;font-family:monospace;font-size:12px;">${escapeHtml(c.part_number)}</td>
-          <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(c.name)}</td>
-          <td style="padding:8px;border:1px solid #cbd5e1;text-align:center;">${c.qty}</td>
-          <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;">${money(c.unit_price)}</td>
-          <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:600;">${money(line)}</td>
-        </tr>`;
-      }).join('');
+    }
 
-      const logoSrc = 'inmar-logo.jpg';
-
+    function printDocWindow(title, bodyHtml) {
       const html = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>In-Mar Quote ${data.number}</title>
+<html><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
 <style>
   body { font-family: system-ui, -apple-system, sans-serif; color: #1e293b; margin: 0; padding: 24px; font-size: 13px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 20px; }
   .logo { max-height: 56px; width: auto; }
-  .quote-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; color: #1e3a5f; }
+  .doc-title { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #1e3a5f; }
   .meta { text-align: right; font-size: 13px; line-height: 1.5; }
   .info { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 20px; }
   .info span { color: #64748b; font-weight: 500; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
   th { background: #f1f5f9; text-align: left; padding: 8px; border: 1px solid #cbd5e1; font-size: 12px; }
-  .total-row { text-align: right; font-size: 16px; font-weight: 700; margin-top: 8px; }
-  .notes { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 16px; min-height: 48px; white-space: pre-wrap; }
+  td { padding: 8px; border: 1px solid #cbd5e1; }
+  .totals { margin-left: auto; width: 280px; }
+  .totals div { display: flex; justify-content: space-between; padding: 3px 0; }
+  .totals .grand { font-size: 16px; font-weight: 700; border-top: 2px solid #1e3a5f; margin-top: 6px; padding-top: 6px; }
+  .notes { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 16px; white-space: pre-wrap; }
+  .legal { font-size: 11px; color: #475569; margin-top: 12px; }
   .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b; }
-  @media print {
-    body { padding: 12px; }
-    @page { margin: 0.6in; size: letter; }
-  }
+  @media print { body { padding: 12px; } @page { margin: 0.6in; size: letter; } }
 </style></head><body>
-  <div class="header">
-    <div>
-      <img class="logo" src="${logoSrc}" alt="In-Mar Systems & Solutions" onerror="this.style.display='none'">
-      <div style="font-size:11px;color:#64748b;margin-top:4px;">3011 S. Ruby Ave, Gonzales, LA 70737<br>(225) 430-9111 • info@inmarsystems.com</div>
-    </div>
-    <div class="meta">
-      <div class="quote-title">QUOTE</div>
-      <div><strong>Quote #:</strong> ${escapeHtml(data.number)}</div>
-      <div><strong>Status:</strong> ${escapeHtml(data.status)}</div>
-      <div><strong>Date:</strong> ${escapeHtml(data.date)}</div>
-      <div><strong>Valid Until:</strong> ${escapeHtml(data.valid) || '—'}</div>
-    </div>
-  </div>
-
-  <div class="info">
-    <div><span>Customer / Project:</span> ${escapeHtml(data.customer) || '—'}</div>
-    <div><span>Prepared By:</span> ${escapeHtml(data.by) || '—'}</div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Part #</th>
-        <th>Description</th>
-        <th style="text-align:center;">Qty</th>
-        <th style="text-align:right;">Unit Price</th>
-        <th style="text-align:right;">Total</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>
-
-  <div class="total-row">Total: ${money(total)}</div>
-
-  <div>
-    <div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div>
-    <div class="notes">${escapeHtml(data.notes) || 'No additional notes.'}</div>
-  </div>
-
-  <div class="footer">Thank you for your business.<br>In-Mar Systems &amp; Solutions</div>
-
-  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+${bodyHtml}
+<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
 </body></html>`;
-
       const w = window.open('', '_blank');
       if (!w) {
         showStatus('Pop-up blocked — allow pop-ups to print', 'error');
@@ -3254,11 +3672,282 @@ ${bodyHtml}
       w.document.close();
     }
 
+    function companyBlock() {
+      return `<img class="logo" src="inmar-logo.jpg" alt="In-Mar Systems & Solutions" onerror="this.style.display='none'">
+      <div style="font-size:11px;color:#64748b;margin-top:4px;">3011 S. Ruby Ave, Gonzales, LA 70737<br>(225) 430-9111 • info@inmarsystems.com</div>`;
+    }
+
+    function generateQuote() {
+      if (quoteCart.length === 0) {
+        showStatus('Add at least one part to the quote first', 'error');
+        return;
+      }
+      const data = collectQuoteHeader();
+      if (!data.by) data.by = currentUser();
+      let total = 0;
+      const rows = quoteCart.map(c => {
+        const line = (c.qty || 1) * (c.unit_price || 0);
+        total += line;
+        return `<tr>
+          <td style="font-family:monospace;font-size:12px;">${escapeHtml(c.part_number)}</td>
+          <td>${escapeHtml(c.name)}</td>
+          <td style="text-align:center;">${c.qty}</td>
+          <td style="text-align:right;">${money(c.unit_price)}</td>
+          <td style="text-align:right;font-weight:600;">${money(line)}</td>
+        </tr>`;
+      }).join('');
+      printDocWindow('In-Mar Quote ' + data.number, `
+  <div class="header">
+    <div>${companyBlock()}</div>
+    <div class="meta">
+      <div class="doc-title">QUOTE</div>
+      <div><strong>Quote #:</strong> ${escapeHtml(data.number)}</div>
+      ${data.rfq ? `<div><strong>RFQ #:</strong> ${escapeHtml(data.rfq)}</div>` : ''}
+      <div><strong>Status:</strong> ${escapeHtml(data.status)}</div>
+      <div><strong>Date:</strong> ${escapeHtml(data.date)}</div>
+      <div><strong>Valid Until:</strong> ${escapeHtml(data.valid) || '—'}</div>
+    </div>
+  </div>
+  <div class="info">
+    <div><span>Customer:</span> ${escapeHtml(data.customer) || '—'}</div>
+    <div><span>Project:</span> ${escapeHtml(data.project) || '—'}</div>
+    <div><span>Prepared By:</span> ${escapeHtml(data.by) || '—'}</div>
+    <div><span>FOB:</span> ${escapeHtml(data.fob) || '—'}</div>
+    <div><span>Payment terms:</span> ${escapeHtml(data.terms) || '—'}</div>
+    <div><span>Lead time:</span> ${escapeHtml(data.lead) || '—'}</div>
+  </div>
+  <table>
+    <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="totals"><div class="grand"><span>Quoted total</span><span>${money(total)}</span></div></div>
+  <p class="legal">A 3.5% fee will be added if payment is made by credit card. This quote is an offer to sell, not an invoice or a shipping document. Prices are in USD. Valid until the date shown.</p>
+  <div><div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div><div class="notes">${escapeHtml(data.notes) || '—'}</div></div>
+  <div class="footer">Thank you for the opportunity to quote.<br>In-Mar Systems &amp; Solutions</div>`);
+    }
+
+    async function printPackingList() {
+      if (quoteCart.length === 0) {
+        showStatus('Add quote lines first', 'error');
+        return;
+      }
+      const data = collectQuoteHeader();
+      let plNumber = '';
+      try { plNumber = await nextDocNumber('packing_list'); } catch (e) { plNumber = 'PL-' + data.number; }
+      const quoteId = editingQuoteId || document.getElementById('quote-edit-id')?.value || null;
+      if (supabaseClient && quoteId) {
+        try {
+          const { data: pl, error } = await supabaseClient.from('packing_lists').insert({
+            number: plNumber,
+            quote_id: quoteId,
+            customer_name: data.customer || null,
+            project: data.project || null,
+            pack_date: data.date,
+            prepared_by: data.by || currentUser(),
+            notes: null,
+            created_by: currentUser()
+          }).select('id').maybeSingle();
+          if (!error && pl?.id) {
+            await supabaseClient.from('packing_list_lines').insert(quoteCart.map((c, i) => ({
+              packing_list_id: pl.id,
+              line_no: i + 1,
+              inventory_id: c.inventory_id || c.id || null,
+              part_number: c.part_number,
+              name: c.name,
+              qty: c.qty || 1
+            })));
+          }
+        } catch (e) { /* print even if save tables missing */ }
+      }
+      const rows = quoteCart.map(c => `<tr>
+        <td style="font-family:monospace;font-size:12px;">${escapeHtml(c.part_number)}</td>
+        <td>${escapeHtml(c.name)}</td>
+        <td style="text-align:center;font-weight:700;">${c.qty}</td>
+      </tr>`).join('');
+      printDocWindow('In-Mar Packing List ' + plNumber, `
+  <div class="header">
+    <div>${companyBlock()}</div>
+    <div class="meta">
+      <div class="doc-title">PACKING LIST</div>
+      <div><strong>Packing list #:</strong> ${escapeHtml(plNumber)}</div>
+      <div><strong>Quote #:</strong> ${escapeHtml(data.number)}</div>
+      <div><strong>Date:</strong> ${escapeHtml(data.date)}</div>
+    </div>
+  </div>
+  <div class="info">
+    <div><span>Customer / consignee:</span> ${escapeHtml(data.customer) || '—'}</div>
+    <div><span>Project:</span> ${escapeHtml(data.project) || '—'}</div>
+    <div><span>Prepared By:</span> ${escapeHtml(data.by) || '—'}</div>
+    <div><span>FOB / ship point:</span> ${escapeHtml(data.fob) || '—'}</div>
+  </div>
+  <p class="legal">This packing list describes the physical goods only. It is not a quote, invoice, or request for payment. Prices, credit-card fees, lead time, and payment terms are omitted on purpose.</p>
+  <table>
+    <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty shipped</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div style="display:flex;gap:40px;margin-top:36px;">
+    <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Packed by / date</div>
+    <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Received by / date — contents checked</div>
+  </div>
+  <div class="footer">Check contents against this list on receipt. Report shortages immediately.<br>In-Mar Systems &amp; Solutions</div>`);
+    }
+
+    function invoiceMath() {
+      const subtotal = quoteCartTotal();
+      const shipping = parseFloat(document.getElementById('inv-shipfee')?.value) || 0;
+      const duty = parseFloat(document.getElementById('inv-duty')?.value) || 0;
+      const tariffs = parseFloat(document.getElementById('inv-tariffs')?.value) || 0;
+      const goods = subtotal + shipping + duty + tariffs;
+      const cc = document.getElementById('inv-cc')?.checked;
+      const ccFee = cc ? Math.round(goods * 0.035 * 100) / 100 : 0;
+      return { subtotal, shipping, duty, tariffs, ccFee, cc, total: goods + ccFee };
+    }
+
+    function updateInvoicePreview() {
+      const el = document.getElementById('inv-preview');
+      if (!el) return;
+      const m = invoiceMath();
+      el.innerHTML = `Merchandise ${money(m.subtotal)} + shipping ${money(m.shipping)} + duty ${money(m.duty)} + tariffs ${money(m.tariffs)}${m.cc ? ' + CC 3.5% ' + money(m.ccFee) : ''} = <strong>${money(m.total)}</strong> due`;
+    }
+
+    function openInvoiceForm() {
+      if (quoteCart.length === 0) {
+        showStatus('Add quote lines first', 'error');
+        return;
+      }
+      const box = document.getElementById('invoice-box');
+      if (!box) return;
+      const valid = document.getElementById('quote-valid')?.value;
+      const due = document.getElementById('inv-due');
+      if (due && !due.value) due.value = valid || '';
+      box.style.display = 'block';
+      updateInvoicePreview();
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function saveAndPrintInvoice() {
+      if (!requireUser('creating invoices')) return;
+      if (quoteCart.length === 0) {
+        showStatus('Add quote lines first', 'error');
+        return;
+      }
+      const data = collectQuoteHeader();
+      const m = invoiceMath();
+      const po = (document.getElementById('inv-po')?.value || '').trim();
+      const shipTo = (document.getElementById('inv-ship')?.value || '').trim();
+      const due = document.getElementById('inv-due')?.value || data.valid || '';
+      const today = new Date().toISOString().slice(0, 10);
+      let invNumber = await nextDocNumber('invoice');
+      const quoteId = editingQuoteId || document.getElementById('quote-edit-id')?.value || null;
+      if (supabaseClient) {
+        try {
+          const { data: inv, error } = await supabaseClient.from('invoices').insert({
+            number: invNumber,
+            quote_id: quoteId || null,
+            customer_name: data.customer || null,
+            project: data.project || null,
+            po_number: po || null,
+            ship_to: shipTo || null,
+            invoice_date: today,
+            due_date: due || null,
+            fob_point: data.fob || null,
+            payment_terms: data.terms || null,
+            cc_used: !!m.cc,
+            cc_fee_rate: 0.035,
+            cc_fee_amount: m.ccFee,
+            shipping_fee: m.shipping,
+            duty: m.duty,
+            tariffs: m.tariffs,
+            subtotal: m.subtotal,
+            total: m.total,
+            prepared_by: data.by || currentUser(),
+            notes: data.notes || null,
+            status: 'draft',
+            created_by: currentUser()
+          }).select('id').maybeSingle();
+          if (!error && inv?.id) {
+            await supabaseClient.from('invoice_lines').insert(quoteCart.map((c, i) => ({
+              invoice_id: inv.id,
+              line_no: i + 1,
+              inventory_id: c.inventory_id || c.id || null,
+              part_number: c.part_number,
+              name: c.name,
+              qty: c.qty || 1,
+              unit_price: c.unit_price || 0
+            })));
+          } else if (error) {
+            console.warn(error);
+            showStatus('Invoice printed locally. Run Phase 2 SQL to save invoices to the database.', 'info');
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+      const rows = quoteCart.map(c => {
+        const line = (c.qty || 1) * (c.unit_price || 0);
+        return `<tr>
+          <td style="font-family:monospace;font-size:12px;">${escapeHtml(c.part_number)}</td>
+          <td>${escapeHtml(c.name)}</td>
+          <td style="text-align:center;">${c.qty}</td>
+          <td style="text-align:right;">${money(c.unit_price)}</td>
+          <td style="text-align:right;font-weight:600;">${money(line)}</td>
+        </tr>`;
+      }).join('');
+      printDocWindow('In-Mar Invoice ' + invNumber, `
+  <div class="header">
+    <div>${companyBlock()}</div>
+    <div class="meta">
+      <div class="doc-title">INVOICE</div>
+      <div><strong>Invoice #:</strong> ${escapeHtml(invNumber)}</div>
+      <div><strong>Quote #:</strong> ${escapeHtml(data.number)}</div>
+      ${po ? `<div><strong>PO #:</strong> ${escapeHtml(po)}</div>` : ''}
+      ${data.rfq ? `<div><strong>RFQ #:</strong> ${escapeHtml(data.rfq)}</div>` : ''}
+      <div><strong>Invoice date:</strong> ${escapeHtml(today)}</div>
+      <div><strong>Due date:</strong> ${escapeHtml(due) || '—'}</div>
+    </div>
+  </div>
+  <div class="info">
+    <div><span>Bill to:</span> ${escapeHtml(data.customer) || '—'}</div>
+    <div><span>Project:</span> ${escapeHtml(data.project) || '—'}</div>
+    <div><span>Ship to:</span> ${escapeHtml(shipTo) || 'Same as bill to'}</div>
+    <div><span>Prepared By:</span> ${escapeHtml(data.by) || '—'}</div>
+    <div><span>FOB:</span> ${escapeHtml(data.fob) || '—'}</div>
+    <div><span>Payment terms:</span> ${escapeHtml(data.terms) || '—'}</div>
+  </div>
+  <table>
+    <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Amount</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="totals">
+    <div><span>Merchandise</span><span>${money(m.subtotal)}</span></div>
+    <div><span>Shipping</span><span>${money(m.shipping)}</span></div>
+    <div><span>Duty</span><span>${money(m.duty)}</span></div>
+    <div><span>Tariffs</span><span>${money(m.tariffs)}</span></div>
+    ${m.cc ? `<div><span>Credit card fee (3.5%)</span><span>${money(m.ccFee)}</span></div>` : ''}
+    <div class="grand"><span>Amount due</span><span>${money(m.total)}</span></div>
+  </div>
+  <p class="legal">This invoice requests payment for goods sold. Amounts are in USD. Remit by the due date per the payment terms shown.${m.cc ? ' A 3.5% fee is included because a credit card was used.' : ' A 3.5% fee applies if payment is made by credit card.'}</p>
+  <div><div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div><div class="notes">${escapeHtml(data.notes) || '—'}</div></div>
+  <div class="footer">Please remit with invoice number ${escapeHtml(invNumber)}.<br>In-Mar Systems &amp; Solutions</div>`);
+    }
+
     // Init quote date + panel
     (function() {
       const d = document.getElementById('quote-date');
-      if (d && !d.value) d.value = new Date().toISOString().slice(0,10);
+      const today = new Date().toISOString().slice(0, 10);
+      if (d && !d.value) d.value = today;
+      const v = document.getElementById('quote-valid');
+      if (v && !v.value) v.value = addDaysIso(today, 90);
+      if (d) d.addEventListener('change', () => {
+        const valid = document.getElementById('quote-valid');
+        if (valid) valid.value = addDaysIso(d.value, 90);
+      });
+      ['inv-shipfee', 'inv-duty', 'inv-tariffs'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateInvoicePreview);
+      });
       renderQuotePanel();
+      refreshQuoteLookups();
     })();
 
     // Refresh quote panel when switching to Quote tab
@@ -3273,6 +3962,7 @@ ${bodyHtml}
 
     if (isConfigured) {
       syncPricingUi();
+      loadGlobalFactorInputs();
       loadInventory()
         .then(() => subscribeRealtime())
         .then(() => handleDeepLinkPart());
