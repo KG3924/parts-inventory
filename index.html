@@ -248,7 +248,7 @@
       <strong>Setup required:</strong> Paste your Supabase Project URL and anon key near the top of the script section.
     </div>
     <div id="user-required-banner" class="user-required-banner">
-      <strong>Select your name</strong> in the header before adding, editing, scanning commits, or adjusting stock. This stamps who made each change.
+      <strong>Select your name</strong> before changing stock or saving quotes.
     </div>
 
     <div id="status" class="status"></div>
@@ -293,7 +293,7 @@
     <div id="scan" class="panel">
       <div class="card">
         <h2>Phone Camera Scan</h2>
-        <p class="hint">Scan a QR label, or type any part of a <strong>name</strong> or <strong>part #</strong> (e.g. <code>belt</code> or <code>1588</code>). Multiple matches are listed. Camera / QR still uses the exact label ID. <strong>Commit change</strong> before qty updates.</p>
+        <p class="hint">Scan a QR, or type part of a name or part #. <strong>Commit</strong> before qty updates.</p>
         <div id="reader"></div>
         <div class="btn-group">
           <button id="start-scan-btn" onclick="startScanner()">Start Camera</button>
@@ -321,10 +321,10 @@
         <input type="hidden" id="edit-id">
         <label>Part Name *</label>
         <input type="text" id="item-name" placeholder="e.g. Hydraulic Fitting 1/2&quot;" maxlength="120">
-        <p class="hint">DK-1201 label auto-sizes the name to fill leftover space. Keep names ≤ <strong>32 characters</strong> so they stay large.</p>
+        <p class="hint">Keep names ≤ <strong>32</strong> characters so the label stays large.</p>
         <label>Part Number / SKU *</label>
         <input type="text" id="item-barcode" placeholder="Existing part # – letters & numbers OK" maxlength="40">
-        <p class="hint">Human part # (no spaces). Label fits <strong>22 characters</strong> on one large line (up to 28 if it wraps). Labels also use a separate stable QR ID that does not change when you edit the name or part #.</p>
+        <p class="hint">No spaces. The QR uses a separate ID, so editing this later does not require a reprint.</p>
         <div class="row">
           <div>
             <label>Quantity on Hand</label>
@@ -357,7 +357,7 @@
             <input type="number" id="item-sell-factor" step="0.001" min="0" placeholder="optional" oninput="applySellFromList(true)">
           </div>
         </div>
-        <p class="hint" id="list-price-hint">List currency follows source: <strong>Wynn = £ GBP</strong> (factor 2.585), <strong>FFS = € EUR</strong> (enter factor when known), anything else = <strong>$ USD</strong>. Sell $ = list × factor. Factor is remembered per currency.</p>
+        <p class="hint" id="list-price-hint">Wynn = £ · FFS = € · else $. Sell = list × factor, rounded up to $5.</p>
         <div class="row">
           <div>
             <label>Buy Price ($ USD) — optional</label>
@@ -368,11 +368,11 @@
             <input type="number" id="item-sell-price" step="0.01" min="0" placeholder="0.00">
           </div>
         </div>
-        <p class="hint">Buy price is optional except on <strong>Wynn</strong> parts, where it auto-fills as converted list minus 30% (you can still edit it). It is used only for Home / Reports <em>inventory valuation</em> (qty × buy). Quotes use sell price. Leave blank if you do not know cost — value shows as —.</p>
+        <p class="hint">Optional. Wynn auto-fills as converted list − 30%. Used for valuation only.</p>
         <label style="display:flex;align-items:flex-start;gap:0.5rem;margin:0.15rem 0 0.75rem;">
           <input type="checkbox" id="item-exclude-value" style="width:auto;margin:0.2rem 0 0;">
           <span><strong>Exclude from inventory valuation</strong><br>
-          <span class="hint" style="margin:0.15rem 0 0;">Keep a buy/sell price for reference, but do not add this part’s on-hand qty into Inventory at Cost or At Sell Price (customer-owned, consignment, or leftover you do not want on the books).</span></span>
+          <span class="hint" style="margin:0.15rem 0 0;">Skip this part’s qty in inventory totals (consignment, customer-owned).</span></span>
         </label>
         <label>Location / Bin</label>
         <input type="text" id="item-location" placeholder="e.g. Shelf A-3">
@@ -397,7 +397,7 @@
             </div>
             <label>Qty Ordered</label>
             <input type="number" id="item-ordered-qty" min="0" placeholder="How many ordered">
-            <p class="hint" style="color:var(--warning);">Leave Est. Delivery blank if unknown — the item will be flagged “Needs Delivery Date” as a reminder.</p>
+            <p class="hint" style="color:var(--warning);">Leave blank if unknown — flagged as Needs Delivery Date.</p>
           </div>
         </div>
 
@@ -412,12 +412,12 @@
     <div id="reports" class="panel">
       <div class="card">
         <h2>Inventory Valuation</h2>
-        <p class="hint">Standard cost-based and retail-based views of what your stock is worth.</p>
+        <p class="hint">On-hand qty × buy, and qty × sell.</p>
         <div class="value-cards" id="report-values"></div>
       </div>
       <div class="card">
         <h2>Inventory Adjustment Report</h2>
-        <p class="hint">Timestamps of stock and part changes (what, who, when, action). Requires the <code>inventory_adjustments</code> table — see More tab SQL.</p>
+        <p class="hint">Who changed what, and when. Needs the adjustments table (More → SQL).</p>
         <div class="adj-filters">
           <div>
             <label>User</label>
@@ -457,22 +457,19 @@
           <button type="button" class="secondary" onclick="exportAdjustmentCsv()">Export CSV</button>
           <button type="button" class="secondary" onclick="printAdjustmentReport()">Print</button>
         </div>
-        <p class="hint" id="adj-status">Click Generate report to load adjustments.</p>
+        <p class="hint" id="adj-status">Generate to load adjustments.</p>
         <div class="adj-print-area" id="adj-report-table" style="overflow-x:auto;"></div>
       </div>
       <div class="card">
         <h2>Items Needing Attention</h2>
-        <p class="hint">Tap a keyword to filter the list.</p>
+        <p class="hint">Tap a chip to filter.</p>
         <div id="attention-filters" class="attention-filters"></div>
         <div id="attention-list"></div>
       </div>
       <div class="card">
         <h2>About these numbers</h2>
         <p style="font-size:0.85rem; color:var(--muted);">
-          <strong>Cost Value</strong> = Σ (Qty × Buy Price) — typical accounting inventory asset value (what you paid).<br><br>
-          <strong>Sell / Retail Value</strong> = Σ (Qty × Sell Price) — potential revenue at list price.<br><br>
-          <strong>Potential Margin</strong> = Sell Value − Cost Value.<br><br>
-          Use <strong>Source</strong> and <strong>Category</strong> filter chips on Home to narrow the list (e.g. Wynn + Blade).
+          <strong>Cost</strong> = qty × buy. <strong>Sell</strong> = qty × sell. <strong>Margin</strong> = sell − cost.
         </p>
       </div>
     </div>
@@ -481,7 +478,7 @@
     <div id="labels" class="panel">
       <div class="card">
         <h2>Batch Print Labels</h2>
-        <p class="hint">Labels use a <strong>QR code deep-link</strong> to this app (stable ID in the URL). Phone <strong>Camera</strong> opens the part ready to Commit qty. In-app scanner also reads these QR codes. Part name/number on the label can change later without reprinting.</p>
+        <p class="hint">QR opens this app to the part. Name/part # can change later without reprinting.</p>
         
         <div style="margin-bottom:0.75rem;">
           <input type="search" id="label-search" placeholder="Filter parts..." oninput="populateLabelList()" style="margin-bottom:0.5rem;">
@@ -500,14 +497,12 @@
 
       <div class="card" id="batch-preview-card" style="display:none;">
         <h2>Label Preview <span id="batch-count" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
-        <p class="hint" id="label-print-hint">Preview only. Use a print button below (opens a clean print window — avoids extra blank Brother labels).</p>
+        <p class="hint" id="label-print-hint">Preview only — print from the buttons below.</p>
         <div class="btn-group" style="margin-bottom:0.75rem;">
           <button type="button" id="print-brother-btn" onclick="printLabelsBrother()">Print on Brother QL (DK-1201)</button>
           <button type="button" class="secondary" id="print-paper-btn" onclick="printLabelsPaper()">Print on letter paper (8 / sheet)</button>
         </div>
-                <p class="hint">Brother DK-1201: 1 large QR per die-cut (1.1&quot; × 3.5&quot;). Print at <strong>100% / Actual size</strong> — not Fit to Page.<br>
-          <strong>Name auto-sizes</strong> to fill the space above the part # (max ~28px). Keep names ≤ <strong>32</strong> characters so they stay large. Part # ≤ <strong>22</strong> (up to 28 if it wraps).<br>
-          Letter paper: 8 large labels/sheet.</p>
+        <p class="hint">DK-1201: print at <strong>100% / Actual size</strong>. Names ≤ 32 chars. Letter: 8 / sheet.</p>
         <div id="batch-label-preview" style="background:white; border-radius:8px; padding:0.75rem; border:1px solid var(--border); overflow-x:auto;"></div>
       </div>
     </div>
@@ -516,7 +511,7 @@
     <div id="quote" class="panel">
       <div class="card">
         <h2>Saved Quotes</h2>
-        <p class="hint" id="quotes-schema-hint">Quotes save to Supabase when tables are installed (see More → SQL). Inventory stock is never changed by quotes.</p>
+        <p class="hint" id="quotes-schema-hint">Quotes never change stock.</p>
         <div class="filter-row" style="margin-bottom:0.5rem;">
           <div class="filter-row-label">Status</div>
           <div id="quote-status-filters" class="source-filters"></div>
@@ -530,7 +525,7 @@
 
       <div class="card">
         <h2>Quote Builder <span id="quote-count-badge" style="font-weight:400;color:var(--muted);font-size:0.85rem;"></span></h2>
-        <p class="hint">Add parts from Home or Scan. Customer and project are separate. Save, print a quote, packing list, or invoice — stock qty is never changed.</p>
+        <p class="hint">Add parts from Home or Scan.</p>
         <input type="hidden" id="quote-edit-id" value="">
 
         <div class="row">
@@ -580,7 +575,7 @@
         </div>
         <label style="display:flex;align-items:center;gap:0.45rem;margin-bottom:0.7rem;font-size:0.85rem;color:var(--muted);">
           <input type="checkbox" id="quote-save-customer" style="width:auto;margin:0;">
-          Also save this customer (and payment terms) for reuse
+          Also save this customer
         </label>
         <div class="row">
           <div>
@@ -607,7 +602,7 @@
             <input type="text" id="quote-terms" placeholder="Type terms — saved with the customer" style="display:none;margin-top:0.4rem;">
           </div>
         </div>
-        <p class="hint">FOB: Origin or Destination, or type another point to keep it in the list. Payment terms follow the customer when you pick a saved name; check “Also save this customer” to store terms on that customer.</p>
+        <p class="hint">FOB and terms: pick a value or type Other to save a new one.</p>
         <div>
           <label>Lead time</label>
           <input type="text" id="quote-lead" placeholder="If ordered today, when to expect delivery">
@@ -616,7 +611,7 @@
           <label>Notes</label>
           <textarea id="quote-notes" rows="2" placeholder="Delivery or special notes..."></textarea>
         </div>
-        <p class="hint">Printed quotes include: a 3.5% fee is added if payment is made by credit card.</p>
+        <p class="hint">Quotes note a 3.5% fee if paid by card.</p>
 
         <div id="quote-lines" style="margin:1rem 0;"></div>
 
@@ -632,7 +627,7 @@
 
         <div id="invoice-box" class="order-box" style="display:none;margin-top:1rem;">
           <h2 style="font-size:0.95rem;">Invoice from this quote</h2>
-          <p class="hint">Commercial invoice: amounts due, PO, ship-to. Valid-until on the quote becomes the due date.</p>
+          <p class="hint">Due date starts from the quote’s valid-until date.</p>
           <div class="row">
             <div>
               <label>Customer PO #</label>
@@ -681,10 +676,10 @@
           <button class="secondary" onclick="document.getElementById('import-file').click()">Import JSON</button>
           <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
         </div>
-        <p class="hint">Import includes optional <code>category</code>. Existing part numbers are skipped.</p>
+        <p class="hint">Existing part numbers are skipped.</p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Global sell factors</h2>
-        <p class="hint">Used when adding parts and when you apply to all matching items. Wynn list is £ GBP; FFS list is € EUR. Sell $ = list × factor, then <strong>rounded up to the next $5</strong>. Wynn buy $ = converted list × 0.70 (30% off converted list).</p>
+        <p class="hint">Wynn £ and FFS €. Sell rounds up to $5.</p>
         <div class="row">
           <div>
             <label>Wynn sell factor (GBP → $)</label>
@@ -699,14 +694,14 @@
           <button type="button" class="secondary" onclick="saveGlobalFactorsOnly()">Save factors</button>
           <button type="button" onclick="applyGlobalFactorsToInventory()">Apply to all Wynn / FFS parts</button>
         </div>
-        <p class="hint" id="global-factor-status">Applies only to parts with a list price and source Wynn or FFS. Other sources are not changed.</p>
+        <p class="hint" id="global-factor-status"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Supabase Connection</h2>
         <p class="hint" id="conn-status">Checking…</p>
         <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Database setup (run once in Supabase SQL Editor)</h2>
-        <p class="hint">Additive only — does not remove inventory data or break the live inventory app. Safe to re-run if policies already exist (ignore duplicate policy errors).</p>
+        <p class="hint">Safe to re-run. Does not delete inventory.</p>
         <pre id="category-sql" style="font-size:0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;max-height:240px;">-- Inventory extras
 alter table inventory add column if not exists category text;
 alter table inventory add column if not exists barcode text;
@@ -826,7 +821,7 @@ notify pgrst, 'reload schema';</pre>
         <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
         <div class="danger-zone">
           <h2 style="font-size:0.95rem;color:var(--danger);">Danger zone</h2>
-          <p class="hint">Delete every part from Supabase so you can re-import clean data. Export a backup first. Requires your name selected.</p>
+          <p class="hint">Deletes every part. Export a backup first.</p>
           <button class="danger" onclick="clearAllInventory()">Clear all inventory…</button>
         </div>
       </div>
@@ -997,7 +992,7 @@ notify pgrst, 'reload schema';</pre>
         await persistSetting('ffs_sell_factor', '');
       }
       const st = document.getElementById('global-factor-status');
-      if (st) st.textContent = 'Factors saved. Use Apply to recalculate existing Wynn / FFS parts.';
+      if (st) st.textContent = 'Saved.';
       showStatus('Sell factors saved', 'success');
     }
 
@@ -1081,16 +1076,16 @@ notify pgrst, 'reload schema';</pre>
           if (buy != null && (forceWynnBuy || buyEl.value === '')) buyEl.value = buy.toFixed(2);
         }
         if (hint) {
-          const buyBit = p.code === 'GBP' ? ` Wynn buy $ = converted list × 0.70 = <strong>${money(wynnBuyFromList(list, factor))}</strong>.` : ' Buy $ is optional.';
-          hint.innerHTML = `${p.symbol}${list.toFixed(2)} ${p.code} × <strong>${factor}</strong> = ${money(raw)} → sell <strong>${money(usd)}</strong> (up to next $5).${buyBit}`;
+          const buyBit = p.code === 'GBP' ? ` Buy <strong>${money(wynnBuyFromList(list, factor))}</strong> (−30%).` : '';
+          hint.innerHTML = `${p.symbol}${list.toFixed(2)} × ${factor} → sell <strong>${money(usd)}</strong>.${buyBit}`;
         }
       } else if (hint) {
         if (p.code === 'GBP') {
-          hint.innerHTML = `Wynn list is <strong>£ GBP</strong>. Sell $ = £ × factor, rounded up to the next $5. Buy $ auto-fills as converted list minus 30%.`;
+          hint.innerHTML = `Wynn: £ × factor → sell (up to $5). Buy = converted − 30%.`;
         } else if (p.code === 'EUR') {
-          hint.innerHTML = `FFS list is <strong>€ EUR</strong>. Enter the EUR → sell $ factor when you have it. Sell rounds up to the next $5.`;
+          hint.innerHTML = `FFS: € × factor → sell (up to $5).`;
         } else {
-          hint.innerHTML = `List is <strong>$ USD</strong>. Factor 1 copies list into sell (then up to next $5). Buy $ is optional.`;
+          hint.innerHTML = `USD: factor 1 copies list to sell (up to $5).`;
         }
       }
     }
@@ -2089,7 +2084,7 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('item-open-order').checked = false;
       const bcHint = document.getElementById('item-stable-barcode-hint');
       if (bcHint) bcHint.textContent = hasBarcodeColumn
-        ? 'A stable label ID is assigned when the part is created and used in QR deep-links.'
+        ? 'A label ID is assigned when the part is created.'
         : '';
       toggleOrderFields();
     }
@@ -2132,8 +2127,8 @@ notify pgrst, 'reload schema';</pre>
         if (notes?.parentNode) notes.parentNode.insertBefore(bcHint, notes);
       }
       bcHint.textContent = item.barcode
-        ? `Stable label ID: ${item.barcode} — QR deep-link key (unchanged if you edit name or part #)`
-        : (hasBarcodeColumn ? 'Stable label ID will be assigned on next save/load if missing (used in QR codes).' : '');
+        ? `Label ID: ${item.barcode} — stays the same if you edit name or part #`
+        : (hasBarcodeColumn ? 'Label ID assigned on save.' : '');
       toggleOrderFields();
       document.querySelector('[data-tab="add"]').click();
       setTimeout(() => {
@@ -2285,7 +2280,7 @@ notify pgrst, 'reload schema';</pre>
           <div style="margin-top:0.15rem;">
             <label for="scan-notes">Notes</label>
             <textarea id="scan-notes" rows="3" placeholder="Part notes — view or edit here…">${escapeHtml(notesVal)}</textarea>
-            <p class="hint" style="margin-top:-0.35rem;">Notes save with Commit, or use Save notes only. Use <strong>Edit part</strong> for name, part #, source, category, prices, etc.</p>
+            <p class="hint" style="margin-top:-0.35rem;">Use <strong>Edit part</strong> for name, prices, and the rest.</p>
           </div>
           <div class="btn-group" style="margin-top:0.25rem;">
             <button onclick="commitScanChange()" style="flex:1;padding:0.75rem;font-size:1rem;font-weight:600;">Commit change</button>
@@ -2429,7 +2424,7 @@ notify pgrst, 'reload schema';</pre>
         resultEl.innerHTML = `
           <div class="scan-result-card">
             <p style="margin:0 0 0.5rem;"><strong>No matches</strong> for “${escapeHtml(query)}”</p>
-            <p class="hint" style="margin:0 0 0.5rem;">Searches name, part # (punctuation optional), and label ID.</p>
+            <p class="hint" style="margin:0 0 0.5rem;">Name, part #, or label ID.</p>
             <div class="btn-group">
               <button onclick="prefillNew('${safe}')">Add this as a new part</button>
             </div>
@@ -3109,7 +3104,7 @@ ${bodyHtml}
       const el = document.getElementById('quote-lines');
       if (!el) return;
       if (quoteCart.length === 0) {
-        el.innerHTML = '<p class="empty">No items in cart yet. Use the purple “Quote” button on Home or Scan.</p>';
+        el.innerHTML = '<p class="empty">No items yet — add from Home or Scan.</p>';
         return;
       }
       let total = 0;
@@ -3351,11 +3346,11 @@ ${bodyHtml}
       if (!supabaseClient) return;
       const ok = await ensureQuotesTables();
       if (!ok) {
-        if (hint) hint.textContent = 'Quotes tables not found — run Phase 1 SQL on the More tab. Inventory still works normally.';
+        if (hint) hint.textContent = 'Run Phase 1 SQL on More to save quotes.';
         if (listEl) listEl.innerHTML = '<p class="empty">Install quotes SQL to save and list quotes.</p>';
         return;
       }
-      if (hint) hint.textContent = 'Quotes are stored in Supabase. Saving a quote never changes inventory quantities.';
+      if (hint) hint.textContent = 'Saving a quote does not change stock.';
       const { data, error } = await supabaseClient.from('quotes')
         .select('id,number,customer_name,status,quote_date,valid_until,prepared_by,updated_at')
         .order('updated_at', { ascending: false })
@@ -3721,7 +3716,7 @@ ${bodyHtml}
     <tbody>${rows}</tbody>
   </table>
   <div class="totals"><div class="grand"><span>Quoted total</span><span>${money(total)}</span></div></div>
-  <p class="legal">A 3.5% fee will be added if payment is made by credit card. This quote is an offer to sell, not an invoice or a shipping document. Prices are in USD. Valid until the date shown.</p>
+  <p class="legal">3.5% fee if paid by credit card. Prices in USD. Valid until the date shown.</p>
   <div><div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div><div class="notes">${escapeHtml(data.notes) || '—'}</div></div>
   <div class="footer">Thank you for the opportunity to quote.<br>In-Mar Systems &amp; Solutions</div>`);
     }
@@ -3780,7 +3775,7 @@ ${bodyHtml}
     <div><span>Prepared By:</span> ${escapeHtml(data.by) || '—'}</div>
     <div><span>FOB / ship point:</span> ${escapeHtml(data.fob) || '—'}</div>
   </div>
-  <p class="legal">This packing list describes the physical goods only. It is not a quote, invoice, or request for payment. Prices, credit-card fees, lead time, and payment terms are omitted on purpose.</p>
+  <p class="legal">Contents only — not a quote or invoice.</p>
   <table>
     <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty shipped</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -3789,7 +3784,7 @@ ${bodyHtml}
     <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Packed by / date</div>
     <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Received by / date — contents checked</div>
   </div>
-  <div class="footer">Check contents against this list on receipt. Report shortages immediately.<br>In-Mar Systems &amp; Solutions</div>`);
+  <div class="footer">Check contents on receipt.<br>In-Mar Systems &amp; Solutions</div>`);
     }
 
     function invoiceMath() {
@@ -3926,7 +3921,7 @@ ${bodyHtml}
     ${m.cc ? `<div><span>Credit card fee (3.5%)</span><span>${money(m.ccFee)}</span></div>` : ''}
     <div class="grand"><span>Amount due</span><span>${money(m.total)}</span></div>
   </div>
-  <p class="legal">This invoice requests payment for goods sold. Amounts are in USD. Remit by the due date per the payment terms shown.${m.cc ? ' A 3.5% fee is included because a credit card was used.' : ' A 3.5% fee applies if payment is made by credit card.'}</p>
+  <p class="legal">Please remit by the due date. Amounts in USD.${m.cc ? ' Includes 3.5% card fee.' : ' 3.5% fee if paid by card.'}</p>
   <div><div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div><div class="notes">${escapeHtml(data.notes) || '—'}</div></div>
   <div class="footer">Please remit with invoice number ${escapeHtml(invNumber)}.<br>In-Mar Systems &amp; Solutions</div>`);
     }
