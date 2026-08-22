@@ -21,11 +21,11 @@ In the project folder the two files are:
 - `count.html`
 - `count-seed.json`
 
-They are **not live yet** until they are committed and pushed to `main`. After that push, on the iPad open:
+These are already on GitHub Pages. On the iPad open:
 
 `https://kg3924.github.io/parts-inventory/count.html`
 
-(Pages can take 1–2 minutes to update. Hard-refresh if you still see the old site.)
+(After a new push, Pages can take 1–2 minutes. Hard-refresh if you still see the old site.)
 
 ### B. First launch on the iPad (Safari)
 
@@ -161,3 +161,7 @@ After the catalog has loaded once (or you picked the seed file), search and draf
 ## Clear
 
 **Clear this count…** wipes the draft on this device only (two confirms). It does not touch Supabase or the live app.
+
+---
+
+*Last updated: 2026-08-17 — count tool is live on Pages; drafts stay in that browser until you Export JSON.*

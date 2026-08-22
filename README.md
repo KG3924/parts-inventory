@@ -32,7 +32,9 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | File | Purpose |
 |------|---------|
 | `index.html` | The app (includes Supabase URL + anon key) |
-| `inmar-logo.jpg` | Logo used on generated quotes |
+| `inmar-logo.jpg` | Logo used on quotes / packing lists / invoices |
+| `count.html` | Physical count tool |
+| `count-seed.json` | Catalog lookup for the count tool |
 
 ---
 
@@ -114,7 +116,7 @@ These are three related documents that share the same cart and look similar, but
 3. **Save quote** stores it in Supabase (after Phase 1 SQL). New header fields need **Phase 2 SQL**.
 4. **Print quote** — branded offer. **Packing list** — items + qty only (`PL-YYYY-###`). **Invoice…** — adds PO, ship-to, due date (from quote valid-until), shipping/duty/tariffs, optional CC fee (`INV-YYYY-###`).
 5. Open from the saved list to edit; **Void** instead of delete.
-6. Optional: check **Also save this customer (and payment terms)**.
+6. Optional: check **Also save this customer**.
 
 Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart is still in the browser until you save; **none of these documents change inventory qty**.
 
@@ -145,7 +147,7 @@ Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart 
 - Leave Est. Delivery blank when unknown — “Needs Delivery Date” flags it.
 - Use source/category chips and Home tiles to narrow the list.
 - Export JSON from More before large imports or clears.
-- Hosted on GitHub Pages; data lives in your Supabase project (realtime across devices).
+- Hosted on GitHub Pages; **inventory and saved quotes live in Supabase** (realtime). Closing a chat session does not delete them. Unsaved quote carts and count drafts stay in that browser until you save/export.
 
 ---
 
@@ -161,4 +163,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-08-17 — global sell factors, Wynn buy auto-fill, $5 sell rounding, packing lists, invoices*
+*Last updated: 2026-08-17 — factors/quotes/packing/invoices; shorter on-screen hints; data lives in Supabase + GitHub*

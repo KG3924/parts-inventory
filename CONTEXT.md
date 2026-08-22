@@ -30,6 +30,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 5. After meaningful feature changes, update this file + `README.md`. **Push only when the user asks.**
 6. **Do not alter** original supplier spreadsheets under `inmarinventory/`.
 7. **User required before mutations.** User selection is **session-only** (in-memory `sessionUser`); **do not** restore from `localStorage` (legacy `inv_user` is cleared on load so the UI always starts at “— Select —”).
+8. **Keep on-screen hints to one short line.** Explain the field; do not fill the screen with tooltips. Printed quote / packing list / invoice legal lines stay short too.
 
 ---
 
@@ -150,7 +151,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / Void (no hard delete)
 - Packing list (`PL-YYYY-###`): items + qty only. No prices, CC note, lead time, or payment terms. Packed-by / received-by lines.
 - Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (from quote valid-until), optional 3.5% CC fee, shipping, duty, tariffs. Same visual family as the quote.
-- Customer free-text + optional “Also save this customer (and payment terms)”
+- Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers via `document_counters` (fallback: max existing)
 - Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
 - **Does not change inventory qty**
@@ -184,11 +185,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ## Data / spreadsheets (local)
 
-| Path | Role |
-|------|------|
-| `Consolidated Parts Inventory.xlsx` | Master clean list (also under `inmarinventory/`) |
-| `consolidated-import.json` | Import payload (~609 parts) |
-| `inmarinventory/` | Original supplier sheets (read-only) |
+Workbooks live **on this Mac only** (not in git). Full list is in the local-only file map below.
 
 Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACEHOLDER-NNN`.
 
@@ -229,9 +226,27 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 - Light theme; source + category chips; easy delete
 - Scan: lookup → review → commit (no silent stock change)
 - Employee name required each session for future audit reports
-- Labels must scan on QL-710W; prefer short stable barcodes over long part #s
+- Labels must scan on QL-710W + **DK-1201** (1.1″ × 3.5″). **DK-11240 does not fit** the QL-710W
 - Prefer not reprinting labels when only name/PN text changes
 - Shelf tags: letter paper, 8/sheet, laminate as needed
+- Hints/tooltips: one short line; useful, not wordy
+
+---
+
+## Where data lives (sessions disappearing does not wipe this)
+
+Grok chat sessions are **not** the source of truth. Recover from GitHub + this file + Supabase.
+
+| What | Where it actually lives |
+|------|-------------------------|
+| App source, docs, count tool, SQL | GitHub `KG3924/parts-inventory` `main` (Pages). Latest relevant commits: `3b4fd34` (factors/quotes/packing/invoices), `57d95d8` (shorter hints) |
+| Live inventory, quotes, packing lists, invoices, settings | **Supabase** project (realtime). Survives browser close and new AI sessions |
+| Working quote **cart** (unsaved) | Browser `localStorage` key `inv_quote` — device/browser only until Save quote |
+| Global factors fallback | `localStorage` + `app_settings` in Supabase (after Phase 2 SQL) |
+| Physical count **draft** | That phone/browser only (`count.html` localStorage). **Export JSON** is the backup. Safari ≠ Chrome |
+| Original supplier sheets, 2026 catalogs, helper xlsx/json | **This Mac only** (not in git — see local file map). Do not rely on GitHub for those |
+
+Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ---
 
@@ -247,22 +262,36 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 
 ---
 
-## File map
+## File map (on GitHub / Pages)
 
 | File | Role |
 |------|------|
 | `index.html` | Entire app |
-| `inmar-logo.jpg` | Quote logo |
+| `inmar-logo.jpg` | Quote / packing list / invoice logo |
 | `README.md` | Setup docs |
-| `CONTEXT.md` | This file |
-| `Consolidated Parts Inventory.xlsx` | Clean parts workbook |
-| `consolidated-import.json` | Bulk import |
+| `CONTEXT.md` | This file — read first in a new session |
 | `count.html` | Mobile physical-count capture (no Supabase writes) |
 | `count-seed.json` | Known-parts lookup for the count tool |
 | `COUNT.md` | How to count on phone and import JSON |
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
 
+## Local-only (this Mac, not in git)
+
+Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
+
+| Path | Role |
+|------|------|
+| `inmarinventory/` | Original supplier sheets (read-only) |
+| `Consolidated Parts Inventory.xlsx` | Master clean list |
+| `consolidated-import.json` | Bulk import payload (~609 parts) |
+| `2026 Price List-i2.xlsx` | Hepworth 2026 price list |
+| `Inventory Price Match 2026.xlsx` | Price-match workbook (GBP→USD; does not overwrite live inventory) |
+| `Wynn Master Catalog 2026.xlsx` | 2026 catalog (internal vs manufacturer PN) |
+| `build_wynn_master.py` | Catalog builder |
+| `JSON/` | Older import JSON splits |
+| `OLD Working files/` | Archived HTML |
+
 ---
 
-*Last updated: 2026-08-17 — global Wynn/FFS sell factors, Wynn buy auto-fill, $5 sell rounding, quote extras, packing lists, invoices.*
+*Last updated: 2026-08-17 — factors/quotes/packing/invoices on GitHub (`3b4fd34`); short hints (`57d95d8`); this file records where data lives so a new session can recover.*
