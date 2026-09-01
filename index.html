@@ -1226,30 +1226,41 @@ notify pgrst, 'reload schema';</pre>
       showStatus('Exchange rates saved', 'success');
     }
 
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }
+
     async function fetchExchangeRates() {
       const st = document.getElementById('fx-status');
       if (st) st.textContent = 'Fetching…';
       try {
-        const codes = ['GBP', 'EUR', 'NOK'];
-        const results = await Promise.all(codes.map(async (from) => {
-          const res = await fetch('https://api.frankfurter.app/latest?from=' + from + '&to=USD');
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const j = await res.json();
-          const n = j && j.rates && j.rates.USD;
-          return { from, n: Number(n) };
-        }));
+        let table = null;
+        let asOf = '';
+        try {
+          const j = await fetchJson('https://api.frankfurter.dev/v1/latest?base=USD&symbols=GBP,EUR,NOK');
+          table = j && j.rates;
+          asOf = j && j.date ? j.date : '';
+        } catch (e1) {
+          const j = await fetchJson('https://open.er-api.com/v6/latest/USD');
+          table = j && j.rates;
+          asOf = (j && j.time_last_update_utc) ? String(j.time_last_update_utc).slice(0, 16) : '';
+        }
+        if (!table) throw new Error('No rates');
         let ok = 0;
-        results.forEach(r => {
-          if (isFinite(r.n) && r.n > 0) {
-            const el = document.getElementById(FX_INPUT[r.from]);
-            if (el) el.value = r.n.toFixed(4);
-            persistFx(r.from, r.n);
-            ok++;
-          }
+        ['GBP', 'EUR', 'NOK'].forEach((code) => {
+          const perUsd = Number(table[code]);
+          const usdEach = (isFinite(perUsd) && perUsd > 0) ? (1 / perUsd) : null;
+          if (usdEach == null) return;
+          const el = document.getElementById(FX_INPUT[code]);
+          if (el) el.value = usdEach.toFixed(4);
+          persistFx(code, usdEach);
+          ok++;
         });
         if (!ok) throw new Error('No rates returned');
         await saveExchangeRatesOnly();
-        if (st) st.textContent = 'Rates updated from ECB (Frankfurter).';
+        if (st) st.textContent = 'Rates updated' + (asOf ? ' (' + asOf + ')' : '') + '. USD per £ / € / kr.';
       } catch (e) {
         if (st) st.textContent = 'Could not fetch — enter rates by hand.';
         showStatus('Rate fetch failed — type them in', 'error');
