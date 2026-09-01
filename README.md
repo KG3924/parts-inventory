@@ -13,12 +13,12 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | Area | What it does |
 |------|----------------|
 | **Home** | Live list; search (name, part #, barcode, source, category); **source + category** filter chips; badges; clickable **Open Orders / Low / Needs Delivery Date** tiles; quick +/−; cost value; **Quote**, **Edit**, **Del** |
-| **Scan** | Camera or type part # / barcode → review → **Commit** stock in/out/set; **notes** view/edit; **Quote** and **Edit part** on the result card |
-| **Add / Edit** | Name, part #, qty, reorder, buy/sell, source, category, location, notes, open order (order date, est. delivery, qty ordered) |
+| **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
+| **Add / Edit** | Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
 | **Quote** | Cart + saved quotes: **customer vs project**, RFQ #, FOB, payment terms, lead time, 90-day validity, prepared-by = logged-in user; **Print quote**, **Packing list**, **Invoice**; free-text customer with optional save |
-| **Reports** | Inventory valuation; **adjustment report** (who/when/action — needs adjustments table); items needing attention with filters (Out of Stock, Needs Delivery Date, Low, Open Orders) |
+| **Reports** | Valuation (new qty only); adjustment log; **price history**; **LIFO/FIFO ending inventory**; needs-attention |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
-| **More** | Export/Import JSON; **global Wynn / FFS sell factors** (apply to all matching parts); connection + schema status; setup SQL; clear all inventory |
+| **More** | Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; clear all |
 | **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
 **Users (required before changes):** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes and defaults **Prepared By** on quotes.
@@ -46,6 +46,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
    - `inventory_adjustments`
    - Phase 1 quotes: `customers`, `quotes`, `quote_lines`, `document_counters`
    - Phase 2: quote extras (project, RFQ, FOB, terms, lead time), `app_settings`, `app_lookups`, packing lists, invoices
+   - Phase 3: `qty_used`, `inventory_price_history`, `inventory_cost_layers`
 3. **Project Settings → API** → copy Project URL and `anon` public key into `index.html` (do not overwrite existing production keys unless intentional).
 
 Open RLS policies are used for trusted internal access (same model as the live app).
@@ -124,20 +125,21 @@ Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart 
 
 ## 4b. Pricing (list → sell / buy)
 
-- **Wynn** list is £ GBP. **FFS** list is € EUR. Everything else is $ USD.
-- **Sell $** = list × sell factor, then **rounded up to the next $5** (130.01 → 135.00; 129.99 → 130.00).
-- You can still change the factor on an individual item.
-- **More → Global sell factors:** set Wynn and FFS, then **Apply to all Wynn / FFS parts** that have a list price.
-- **Wynn buy $** auto-fills as converted list minus 30% (list × factor × 0.70). Buy stays optional on other sources.
+- **Wynn** list is £ GBP. **FFS** list is € EUR. **Alu Design** list is kr NOK. Everything else is $ USD.
+- **Sell $** = list × sell factor, then **rounded up to the next $5**.
+- **Buy $** = list × **exchange rate** × 0.70 (minus 30%). Not the sell factor.
+- **More → Global sell factors** apply sell $. **Exchange rates** (fetch or type GBP / EUR / NOK) apply buy $.
+- Same part # can have **new** qty (valued) and **used/salvage** qty (not valued). Scan asks which one to issue.
 
 ---
 
 ## 5. Reports
 
-- **Inventory at Cost** = Σ (Qty × Buy Price)
-- **At Sell Price** / **Potential Margin**
-- **Adjustment report:** Generate after the `inventory_adjustments` table exists (filters: user, dates, action)
-- **Needs attention:** filter chips for out of stock, needs delivery date, low stock, open orders
+- **Inventory at Cost** = Σ (new qty × buy). Used/salvage is excluded.
+- **At Sell Price** / **Potential Margin** (new qty)
+- **Adjustment report**
+- **Price history** and **Ending inventory (FIFO or LIFO)** — needs Phase 3 SQL
+- **Needs attention:** Low only if reorder level is set above 0
 
 ---
 
@@ -163,4 +165,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-08-17 — factors/quotes/packing/invoices; shorter on-screen hints; data lives in Supabase + GitHub*
+*Last updated: 2026-08-17 — comboboxes, hide label ID, reorder 0, FX buy, used vs new, price history, LIFO/FIFO*

@@ -212,6 +212,31 @@
     }
     button.adjust-btn:hover { background: var(--success); color: white; }
     .badge.not-valued { background: rgba(100, 116, 139, 0.15); color: var(--muted); }
+    .badge.used { background: rgba(100, 116, 139, 0.18); color: #475569; }
+    .combo { position: relative; margin-bottom: 0.7rem; }
+    .combo input { margin-bottom: 0; padding-right: 2.2rem; }
+    .combo-caret {
+      position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+      width: 2rem; height: 2rem; padding: 0; margin: 0;
+      background: transparent; border: none; color: var(--muted); font-size: 0.85rem;
+    }
+    .combo-caret:hover { background: transparent; color: var(--text); }
+    .combo-menu {
+      display: none; position: absolute; left: 0; right: 0; top: calc(100% - 2px); z-index: 50;
+      max-height: 220px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    }
+    .combo-menu.open { display: block; }
+    .combo-opt {
+      display: block; width: 100%; text-align: left; padding: 0.6rem 0.75rem;
+      background: transparent; border: none; border-radius: 0; color: var(--text);
+      font-size: 1rem; margin: 0;
+    }
+    .combo-opt:hover, .combo-opt.active { background: #eff6ff; }
+    .combo-opt.exact { font-weight: 600; }
+    .combo-opt.new { color: var(--muted); font-style: italic; }
+    .combo-empty { padding: 0.6rem 0.75rem; color: var(--muted); font-size: 0.85rem; }
     .scan-match-list { margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.4rem; }
     .scan-match-row {
       text-align: left; width: 100%; background: var(--card); border: 1px solid var(--border);
@@ -327,24 +352,36 @@
         <p class="hint">No spaces. The QR uses a separate ID, so editing this later does not require a reprint.</p>
         <div class="row">
           <div>
-            <label>Quantity on Hand</label>
+            <label>Qty (new)</label>
             <input type="number" id="item-qty" value="0" min="0">
           </div>
           <div>
-            <label>Reorder Level</label>
-            <input type="number" id="item-reorder" value="5" min="0">
+            <label>Qty (used)</label>
+            <input type="number" id="item-qty-used" value="0" min="0">
           </div>
         </div>
+        <p class="hint">Used = salvage from paid-off systems. Tracked, not valued.</p>
+        <div>
+          <label>Reorder level</label>
+          <input type="number" id="item-reorder" value="0" min="0">
+        </div>
+        <p class="hint">Low flags only when this is above 0 and new qty is at or below it.</p>
         <div class="row">
           <div>
             <label>Source / Supplier</label>
-            <input type="text" id="item-source" list="source-suggestions" placeholder="e.g. Wynn, FFS, Alu Design" oninput="syncPricingUi()">
-            <datalist id="source-suggestions"></datalist>
+            <div class="combo" data-kind="source">
+              <input type="text" id="item-source" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Pick or type" oninput="syncPricingUi(); filterCombo('source')">
+              <button type="button" class="combo-caret" tabindex="-1" onclick="toggleCombo('source')">▾</button>
+              <div class="combo-menu" id="combo-source"></div>
+            </div>
           </div>
           <div>
             <label>Category</label>
-            <input type="text" id="item-category" list="category-suggestions" placeholder="e.g. Valve, Blade, O-Ring">
-            <datalist id="category-suggestions"></datalist>
+            <div class="combo" data-kind="category">
+              <input type="text" id="item-category" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Pick or type" oninput="filterCombo('category')">
+              <button type="button" class="combo-caret" tabindex="-1" onclick="toggleCombo('category')">▾</button>
+              <div class="combo-menu" id="combo-category"></div>
+            </div>
           </div>
         </div>
         <div class="row">
@@ -357,7 +394,7 @@
             <input type="number" id="item-sell-factor" step="0.001" min="0" placeholder="optional" oninput="applySellFromList(true)">
           </div>
         </div>
-        <p class="hint" id="list-price-hint">Wynn = £ · FFS = € · else $. Sell = list × factor, rounded up to $5.</p>
+        <p class="hint" id="list-price-hint">Wynn = £ · FFS = € · Alu = kr. Sell = list × factor, up to $5.</p>
         <div class="row">
           <div>
             <label>Buy Price ($ USD) — optional</label>
@@ -368,14 +405,18 @@
             <input type="number" id="item-sell-price" step="0.01" min="0" placeholder="0.00">
           </div>
         </div>
-        <p class="hint">Optional. Wynn auto-fills as converted list − 30%. Used for valuation only.</p>
+        <p class="hint">Buy = list × exchange rate − 30%. Sell uses the sell factor.</p>
         <label style="display:flex;align-items:flex-start;gap:0.5rem;margin:0.15rem 0 0.75rem;">
           <input type="checkbox" id="item-exclude-value" style="width:auto;margin:0.2rem 0 0;">
           <span><strong>Exclude from inventory valuation</strong><br>
-          <span class="hint" style="margin:0.15rem 0 0;">Skip this part’s qty in inventory totals (consignment, customer-owned).</span></span>
+          <span class="hint" style="margin:0.15rem 0 0;">Whole SKU skipped (consignment). Used qty is already excluded.</span></span>
         </label>
         <label>Location / Bin</label>
-        <input type="text" id="item-location" placeholder="e.g. Shelf A-3">
+        <div class="combo" data-kind="location">
+          <input type="text" id="item-location" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Pick or type" oninput="filterCombo('location')">
+          <button type="button" class="combo-caret" tabindex="-1" onclick="toggleCombo('location')">▾</button>
+          <div class="combo-menu" id="combo-location"></div>
+        </div>
         <label>Notes</label>
         <textarea id="item-notes" rows="2" placeholder="Optional notes"></textarea>
 
@@ -412,7 +453,7 @@
     <div id="reports" class="panel">
       <div class="card">
         <h2>Inventory Valuation</h2>
-        <p class="hint">On-hand qty × buy, and qty × sell.</p>
+        <p class="hint">New qty × buy. Used qty is excluded.</p>
         <div class="value-cards" id="report-values"></div>
       </div>
       <div class="card">
@@ -461,6 +502,32 @@
         <div class="adj-print-area" id="adj-report-table" style="overflow-x:auto;"></div>
       </div>
       <div class="card">
+        <h2>Price history</h2>
+        <p class="hint">Buy / sell / list changes over time.</p>
+        <div class="row">
+          <div>
+            <label>Part # or name</label>
+            <input type="search" id="price-hist-q" placeholder="Optional filter">
+          </div>
+        </div>
+        <div class="btn-group" style="margin-bottom:0.75rem;">
+          <button type="button" onclick="loadPriceHistory()">Generate</button>
+          <button type="button" class="secondary" onclick="exportPriceHistoryCsv()">Export CSV</button>
+        </div>
+        <p class="hint" id="price-hist-status"></p>
+        <div id="price-hist-table" style="overflow-x:auto;"></div>
+      </div>
+      <div class="card">
+        <h2>Ending inventory (LIFO / FIFO)</h2>
+        <p class="hint" id="costing-report-hint">Uses the method set on More. New stock only.</p>
+        <div class="btn-group" style="margin-bottom:0.75rem;">
+          <button type="button" onclick="loadEndingInventoryReport()">Generate</button>
+          <button type="button" class="secondary" onclick="exportEndingInventoryCsv()">Export CSV</button>
+        </div>
+        <p class="hint" id="ending-inv-status"></p>
+        <div id="ending-inv-table" style="overflow-x:auto;"></div>
+      </div>
+      <div class="card">
         <h2>Items Needing Attention</h2>
         <p class="hint">Tap a chip to filter.</p>
         <div id="attention-filters" class="attention-filters"></div>
@@ -469,7 +536,7 @@
       <div class="card">
         <h2>About these numbers</h2>
         <p style="font-size:0.85rem; color:var(--muted);">
-          <strong>Cost</strong> = qty × buy. <strong>Sell</strong> = qty × sell. <strong>Margin</strong> = sell − cost.
+          <strong>Cost</strong> = new qty × buy (or LIFO/FIFO layers). Used/salvage qty is not valued.
         </p>
       </div>
     </div>
@@ -696,6 +763,37 @@
         </div>
         <p class="hint" id="global-factor-status"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
+        <h2 style="font-size:0.95rem;">Exchange rates (to USD)</h2>
+        <p class="hint">Buy = list × rate − 30%. Wynn £, FFS €, Alu kr.</p>
+        <div class="row">
+          <div>
+            <label>£ GBP</label>
+            <input type="number" id="fx-gbp" step="0.0001" min="0" placeholder="USD per £">
+          </div>
+          <div>
+            <label>€ EUR</label>
+            <input type="number" id="fx-eur" step="0.0001" min="0" placeholder="USD per €">
+          </div>
+          <div>
+            <label>kr NOK</label>
+            <input type="number" id="fx-nok" step="0.0001" min="0" placeholder="USD per kr">
+          </div>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="secondary" onclick="fetchExchangeRates()">Fetch current rates</button>
+          <button type="button" class="secondary" onclick="saveExchangeRatesOnly()">Save rates</button>
+          <button type="button" onclick="applyExchangeRatesToInventory()">Apply buy $ to Wynn / FFS / Alu</button>
+        </div>
+        <p class="hint" id="fx-status"></p>
+        <hr style="border-color:var(--border); margin:1.25rem 0;">
+        <h2 style="font-size:0.95rem;">Inventory costing</h2>
+        <p class="hint">Ending inventory of new stock. Used/salvage is $0.</p>
+        <label>Method</label>
+        <select id="costing-method" onchange="saveCostingMethod()">
+          <option value="fifo">FIFO — oldest cost first</option>
+          <option value="lifo">LIFO — newest cost first</option>
+        </select>
+        <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Supabase Connection</h2>
         <p class="hint" id="conn-status">Checking…</p>
         <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
@@ -817,6 +915,28 @@ grant select, insert, update, delete on table packing_lists to anon, authenticat
 grant select, insert, update, delete on table packing_list_lines to anon, authenticated, service_role;
 grant select, insert, update, delete on table invoices to anon, authenticated, service_role;
 grant select, insert, update, delete on table invoice_lines to anon, authenticated, service_role;
+notify pgrst, 'reload schema';
+
+-- Phase 3: used qty, price history, LIFO/FIFO layers
+alter table inventory add column if not exists qty_used integer default 0;
+create index if not exists inventory_location_idx on inventory (location);
+create table if not exists inventory_price_history (
+  id uuid primary key default gen_random_uuid(), inventory_id uuid, part_number text, name text,
+  recorded_at timestamptz default now(), buy_price numeric, sell_price numeric, list_price numeric,
+  list_currency text, qty integer, qty_used integer, note text, changed_by text);
+create index if not exists inventory_price_history_part_idx on inventory_price_history (part_number, recorded_at desc);
+create table if not exists inventory_cost_layers (
+  id uuid primary key default gen_random_uuid(), inventory_id uuid, part_number text,
+  acquired_at timestamptz default now(), unit_cost numeric not null default 0,
+  qty_original numeric not null default 0, qty_remaining numeric not null default 0,
+  condition text not null default 'new', source text, changed_by text);
+create index if not exists inventory_cost_layers_inv_idx on inventory_cost_layers (inventory_id, condition, acquired_at);
+alter table inventory_price_history enable row level security;
+alter table inventory_cost_layers enable row level security;
+do $$ begin create policy "Allow all inventory_price_history" on inventory_price_history for all using (true) with check (true); exception when duplicate_object then null; end $$;
+do $$ begin create policy "Allow all inventory_cost_layers" on inventory_cost_layers for all using (true) with check (true); exception when duplicate_object then null; end $$;
+grant select, insert, update, delete on table inventory_price_history to anon, authenticated, service_role;
+grant select, insert, update, delete on table inventory_cost_layers to anon, authenticated, service_role;
 notify pgrst, 'reload schema';</pre>
         <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
         <div class="danger-zone">
@@ -858,6 +978,12 @@ notify pgrst, 'reload schema';</pre>
     let hasPhase2Tables = false;
     let hasExcludeValueColumn = false;
     let hasListPriceColumn = false;
+    let hasQtyUsedColumn = false;
+    let hasPriceHistoryTable = false;
+    let hasCostLayersTable = false;
+    let costingMethod = 'fifo';
+    let lastPriceHistoryRows = [];
+    let lastEndingInvRows = [];
     let lastAdjustmentRows = [];
     let quotesListCache = [];
     let quoteStatusFilter = 'all';
@@ -896,19 +1022,25 @@ notify pgrst, 'reload schema';</pre>
       return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    /** List-currency profiles. Wynn = GBP, FFS = EUR, everything else = USD. */
+    /** List-currency profiles. Wynn = GBP, FFS = EUR, Alu = NOK, else USD. */
     const DEFAULT_GBP_SELL_FACTOR = 2.585;
-    const FACTOR_KEYS = { GBP: 'inv_gbp_sell_factor', EUR: 'inv_eur_sell_factor', USD: 'inv_usd_sell_factor' };
+    const FACTOR_KEYS = { GBP: 'inv_gbp_sell_factor', EUR: 'inv_eur_sell_factor', USD: 'inv_usd_sell_factor', NOK: 'inv_nok_sell_factor' };
+    const FX_KEYS = { GBP: 'inv_fx_gbp_usd', EUR: 'inv_fx_eur_usd', NOK: 'inv_fx_nok_usd' };
+    const FX_SETTING = { GBP: 'fx_gbp_usd', EUR: 'fx_eur_usd', NOK: 'fx_nok_usd' };
+    const FX_INPUT = { GBP: 'fx-gbp', EUR: 'fx-eur', NOK: 'fx-nok' };
 
     function pricingProfile(source) {
       const s = String(source || '').trim().toLowerCase();
       if (s === 'wynn' || s.startsWith('wynn ') || s === 'hepworth') {
-        return { code: 'GBP', symbol: '£', label: 'List price (£ GBP)', factorLabel: 'GBP → sell factor', defaultFactor: DEFAULT_GBP_SELL_FACTOR };
+        return { code: 'GBP', symbol: '£', label: 'List price (£ GBP)', factorLabel: 'GBP → sell factor', defaultFactor: DEFAULT_GBP_SELL_FACTOR, usesFx: true };
       }
       if (s === 'ffs' || s.includes('fluid')) {
-        return { code: 'EUR', symbol: '€', label: 'List price (€ EUR)', factorLabel: 'EUR → sell factor', defaultFactor: null };
+        return { code: 'EUR', symbol: '€', label: 'List price (€ EUR)', factorLabel: 'EUR → sell factor', defaultFactor: null, usesFx: true };
       }
-      return { code: 'USD', symbol: '$', label: 'List price ($ USD)', factorLabel: 'USD sell factor (optional)', defaultFactor: 1 };
+      if (s === 'alu' || s.startsWith('alu ')) {
+        return { code: 'NOK', symbol: 'kr', label: 'List price (kr NOK)', factorLabel: 'NOK → sell factor', defaultFactor: null, usesFx: true };
+      }
+      return { code: 'USD', symbol: '$', label: 'List price ($ USD)', factorLabel: 'USD sell factor (optional)', defaultFactor: 1, usesFx: false };
     }
 
     function storedFactor(code) {
@@ -931,15 +1063,50 @@ notify pgrst, 'reload schema';</pre>
       return Math.ceil(x / 5 - 1e-9) * 5;
     }
 
-    function wynnBuyFromList(listGbp, factor) {
-      const listUsd = Number(listGbp) * Number(factor);
-      if (!isFinite(listUsd) || listUsd <= 0) return null;
-      return Math.round(listUsd * 0.70 * 100) / 100;
+    function buyFromListFx(list, fx) {
+      const usd = Number(list) * Number(fx);
+      if (!isFinite(usd) || usd <= 0) return null;
+      return Math.round(usd * 0.70 * 100) / 100;
     }
+    function wynnBuyFromList(listGbp, factor) {
+      return buyFromListFx(listGbp, factor);
+    }
+
+    function storedFx(code) {
+      try {
+        const n = parseFloat(localStorage.getItem(FX_KEYS[code] || ''));
+        if (isFinite(n) && n > 0) return n;
+      } catch (e) {}
+      const el = document.getElementById(FX_INPUT[code]);
+      const typed = parseFloat(el?.value);
+      if (isFinite(typed) && typed > 0) return typed;
+      return null;
+    }
+    function persistFx(code, n) {
+      if (!code || !isFinite(n) || n <= 0) return;
+      try { localStorage.setItem(FX_KEYS[code], String(n)); } catch (e) {}
+    }
+    function currentFxRate(code) {
+      const el = document.getElementById(FX_INPUT[code]);
+      const typed = parseFloat(el?.value);
+      if (isFinite(typed) && typed > 0) return typed;
+      return storedFx(code);
+    }
+
+    function isLowStock(i) {
+      const r = Number(i.reorder_level);
+      if (!isFinite(r) || r <= 0) return false;
+      return (Number(i.qty) || 0) > 0 && (Number(i.qty) || 0) <= r;
+    }
+    function qtyUsedOf(i) { return Number(i && i.qty_used) || 0; }
 
     function isWynnSource(src) {
       const s = String(src || '').trim().toLowerCase();
       return s === 'wynn' || s.startsWith('wynn ') || s === 'hepworth';
+    }
+    function isAluSource(src) {
+      const s = String(src || '').trim().toLowerCase();
+      return s === 'alu' || s.startsWith('alu ');
     }
     function isFfsSource(src) {
       const s = String(src || '').trim().toLowerCase();
@@ -976,6 +1143,16 @@ notify pgrst, 'reload schema';</pre>
       const fv = parseFloat(ffsEl.value);
       if (isFinite(wv) && wv > 0) persistFactor('GBP', wv);
       if (isFinite(fv) && fv > 0) persistFactor('EUR', fv);
+      for (const code of ['GBP', 'EUR', 'NOK']) {
+        const saved = await loadSetting(FX_SETTING[code]);
+        const el = document.getElementById(FX_INPUT[code]);
+        const n = (saved && parseFloat(saved) > 0) ? parseFloat(saved) : storedFx(code);
+        if (el && n) { el.value = Number(n).toFixed(4); persistFx(code, n); }
+      }
+      const method = await loadSetting('costing_method');
+      costingMethod = (method === 'lifo') ? 'lifo' : 'fifo';
+      const cm = document.getElementById('costing-method');
+      if (cm) cm.value = costingMethod;
     }
 
     async function saveGlobalFactorsOnly() {
@@ -1010,13 +1187,12 @@ notify pgrst, 'reload schema';</pre>
         return;
       }
       await saveGlobalFactorsOnly();
-      if (!confirm('Recalculate sell $ on all Wynn/FFS parts that have a list price?\n\nWynn buy $ will also be set to 70% of converted list.\nSell $ rounds up to the next $5.')) return;
+      if (!confirm('Recalculate sell $ on all Wynn/FFS parts that have a list price?\n\nSell rounds up to the next $5. Buy $ is not changed (use Apply buy $ for exchange rates).')) return;
       let updated = 0, skipped = 0, failed = 0;
       for (const item of inventory) {
         let factor = null;
-        let doBuy = false;
-        if (isWynnSource(item.source) && isFinite(w) && w > 0) { factor = w; doBuy = true; }
-        else if (isFfsSource(item.source) && isFinite(f) && f > 0) { factor = f; }
+        if (isWynnSource(item.source) && isFinite(w) && w > 0) factor = w;
+        else if (isFfsSource(item.source) && isFinite(f) && f > 0) factor = f;
         else { skipped++; continue; }
         const list = Number(item.list_price);
         if (!isFinite(list) || list <= 0) { skipped++; continue; }
@@ -1026,13 +1202,106 @@ notify pgrst, 'reload schema';</pre>
           updated_by: currentUser(),
           updated_at: new Date().toISOString()
         };
-        if (doBuy) payload.buy_price = wynnBuyFromList(list, factor);
         const { error } = await supabaseClient.from('inventory').update(payload).eq('id', item.id);
         if (error) { failed++; console.warn(error); }
-        else updated++;
+        else {
+          updated++;
+          await logPriceHistory(item, payload, 'Global sell factor');
+        }
       }
       showStatus(`Factors applied: ${updated} updated, ${skipped} skipped, ${failed} failed`, failed ? 'error' : 'success');
       await loadInventory();
+    }
+
+    async function saveExchangeRatesOnly() {
+      for (const code of ['GBP', 'EUR', 'NOK']) {
+        const n = parseFloat(document.getElementById(FX_INPUT[code])?.value);
+        if (isFinite(n) && n > 0) {
+          persistFx(code, n);
+          await persistSetting(FX_SETTING[code], n);
+        }
+      }
+      const st = document.getElementById('fx-status');
+      if (st) st.textContent = 'Saved.';
+      showStatus('Exchange rates saved', 'success');
+    }
+
+    async function fetchExchangeRates() {
+      const st = document.getElementById('fx-status');
+      if (st) st.textContent = 'Fetching…';
+      try {
+        const codes = ['GBP', 'EUR', 'NOK'];
+        const results = await Promise.all(codes.map(async (from) => {
+          const res = await fetch('https://api.frankfurter.app/latest?from=' + from + '&to=USD');
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const j = await res.json();
+          const n = j && j.rates && j.rates.USD;
+          return { from, n: Number(n) };
+        }));
+        let ok = 0;
+        results.forEach(r => {
+          if (isFinite(r.n) && r.n > 0) {
+            const el = document.getElementById(FX_INPUT[r.from]);
+            if (el) el.value = r.n.toFixed(4);
+            persistFx(r.from, r.n);
+            ok++;
+          }
+        });
+        if (!ok) throw new Error('No rates returned');
+        await saveExchangeRatesOnly();
+        if (st) st.textContent = 'Rates updated from ECB (Frankfurter).';
+      } catch (e) {
+        if (st) st.textContent = 'Could not fetch — enter rates by hand.';
+        showStatus('Rate fetch failed — type them in', 'error');
+      }
+    }
+
+    async function applyExchangeRatesToInventory() {
+      if (!requireUser('applying exchange rates')) return;
+      if (!supabaseClient) { showStatus('Not connected', 'error'); return; }
+      if (!hasListPriceColumn) {
+        showStatus('List price column missing — run More tab SQL first', 'error');
+        return;
+      }
+      await saveExchangeRatesOnly();
+      const gbp = currentFxRate('GBP');
+      const eur = currentFxRate('EUR');
+      const nok = currentFxRate('NOK');
+      if (!gbp && !eur && !nok) {
+        showStatus('Enter or fetch at least one rate', 'error');
+        return;
+      }
+      if (!confirm('Recalculate buy $ on Wynn / FFS / Alu parts that have a list price?\n\nBuy = list × exchange rate − 30%.')) return;
+      let updated = 0, skipped = 0, failed = 0;
+      for (const item of inventory) {
+        const p = pricingProfile(item.source);
+        let fx = null;
+        if (isWynnSource(item.source)) fx = gbp;
+        else if (isFfsSource(item.source)) fx = eur;
+        else if (isAluSource(item.source)) fx = nok;
+        else { skipped++; continue; }
+        const list = Number(item.list_price);
+        const buy = buyFromListFx(list, fx);
+        if (buy == null) { skipped++; continue; }
+        const payload = { buy_price: buy, updated_by: currentUser(), updated_at: new Date().toISOString() };
+        const { error } = await supabaseClient.from('inventory').update(payload).eq('id', item.id);
+        if (error) { failed++; console.warn(error); }
+        else {
+          updated++;
+          await logPriceHistory(item, payload, 'Exchange rate buy');
+        }
+      }
+      showStatus(`Buy $ applied: ${updated} updated, ${skipped} skipped, ${failed} failed`, failed ? 'error' : 'success');
+      await loadInventory();
+    }
+
+    async function saveCostingMethod() {
+      const v = document.getElementById('costing-method')?.value === 'lifo' ? 'lifo' : 'fifo';
+      costingMethod = v;
+      await persistSetting('costing_method', v);
+      const hint = document.getElementById('costing-report-hint');
+      if (hint) hint.textContent = (v === 'lifo' ? 'LIFO' : 'FIFO') + ' — new stock only. Used/salvage is $0.';
+      showStatus('Costing method: ' + v.toUpperCase(), 'success');
     }
 
     function currentPricingProfile() {
@@ -1055,7 +1324,7 @@ notify pgrst, 'reload schema';</pre>
       applySellFromList();
     }
 
-    function applySellFromList(forceWynnBuy) {
+    function applySellFromList(forceBuy) {
       const listEl = document.getElementById('item-list-price');
       const factorEl = document.getElementById('item-sell-factor');
       const sellEl = document.getElementById('item-sell-price');
@@ -1066,27 +1335,26 @@ notify pgrst, 'reload schema';</pre>
       let factor = parseFloat(factorEl.value);
       if (isFinite(factor) && factor > 0) persistFactor(p.code, factor);
       if (!(isFinite(factor) && factor > 0) && p.code === 'USD') factor = 1;
+      let sellTxt = '';
       if (isFinite(list) && list > 0 && isFinite(factor) && factor > 0) {
-        const raw = list * factor;
-        const usd = ceilTo5(raw);
+        const usd = ceilTo5(list * factor);
         sellEl.value = usd.toFixed(2);
-        const buyEl = document.getElementById('item-buy-price');
-        if (p.code === 'GBP' && buyEl) {
-          const buy = wynnBuyFromList(list, factor);
-          if (buy != null && (forceWynnBuy || buyEl.value === '')) buyEl.value = buy.toFixed(2);
-        }
-        if (hint) {
-          const buyBit = p.code === 'GBP' ? ` Buy <strong>${money(wynnBuyFromList(list, factor))}</strong> (−30%).` : '';
-          hint.innerHTML = `${p.symbol}${list.toFixed(2)} × ${factor} → sell <strong>${money(usd)}</strong>.${buyBit}`;
-        }
-      } else if (hint) {
-        if (p.code === 'GBP') {
-          hint.innerHTML = `Wynn: £ × factor → sell (up to $5). Buy = converted − 30%.`;
-        } else if (p.code === 'EUR') {
-          hint.innerHTML = `FFS: € × factor → sell (up to $5).`;
-        } else {
-          hint.innerHTML = `USD: factor 1 copies list to sell (up to $5).`;
-        }
+        sellTxt = `${p.symbol}${list.toFixed(2)} × ${factor} → sell <strong>${money(usd)}</strong>.`;
+      }
+      const buyEl = document.getElementById('item-buy-price');
+      const fx = p.usesFx ? currentFxRate(p.code) : null;
+      let buyTxt = '';
+      if (p.usesFx && isFinite(list) && list > 0 && fx && buyEl) {
+        const buy = buyFromListFx(list, fx);
+        if (buy != null && (forceBuy || buyEl.value === '')) buyEl.value = buy.toFixed(2);
+        if (buy != null) buyTxt = ` Buy <strong>${money(buy)}</strong> (rate ${fx} − 30%).`;
+      }
+      if (hint) {
+        if (sellTxt || buyTxt) hint.innerHTML = (sellTxt || '') + buyTxt;
+        else if (p.code === 'GBP') hint.innerHTML = `Wynn: £ × factor → sell. Buy = £ × GBP rate − 30%.`;
+        else if (p.code === 'EUR') hint.innerHTML = `FFS: € × factor → sell. Buy = € × EUR rate − 30%.`;
+        else if (p.code === 'NOK') hint.innerHTML = `Alu: kr × factor → sell. Buy = kr × NOK rate − 30%.`;
+        else hint.innerHTML = `USD: factor 1 copies list to sell (up to $5).`;
       }
     }
 
@@ -1333,6 +1601,93 @@ notify pgrst, 'reload schema';</pre>
       }
     }
 
+    async function logPriceHistory(item, payload, note) {
+      if (!supabaseClient || !hasPriceHistoryTable) return;
+      const buy = payload.buy_price != null ? Number(payload.buy_price) : (item && item.buy_price != null ? Number(item.buy_price) : null);
+      const sell = payload.sell_price != null ? Number(payload.sell_price) : (item && item.sell_price != null ? Number(item.sell_price) : null);
+      const list = payload.list_price != null ? Number(payload.list_price) : (item && item.list_price != null ? Number(item.list_price) : null);
+      const prevBuy = item && item.buy_price != null ? Number(item.buy_price) : null;
+      const prevSell = item && item.sell_price != null ? Number(item.sell_price) : null;
+      const prevList = item && item.list_price != null ? Number(item.list_price) : null;
+      if (buy === prevBuy && sell === prevSell && list === prevList && note !== 'Created') return;
+      try {
+        const { error } = await supabaseClient.from('inventory_price_history').insert({
+          inventory_id: item && item.id ? item.id : (payload.inventory_id || null),
+          part_number: (item && item.part_number) || payload.part_number || null,
+          name: (item && item.name) || payload.name || null,
+          buy_price: buy,
+          sell_price: sell,
+          list_price: list,
+          list_currency: payload.list_currency || (item && item.list_currency) || null,
+          qty: payload.qty != null ? payload.qty : (item ? item.qty : null),
+          qty_used: payload.qty_used != null ? payload.qty_used : (item ? qtyUsedOf(item) : null),
+          note: note || null,
+          changed_by: currentUser() || null
+        });
+        if (error && /relation|does not exist|schema cache/i.test(error.message || '')) hasPriceHistoryTable = false;
+      } catch (e) { /* optional table */ }
+    }
+
+    async function addCostLayer({ inventory_id, part_number, unit_cost, qty, condition, source }) {
+      if (!supabaseClient || !hasCostLayersTable) return;
+      const n = Number(qty);
+      if (!isFinite(n) || n <= 0) return;
+      const cost = condition === 'used' ? 0 : (Number(unit_cost) || 0);
+      try {
+        const { error } = await supabaseClient.from('inventory_cost_layers').insert({
+          inventory_id: inventory_id || null,
+          part_number: part_number || null,
+          unit_cost: cost,
+          qty_original: n,
+          qty_remaining: n,
+          condition: condition === 'used' ? 'used' : 'new',
+          source: source || null,
+          changed_by: currentUser() || null
+        });
+        if (error && /relation|does not exist|schema cache/i.test(error.message || '')) hasCostLayersTable = false;
+      } catch (e) { /* optional */ }
+    }
+
+    async function consumeCostLayers(inventory_id, qty, condition) {
+      if (!supabaseClient || !hasCostLayersTable) return;
+      const need = Number(qty);
+      if (!isFinite(need) || need <= 0) return;
+      const cond = condition === 'used' ? 'used' : 'new';
+      const ascending = costingMethod !== 'lifo';
+      try {
+        const { data, error } = await supabaseClient.from('inventory_cost_layers')
+          .select('id,qty_remaining,acquired_at')
+          .eq('inventory_id', inventory_id)
+          .eq('condition', cond)
+          .gt('qty_remaining', 0)
+          .order('acquired_at', { ascending });
+        if (error) {
+          if (/relation|does not exist|schema cache/i.test(error.message || '')) hasCostLayersTable = false;
+          return;
+        }
+        let left = need;
+        for (const layer of (data || [])) {
+          if (left <= 0) break;
+          const have = Number(layer.qty_remaining) || 0;
+          const take = Math.min(have, left);
+          await supabaseClient.from('inventory_cost_layers')
+            .update({ qty_remaining: have - take })
+            .eq('id', layer.id);
+          left -= take;
+        }
+      } catch (e) { /* optional */ }
+    }
+
+    async function applyQtyDeltaToLayers({ id, part_number, buy_price, delta, condition, source }) {
+      const d = Number(delta);
+      if (!isFinite(d) || d === 0) return;
+      if (d > 0) {
+        await addCostLayer({ inventory_id: id, part_number, unit_cost: condition === 'used' ? 0 : buy_price, qty: d, condition, source });
+      } else {
+        await consumeCostLayers(id, -d, condition);
+      }
+    }
+
     async function ensureBarcodes(items) {
       if (!hasBarcodeColumn || !supabaseClient || !items?.length) return items;
       let changed = false;
@@ -1389,6 +1744,7 @@ notify pgrst, 'reload schema';</pre>
         hasBarcodeColumn = Object.prototype.hasOwnProperty.call(row0, 'barcode');
         hasExcludeValueColumn = Object.prototype.hasOwnProperty.call(row0, 'exclude_from_valuation');
         hasListPriceColumn = Object.prototype.hasOwnProperty.call(row0, 'list_price');
+        hasQtyUsedColumn = Object.prototype.hasOwnProperty.call(row0, 'qty_used');
       } else {
         const probeCat = await supabaseClient.from('inventory').select('category').limit(1);
         hasCategoryColumn = !probeCat.error;
@@ -1398,6 +1754,8 @@ notify pgrst, 'reload schema';</pre>
         hasExcludeValueColumn = !probeEx.error;
         const probeLp = await supabaseClient.from('inventory').select('list_price').limit(1);
         hasListPriceColumn = !probeLp.error;
+        const probeUsed = await supabaseClient.from('inventory').select('qty_used').limit(1);
+        hasQtyUsedColumn = !probeUsed.error;
       }
       // Probe adjustments table
       const probeAdj = await supabaseClient.from('inventory_adjustments').select('id').limit(1);
@@ -1406,6 +1764,10 @@ notify pgrst, 'reload schema';</pre>
       hasQuotesTables = !probeQuotes.error;
       const probePhase2 = await supabaseClient.from('app_settings').select('key').limit(1);
       hasPhase2Tables = !probePhase2.error;
+      const probeHist = await supabaseClient.from('inventory_price_history').select('id').limit(1);
+      hasPriceHistoryTable = !probeHist.error;
+      const probeLayers = await supabaseClient.from('inventory_cost_layers').select('id').limit(1);
+      hasCostLayersTable = !probeLayers.error;
 
       // Backfill stable barcodes when column exists
       if (hasBarcodeColumn) {
@@ -1422,6 +1784,9 @@ notify pgrst, 'reload schema';</pre>
         bits.push(hasPhase2Tables ? 'docs/factors ✓' : 'docs/factors missing');
         bits.push(hasExcludeValueColumn ? 'exclude-value ✓' : 'exclude-value missing');
         bits.push(hasListPriceColumn ? 'list-price ✓' : 'list-price missing');
+        bits.push(hasQtyUsedColumn ? 'used-qty ✓' : 'used-qty missing');
+        bits.push(hasPriceHistoryTable ? 'price-history ✓' : 'price-history missing');
+        bits.push(hasCostLayersTable ? 'cost-layers ✓' : 'cost-layers missing');
         const schemaOk = hasCategoryColumn && hasBarcodeColumn && hasAdjustmentsTable && hasQuotesTables && hasPhase2Tables;
         schemaEl.textContent = 'Schema: ' + bits.join(' · ') + (schemaOk ? '' : ' — run SQL in More tab');
         schemaEl.style.color = schemaOk ? 'var(--success)' : 'var(--warning)';
@@ -1432,16 +1797,131 @@ notify pgrst, 'reload schema';</pre>
     }
 
     function refreshSuggestionLists() {
-      const cats = new Set(DEFAULT_CATEGORIES);
-      const srcs = new Set(DEFAULT_SOURCES);
+      /* Combos read live from inventory + defaults */
+    }
+
+    function comboValues(kind) {
+      const set = new Set();
+      if (kind === 'source') DEFAULT_SOURCES.forEach(s => set.add(s));
+      if (kind === 'category') DEFAULT_CATEGORIES.forEach(s => set.add(s));
       inventory.forEach(i => {
-        if (i.category) cats.add(i.category);
-        if (i.source) srcs.add(i.source);
+        if (kind === 'source' && i.source) set.add(String(i.source).trim());
+        if (kind === 'category' && i.category) set.add(String(i.category).trim());
+        if (kind === 'location' && i.location) set.add(String(i.location).trim());
       });
-      const catList = document.getElementById('category-suggestions');
-      const srcList = document.getElementById('source-suggestions');
-      if (catList) catList.innerHTML = [...cats].sort().map(c => `<option value="${escapeHtml(c)}">`).join('');
-      if (srcList) srcList.innerHTML = [...srcs].sort().map(s => `<option value="${escapeHtml(s)}">`).join('');
+      return [...set].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    }
+
+    function comboInputId(kind) {
+      return kind === 'source' ? 'item-source' : kind === 'category' ? 'item-category' : 'item-location';
+    }
+
+    function closeAllCombos() {
+      document.querySelectorAll('.combo-menu').forEach(m => m.classList.remove('open'));
+    }
+
+    function toggleCombo(kind) {
+      const menu = document.getElementById('combo-' + kind);
+      if (!menu) return;
+      const open = menu.classList.contains('open');
+      closeAllCombos();
+      if (!open) {
+        renderComboMenu(kind, true);
+        menu.classList.add('open');
+      }
+    }
+
+    function filterCombo(kind) {
+      renderComboMenu(kind, false);
+      const menu = document.getElementById('combo-' + kind);
+      if (menu) menu.classList.add('open');
+    }
+
+    function pickCombo(kind, value) {
+      const inp = document.getElementById(comboInputId(kind));
+      if (inp) inp.value = value;
+      closeAllCombos();
+      if (kind === 'source') syncPricingUi();
+    }
+
+    function canonicalComboValue(kind, typed) {
+      const t = String(typed || '').trim();
+      if (!t) return '';
+      const hit = comboValues(kind).find(v => v.toLowerCase() === t.toLowerCase());
+      return hit || t;
+    }
+
+    function renderComboMenu(kind, showAll) {
+      const menu = document.getElementById('combo-' + kind);
+      const inp = document.getElementById(comboInputId(kind));
+      if (!menu || !inp) return;
+      const q = (inp.value || '').trim().toLowerCase();
+      const all = comboValues(kind);
+      const matches = showAll || !q ? all : all.filter(v => v.toLowerCase().includes(q));
+      const exact = q && all.find(v => v.toLowerCase() === q);
+      const starts = q ? all.filter(v => v.toLowerCase().startsWith(q) && v.toLowerCase() !== q) : [];
+      const rest = matches.filter(v => v.toLowerCase() !== q && !starts.includes(v));
+      const ordered = exact ? [exact, ...starts, ...rest.filter(v => v !== exact)] : [...starts, ...rest];
+      let html = '';
+      if (!ordered.length && !q) {
+        html = '<div class="combo-empty">No saved values yet</div>';
+      } else {
+        ordered.slice(0, 80).forEach((v, i) => {
+          const cls = (exact && v === exact) ? 'combo-opt exact' : 'combo-opt';
+          html += `<button type="button" class="${cls}${i===0?' active':''}" onclick="pickCombo('${kind}', this.dataset.v)" data-v="${escapeHtml(v)}">${escapeHtml(v)}</button>`;
+        });
+        if (q && !exact) {
+          html += `<button type="button" class="combo-opt new" onclick="pickCombo('${kind}', this.dataset.v)" data-v="${escapeHtml(inp.value.trim())}">Keep “${escapeHtml(inp.value.trim())}” (new)</button>`;
+        }
+      }
+      menu.innerHTML = html;
+    }
+
+    function bindCombos() {
+      ['source', 'category', 'location'].forEach(kind => {
+        const inp = document.getElementById(comboInputId(kind));
+        if (!inp || inp.dataset.comboBound) return;
+        inp.dataset.comboBound = '1';
+        inp.addEventListener('focus', () => {
+          renderComboMenu(kind, !(inp.value || '').trim());
+          const menu = document.getElementById('combo-' + kind);
+          if (menu) menu.classList.add('open');
+        });
+        inp.addEventListener('blur', () => {
+          setTimeout(() => {
+            inp.value = canonicalComboValue(kind, inp.value);
+            if (kind === 'source') syncPricingUi();
+          }, 180);
+        });
+        inp.addEventListener('keydown', (e) => {
+          const menu = document.getElementById('combo-' + kind);
+          if (!menu || !menu.classList.contains('open')) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); toggleCombo(kind); }
+            return;
+          }
+          const opts = [...menu.querySelectorAll('.combo-opt')];
+          const idx = opts.findIndex(o => o.classList.contains('active'));
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const n = opts[Math.min(opts.length - 1, idx + 1)] || opts[0];
+            opts.forEach(o => o.classList.remove('active'));
+            if (n) { n.classList.add('active'); n.scrollIntoView({ block: 'nearest' }); }
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const n = opts[Math.max(0, idx - 1)] || opts[0];
+            opts.forEach(o => o.classList.remove('active'));
+            if (n) { n.classList.add('active'); n.scrollIntoView({ block: 'nearest' }); }
+          } else if (e.key === 'Enter') {
+            const n = opts.find(o => o.classList.contains('active')) || opts[0];
+            if (n) { e.preventDefault(); pickCombo(kind, n.dataset.v); }
+          } else if (e.key === 'Escape') {
+            closeAllCombos();
+          }
+        });
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.combo')) closeAllCombos();
+      });
     }
 
     function copyCategorySql() {
@@ -1464,10 +1944,12 @@ notify pgrst, 'reload schema';</pre>
     }
 
     function calcTotals() {
-      let cost = 0, sell = 0, units = 0, needsDate = 0, excluded = 0, excludedUnits = 0;
+      let cost = 0, sell = 0, units = 0, usedUnits = 0, needsDate = 0, excluded = 0, excludedUnits = 0;
       inventory.forEach(i => {
         const q = i.qty || 0;
-        units += q;
+        const u = qtyUsedOf(i);
+        units += q + u;
+        usedUnits += u;
         if (isExcludedFromValue(i)) {
           excluded++;
           excludedUnits += q;
@@ -1477,7 +1959,7 @@ notify pgrst, 'reload schema';</pre>
         }
         if (i.open_order && !i.estimated_delivery) needsDate++;
       });
-      return { cost, sell, margin: sell - cost, units, needsDate, excluded, excludedUnits };
+      return { cost, sell, margin: sell - cost, units, usedUnits, needsDate, excluded, excludedUnits };
     }
 
     function renderAll() {
@@ -1491,8 +1973,8 @@ notify pgrst, 'reload schema';</pre>
 
     function renderStats() {
       const total = inventory.length;
-      const units = inventory.reduce((s, i) => s + (i.qty || 0), 0);
-      const low = inventory.filter(i => i.qty <= (i.reorder_level || 0) && i.qty > 0).length;
+      const units = inventory.reduce((s, i) => s + (i.qty || 0) + qtyUsedOf(i), 0);
+      const low = inventory.filter(i => isLowStock(i)).length;
       const open = inventory.filter(i => i.open_order).length;
       const out = inventory.filter(i => (i.qty || 0) <= 0).length;
       document.getElementById('stats').innerHTML = `
@@ -1558,8 +2040,8 @@ notify pgrst, 'reload schema';</pre>
       if (!homeAttentionFilter) return true;
       if (homeAttentionFilter === 'open_order') return !!i.open_order;
       if (homeAttentionFilter === 'needs_date') return !!(i.open_order && !i.estimated_delivery);
-      if (homeAttentionFilter === 'out') return (i.qty || 0) <= 0;
-      if (homeAttentionFilter === 'low') return (i.qty || 0) > 0 && (i.qty || 0) <= (i.reorder_level || 0);
+      if (homeAttentionFilter === 'out') return ((i.qty || 0) + qtyUsedOf(i)) <= 0;
+      if (homeAttentionFilter === 'low') return isLowStock(i);
       return true;
     }
 
@@ -1638,7 +2120,8 @@ notify pgrst, 'reload schema';</pre>
       }
       empty.style.display = 'none';
       tbody.innerHTML = filtered.map(i => {
-        const qtyClass = i.qty <= 0 ? 'out' : (i.qty <= (i.reorder_level || 0) ? 'low' : '');
+        const used = qtyUsedOf(i);
+        const qtyClass = ((i.qty || 0) + used) <= 0 ? 'out' : (isLowStock(i) ? 'low' : '');
         const excluded = isExcludedFromValue(i);
         const costVal = (i.qty || 0) * (Number(i.buy_price) || 0);
         const badges = [];
@@ -1647,7 +2130,8 @@ notify pgrst, 'reload schema';</pre>
           if (!i.estimated_delivery) badges.push(`<span class="badge needs-date">Needs Delivery Date</span>`);
           else badges.push(`<span class="badge open-order">ETA ${i.estimated_delivery}</span>`);
         }
-        if (i.qty > 0 && i.qty <= (i.reorder_level || 0)) badges.push(`<span class="badge low">Low</span>`);
+        if (isLowStock(i)) badges.push(`<span class="badge low">Low</span>`);
+        if (used) badges.push(`<span class="badge used">Used ${used}</span>`);
         if (excluded) badges.push(`<span class="badge not-valued">Not valued</span>`);
         const meta = [];
         if (i.source) meta.push(`<span class="badge source-tag">${escapeHtml(i.source)}</span>`);
@@ -1656,11 +2140,10 @@ notify pgrst, 'reload schema';</pre>
           <td>
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
-            ${i.barcode ? `<br><small style="color:var(--muted)">ID: ${escapeHtml(i.barcode)}</small>` : ''}
             ${meta.length ? `<div class="meta-line">${meta.join('')}</div>` : ''}
             ${i.location ? '<small style="color:var(--muted)">' + escapeHtml(i.location) + '</small>' : ''}
           </td>
-          <td class="qty ${qtyClass}">${i.qty}</td>
+          <td class="qty ${qtyClass}">${i.qty || 0}${used ? `<br><small style="color:var(--muted);font-weight:400">used ${used}</small>` : ''}</td>
           <td style="font-size:0.8rem;">
             ${excluded
               ? `<span style="color:var(--muted)">Not valued</span>${i.buy_price != null ? '<br><small style="color:var(--muted)">cost ' + money(i.buy_price) + '</small>' : ''}`
@@ -1737,7 +2220,7 @@ notify pgrst, 'reload schema';</pre>
         <div class="value-card">
           <div class="label">Total Inventory at Cost</div>
           <div class="amount">${money(t.cost)}</div>
-          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">Qty × Buy Price (parts marked “exclude from valuation” omitted)${t.excluded ? ` · ${t.excluded} excluded` : ''}</div>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem;">New qty × buy. Used/salvage excluded.${t.excluded ? ` · ${t.excluded} SKUs excluded` : ''}${t.usedUnits ? ` · ${t.usedUnits} used` : ''}</div>
         </div>
         <div class="value-card">
           <div class="label">Total at Sell Price</div>
@@ -1782,22 +2265,21 @@ notify pgrst, 'reload schema';</pre>
     function renderAttentionList() {
       let attention = inventory.filter(i =>
         (i.open_order && !i.estimated_delivery) ||
-        (i.qty <= (i.reorder_level || 0)) ||
+        isLowStock(i) ||
         !!i.open_order
       );
       if (attentionFilter === 'out') {
-        attention = inventory.filter(i => (i.qty || 0) <= 0);
+        attention = inventory.filter(i => ((i.qty || 0) + qtyUsedOf(i)) <= 0);
       } else if (attentionFilter === 'needs_date') {
         attention = inventory.filter(i => i.open_order && !i.estimated_delivery);
       } else if (attentionFilter === 'low') {
-        attention = inventory.filter(i => (i.qty || 0) > 0 && (i.qty || 0) <= (i.reorder_level || 0));
+        attention = inventory.filter(i => isLowStock(i));
       } else if (attentionFilter === 'open_order') {
         attention = inventory.filter(i => !!i.open_order);
       } else {
-        // all needing attention
         attention = inventory.filter(i =>
           (i.open_order && !i.estimated_delivery) ||
-          (i.qty || 0) <= (i.reorder_level || 0)
+          isLowStock(i)
         );
       }
 
@@ -1813,7 +2295,7 @@ notify pgrst, 'reload schema';</pre>
                 if (i.open_order && !i.estimated_delivery) issue.push('<span class="badge needs-date">Needs Delivery Date</span>');
                 else if (i.open_order) issue.push('<span class="badge open-order">Open Order</span>');
                 if (i.qty <= 0) issue.push('<span class="badge needs-date">Out of stock</span>');
-                else if (i.qty <= (i.reorder_level || 0)) issue.push('<span class="badge low">Low stock</span>');
+                else if (isLowStock(i)) issue.push('<span class="badge low">Low stock</span>');
                 return `<tr>
                   <td><strong>${escapeHtml(i.name)}</strong><br><code style="font-size:0.75rem">${escapeHtml(i.part_number)}</code></td>
                   <td>${issue.join(' ') || '—'}</td>
@@ -1957,20 +2439,22 @@ notify pgrst, 'reload schema';</pre>
       const id = document.getElementById('edit-id').value;
       const openOrder = document.getElementById('item-open-order').checked;
       const newQty = parseInt(document.getElementById('item-qty').value) || 0;
+      const newUsed = parseInt(document.getElementById('item-qty-used')?.value) || 0;
       const existingItem = id ? inventory.find(i => i.id === id) : null;
       const payload = {
         name, part_number,
         qty: newQty,
+        qty_used: newUsed,
         reorder_level: parseInt(document.getElementById('item-reorder').value) || 0,
         buy_price: parseFloat(document.getElementById('item-buy-price').value) || null,
         sell_price: parseFloat(document.getElementById('item-sell-price').value) || null,
-        source: document.getElementById('item-source').value.trim() || null,
-        category: document.getElementById('item-category').value.trim() || null,
+        source: canonicalComboValue('source', document.getElementById('item-source').value) || null,
+        category: canonicalComboValue('category', document.getElementById('item-category').value) || null,
         exclude_from_valuation: !!document.getElementById('item-exclude-value')?.checked,
         list_price: parseFloat(document.getElementById('item-list-price')?.value) || null,
         list_currency: currentPricingProfile().code,
         sell_factor: parseFloat(document.getElementById('item-sell-factor')?.value) || null,
-        location: document.getElementById('item-location').value.trim() || null,
+        location: canonicalComboValue('location', document.getElementById('item-location').value) || null,
         notes: document.getElementById('item-notes').value.trim() || null,
         open_order: openOrder,
         date_ordered: openOrder ? (document.getElementById('item-date-ordered').value || null) : null,
@@ -1980,6 +2464,7 @@ notify pgrst, 'reload schema';</pre>
         updated_at: new Date().toISOString()
       };
       if (!hasCategoryColumn) delete payload.category;
+      if (!hasQtyUsedColumn) delete payload.qty_used;
       if (!hasExcludeValueColumn) delete payload.exclude_from_valuation;
       if (!hasListPriceColumn) {
         delete payload.list_price;
@@ -2005,6 +2490,16 @@ notify pgrst, 'reload schema';</pre>
         if (error && /barcode/i.test(error.message || '')) {
           hasBarcodeColumn = false;
           delete payload.barcode;
+          const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
+          error = retry.error;
+          insertedId = retry.data?.id;
+        }
+      }
+      if (error && /qty_used/i.test(error.message || '')) {
+        hasQtyUsedColumn = false;
+        delete payload.qty_used;
+        if (id) ({ error } = await supabaseClient.from('inventory').update(payload).eq('id', id));
+        else {
           const retry = await supabaseClient.from('inventory').insert(payload).select('id').maybeSingle();
           error = retry.error;
           insertedId = retry.data?.id;
@@ -2042,6 +2537,7 @@ notify pgrst, 'reload schema';</pre>
       }
       if (id) {
         const qtyChanged = existingItem && (existingItem.qty || 0) !== newQty;
+        const usedChanged = existingItem && qtyUsedOf(existingItem) !== newUsed;
         await logAdjustment({
           inventory_id: id,
           part_number,
@@ -2049,8 +2545,15 @@ notify pgrst, 'reload schema';</pre>
           action: qtyChanged ? 'set_qty' : 'update',
           qty_before: existingItem?.qty,
           qty_after: newQty,
-          details: qtyChanged ? 'Qty changed via edit form' : 'Part details updated'
+          details: qtyChanged ? 'Qty changed via edit form' : (usedChanged ? 'Used qty updated' : 'Part details updated')
         });
+        await logPriceHistory(existingItem, payload, 'Edit form');
+        const dNew = newQty - (existingItem?.qty || 0);
+        await applyQtyDeltaToLayers({ id, part_number, buy_price: payload.buy_price, delta: dNew, condition: 'new', source: 'edit' });
+        if (hasQtyUsedColumn) {
+          const dUsed = newUsed - qtyUsedOf(existingItem);
+          await applyQtyDeltaToLayers({ id, part_number, buy_price: 0, delta: dUsed, condition: 'used', source: 'edit' });
+        }
       } else {
         await logAdjustment({
           inventory_id: insertedId,
@@ -2059,8 +2562,11 @@ notify pgrst, 'reload schema';</pre>
           action: 'create',
           qty_before: null,
           qty_after: newQty,
-          details: hasBarcodeColumn && payload.barcode ? `Created · barcode ${payload.barcode}` : 'Created'
+          details: 'Created'
         });
+        await logPriceHistory({ id: insertedId, part_number, name, qty: newQty, qty_used: newUsed }, payload, 'Created');
+        if (newQty > 0) await addCostLayer({ inventory_id: insertedId, part_number, unit_cost: payload.buy_price || 0, qty: newQty, condition: 'new', source: 'create' });
+        if (newUsed > 0) await addCostLayer({ inventory_id: insertedId, part_number, unit_cost: 0, qty: newUsed, condition: 'used', source: 'create' });
       }
       showStatus((id ? 'Updated' : 'Added') + ` by ${currentUser()}`, 'success');
       clearForm();
@@ -2080,12 +2586,12 @@ notify pgrst, 'reload schema';</pre>
       if (ex) ex.checked = false;
       syncPricingUi();
       document.getElementById('item-qty').value = 0;
-      document.getElementById('item-reorder').value = 5;
+      const usedEl = document.getElementById('item-qty-used');
+      if (usedEl) usedEl.value = 0;
+      document.getElementById('item-reorder').value = 0;
       document.getElementById('item-open-order').checked = false;
       const bcHint = document.getElementById('item-stable-barcode-hint');
-      if (bcHint) bcHint.textContent = hasBarcodeColumn
-        ? 'A label ID is assigned when the part is created.'
-        : '';
+      if (bcHint) bcHint.remove();
       toggleOrderFields();
     }
 
@@ -2097,7 +2603,9 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('item-name').value = item.name || '';
       document.getElementById('item-barcode').value = item.part_number || '';
       document.getElementById('item-qty').value = item.qty || 0;
-      document.getElementById('item-reorder').value = item.reorder_level || 5;
+      const usedEl = document.getElementById('item-qty-used');
+      if (usedEl) usedEl.value = qtyUsedOf(item);
+      document.getElementById('item-reorder').value = (item.reorder_level != null && item.reorder_level !== '') ? item.reorder_level : 0;
       document.getElementById('item-buy-price').value = item.buy_price ?? '';
       document.getElementById('item-sell-price').value = item.sell_price ?? '';
       document.getElementById('item-source').value = item.source || '';
@@ -2117,18 +2625,8 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('item-date-ordered').value = item.date_ordered || '';
       document.getElementById('item-est-delivery').value = item.estimated_delivery || '';
       document.getElementById('item-ordered-qty').value = item.ordered_qty || '';
-      // Show stable barcode under form if present
-      let bcHint = document.getElementById('item-stable-barcode-hint');
-      if (!bcHint) {
-        bcHint = document.createElement('p');
-        bcHint.id = 'item-stable-barcode-hint';
-        bcHint.className = 'hint';
-        const notes = document.getElementById('item-notes');
-        if (notes?.parentNode) notes.parentNode.insertBefore(bcHint, notes);
-      }
-      bcHint.textContent = item.barcode
-        ? `Label ID: ${item.barcode} — stays the same if you edit name or part #`
-        : (hasBarcodeColumn ? 'Label ID assigned on save.' : '');
+      const bcHint = document.getElementById('item-stable-barcode-hint');
+      if (bcHint) bcHint.remove();
       toggleOrderFields();
       document.querySelector('[data-tab="add"]').click();
       setTimeout(() => {
@@ -2155,8 +2653,9 @@ notify pgrst, 'reload schema';</pre>
           action: delta > 0 ? 'stock_in' : 'stock_out',
           qty_before: oldQty,
           qty_after: newQty,
-          details: delta > 0 ? '+1 on Home' : '−1 on Home'
+          details: delta > 0 ? '+1 on Home (new)' : '−1 on Home (new)'
         });
+        await applyQtyDeltaToLayers({ id, part_number: item.part_number, buy_price: item.buy_price, delta, condition: 'new', source: 'home' });
         await loadInventory();
       }
     }
@@ -2252,18 +2751,25 @@ notify pgrst, 'reload schema';</pre>
           </div>
           <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.15rem;">${escapeHtml(item.name)}</div>
           <code style="font-size:0.9rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
-          ${item.barcode ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">Label ID: <code>${escapeHtml(item.barcode)}</code> (QR deep-link)</div>` : ''}
           <div class="meta-line" style="margin-top:0.35rem;">
             ${item.source ? `<span class="badge source-tag">${escapeHtml(item.source)}</span>` : ''}
             ${item.category ? `<span class="badge category">${escapeHtml(item.category)}</span>` : ''}
           </div>
           ${item.location ? `<div style="font-size:0.8rem;color:var(--muted);margin-top:0.25rem;">Location: ${escapeHtml(item.location)}</div>` : ''}
           <div style="margin:0.85rem 0 0.5rem;font-size:1rem;">
-            Current qty: <strong style="font-size:1.25rem;">${q}</strong>
-            ${q <= (item.reorder_level || 0) && q > 0 ? ' <span class="badge low">Low</span>' : ''}
-            ${q <= 0 ? ' <span class="badge needs-date">Out</span>' : ''}
+            New: <strong style="font-size:1.25rem;">${q}</strong>
+            ${qtyUsedOf(item) ? ` · Used: <strong>${qtyUsedOf(item)}</strong>` : ''}
+            ${isLowStock(item) ? ' <span class="badge low">Low</span>' : ''}
+            ${((q + qtyUsedOf(item)) <= 0) ? ' <span class="badge needs-date">Out</span>' : ''}
           </div>
           <div class="row">
+            ${hasQtyUsedColumn ? `<div>
+              <label>Condition</label>
+              <select id="scan-condition">
+                <option value="new">New (valued)</option>
+                <option value="used">Used / salvage (not valued)</option>
+              </select>
+            </div>` : ''}
             <div>
               <label>Action</label>
               <select id="scan-action">
@@ -2336,7 +2842,10 @@ notify pgrst, 'reload schema';</pre>
         showStatus('Enter a valid quantity', 'error');
         return;
       }
-      const oldQty = item.qty || 0;
+      const cond = (hasQtyUsedColumn && document.getElementById('scan-condition')?.value === 'used') ? 'used' : 'new';
+      const oldNew = item.qty || 0;
+      const oldUsed = qtyUsedOf(item);
+      const oldQty = cond === 'used' ? oldUsed : oldNew;
       let newQty = oldQty;
       let logAction = 'set_qty';
       if (action === 'out') { newQty = Math.max(0, oldQty - qty); logAction = 'stock_out'; }
@@ -2346,13 +2855,16 @@ notify pgrst, 'reload schema';</pre>
       const notesRaw = document.getElementById('scan-notes')?.value;
       const notes = notesRaw != null ? (notesRaw.trim() || null) : (item.notes || null);
 
+      const patch = {
+        notes,
+        updated_by: currentUser(),
+        updated_at: new Date().toISOString()
+      };
+      if (cond === 'used') patch.qty_used = newQty;
+      else patch.qty = newQty;
+
       const { error } = await supabaseClient.from('inventory')
-        .update({
-          qty: newQty,
-          notes,
-          updated_by: currentUser(),
-          updated_at: new Date().toISOString()
-        })
+        .update(patch)
         .eq('id', item.id);
 
       const resultEl = document.getElementById('scan-result');
@@ -2368,7 +2880,16 @@ notify pgrst, 'reload schema';</pre>
         action: logAction,
         qty_before: oldQty,
         qty_after: newQty,
-        details: `Scan commit · ${action} ${qty}`
+        details: `Scan commit · ${cond} · ${action} ${qty}`
+      });
+      const delta = newQty - oldQty;
+      await applyQtyDeltaToLayers({
+        id: item.id,
+        part_number: item.part_number,
+        buy_price: item.buy_price,
+        delta,
+        condition: cond,
+        source: 'scan'
       });
 
       const savedId = item.id;
@@ -2380,9 +2901,7 @@ notify pgrst, 'reload schema';</pre>
           <div style="font-weight:700;">${escapeHtml(item.name)}</div>
           <code style="font-size:0.85rem;color:var(--muted);">${escapeHtml(item.part_number)}</code>
           <div style="margin-top:0.65rem;font-size:1.15rem;">
-            Qty: ${oldQty} → <strong>${newQty}</strong>
-            ${newQty <= (item.reorder_level || 0) && newQty > 0 ? ' <span class="badge low">Low</span>' : ''}
-            ${newQty <= 0 ? ' <span class="badge needs-date">Out</span>' : ''}
+            ${cond === 'used' ? 'Used' : 'New'}: ${oldQty} → <strong>${newQty}</strong>
           </div>
           ${notes ? `<div style="margin-top:0.5rem;font-size:0.85rem;color:var(--muted);white-space:pre-wrap;"><strong style="color:var(--text);">Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
           <div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;">By ${escapeHtml(currentUser())}</div>
@@ -2541,7 +3060,6 @@ notify pgrst, 'reload schema';</pre>
           <span>
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
-            ${i.barcode ? `<br><small style="color:var(--muted)">ID ${escapeHtml(i.barcode)}</small>` : ''}
           </span>
         </label>
       `).join('');
@@ -2935,6 +3453,157 @@ ${bodyHtml}
       );
     }
 
+    async function loadPriceHistory() {
+      const status = document.getElementById('price-hist-status');
+      const table = document.getElementById('price-hist-table');
+      if (!supabaseClient || !hasPriceHistoryTable) {
+        if (status) status.textContent = 'Run Phase 3 SQL on More to store price history.';
+        if (table) table.innerHTML = '';
+        return;
+      }
+      const q = (document.getElementById('price-hist-q')?.value || '').trim().toLowerCase();
+      const { data, error } = await supabaseClient.from('inventory_price_history')
+        .select('*').order('recorded_at', { ascending: false }).limit(500);
+      if (error) {
+        if (status) status.textContent = error.message;
+        return;
+      }
+      let rows = data || [];
+      if (q) {
+        rows = rows.filter(r =>
+          String(r.part_number || '').toLowerCase().includes(q) ||
+          String(r.name || '').toLowerCase().includes(q)
+        );
+      }
+      lastPriceHistoryRows = rows;
+      if (status) status.textContent = rows.length ? rows.length + ' rows' : 'No history yet.';
+      if (!table) return;
+      if (!rows.length) { table.innerHTML = ''; return; }
+      table.innerHTML = `<table>
+        <thead><tr><th>When</th><th>Part #</th><th>Name</th><th>Buy</th><th>Sell</th><th>List</th><th>By</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td style="font-size:0.78rem;white-space:nowrap;">${escapeHtml((r.recorded_at || '').slice(0, 16).replace('T', ' '))}</td>
+          <td><code>${escapeHtml(r.part_number || '')}</code></td>
+          <td>${escapeHtml(r.name || '')}</td>
+          <td>${money(r.buy_price)}</td>
+          <td>${money(r.sell_price)}</td>
+          <td>${r.list_price != null ? escapeHtml(String(r.list_currency || '')) + ' ' + Number(r.list_price).toFixed(2) : '—'}</td>
+          <td style="font-size:0.78rem;">${escapeHtml(r.changed_by || '')}${r.note ? '<br><span style="color:var(--muted)">' + escapeHtml(r.note) + '</span>' : ''}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+
+    function exportPriceHistoryCsv() {
+      if (!lastPriceHistoryRows.length) { showStatus('Generate the report first', 'error'); return; }
+      const headers = ['recorded_at', 'part_number', 'name', 'buy_price', 'sell_price', 'list_price', 'list_currency', 'qty', 'qty_used', 'note', 'changed_by'];
+      const lines = [headers.join(',')].concat(lastPriceHistoryRows.map(r => headers.map(h => {
+        const v = r[h] == null ? '' : String(r[h]);
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      }).join(',')));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+      a.download = 'price-history.csv';
+      a.click();
+    }
+
+    async function ensureOpeningLayers() {
+      if (!hasCostLayersTable || !supabaseClient) return;
+      const { data } = await supabaseClient.from('inventory_cost_layers')
+        .select('inventory_id,qty_remaining,condition')
+        .eq('condition', 'new')
+        .gt('qty_remaining', 0);
+      const remainingById = {};
+      (data || []).forEach(r => {
+        remainingById[r.inventory_id] = (remainingById[r.inventory_id] || 0) + (Number(r.qty_remaining) || 0);
+      });
+      for (const item of inventory) {
+        if (isExcludedFromValue(item)) continue;
+        const q = item.qty || 0;
+        if (q <= 0) continue;
+        const remaining = remainingById[item.id] || 0;
+        if (remaining + 0.0001 < q) {
+          await addCostLayer({
+            inventory_id: item.id,
+            part_number: item.part_number,
+            unit_cost: item.buy_price || 0,
+            qty: q - remaining,
+            condition: 'new',
+            source: 'opening'
+          });
+        }
+      }
+    }
+
+    async function loadEndingInventoryReport() {
+      const status = document.getElementById('ending-inv-status');
+      const table = document.getElementById('ending-inv-table');
+      const method = costingMethod === 'lifo' ? 'LIFO' : 'FIFO';
+      if (!supabaseClient || !hasCostLayersTable) {
+        if (status) status.textContent = 'Run Phase 3 SQL on More for LIFO/FIFO layers.';
+        return;
+      }
+      await ensureOpeningLayers();
+      const { data, error } = await supabaseClient.from('inventory_cost_layers')
+        .select('*')
+        .gt('qty_remaining', 0)
+        .order('acquired_at', { ascending: true });
+      if (error) {
+        if (status) status.textContent = error.message;
+        return;
+      }
+      const byInv = {};
+      (data || []).forEach(layer => {
+        const key = layer.inventory_id || layer.part_number;
+        if (!byInv[key]) byInv[key] = [];
+        byInv[key].push(layer);
+      });
+      const rows = [];
+      let total = 0, usedCount = 0;
+      inventory.forEach(item => {
+        if (isExcludedFromValue(item)) return;
+        const layers = (byInv[item.id] || []).filter(l => l.condition !== 'used');
+        const value = layers.reduce((s, l) => s + (Number(l.qty_remaining) || 0) * (Number(l.unit_cost) || 0), 0);
+        const layerQty = layers.reduce((s, l) => s + (Number(l.qty_remaining) || 0), 0);
+        total += value;
+        usedCount += qtyUsedOf(item);
+        rows.push({
+          part_number: item.part_number,
+          name: item.name,
+          qty_new: item.qty || 0,
+          qty_used: qtyUsedOf(item),
+          layer_qty: layerQty,
+          value,
+          method
+        });
+      });
+      lastEndingInvRows = rows;
+      if (status) status.textContent = method + ' ending inventory ' + money(total) + (usedCount ? ' · used ' + usedCount + ' (not valued)' : '');
+      if (!table) return;
+      table.innerHTML = `<table>
+        <thead><tr><th>Part #</th><th>Name</th><th>New</th><th>Used</th><th>${method} $</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td><code>${escapeHtml(r.part_number || '')}</code></td>
+          <td>${escapeHtml(r.name || '')}</td>
+          <td>${r.qty_new}</td>
+          <td>${r.qty_used || '—'}</td>
+          <td>${money(r.value)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="4"><strong>Total (${method})</strong></td><td><strong>${money(total)}</strong></td></tr></tfoot>
+      </table>`;
+    }
+
+    function exportEndingInventoryCsv() {
+      if (!lastEndingInvRows.length) { showStatus('Generate the report first', 'error'); return; }
+      const headers = ['part_number', 'name', 'qty_new', 'qty_used', 'value', 'method'];
+      const lines = [headers.join(',')].concat(lastEndingInvRows.map(r => headers.map(h => {
+        const v = r[h] == null ? '' : String(r[h]);
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      }).join(',')));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+      a.download = 'ending-inventory.csv';
+      a.click();
+    }
+
     function exportData() {
       const blob = new Blob([JSON.stringify(inventory, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -2966,7 +3635,8 @@ ${bodyHtml}
               part_number: pn,
               name: row.name,
               qty: row.qty || 0,
-              reorder_level: row.reorder_level != null ? row.reorder_level : 5,
+              qty_used: row.qty_used || 0,
+              reorder_level: row.reorder_level != null ? row.reorder_level : 0,
               buy_price: row.buy_price ?? null,
               sell_price: row.sell_price ?? null,
               source: row.source || null,
@@ -2984,6 +3654,7 @@ ${bodyHtml}
               updated_by: currentUser()
             };
             if (!hasCategoryColumn) delete payload.category;
+            if (!hasQtyUsedColumn) delete payload.qty_used;
             if (!hasExcludeValueColumn) delete payload.exclude_from_valuation;
             if (!hasListPriceColumn) {
               delete payload.list_price;
@@ -3955,6 +4626,7 @@ ${bodyHtml}
       });
     });
 
+    bindCombos();
     if (isConfigured) {
       syncPricingUi();
       loadGlobalFactorInputs();

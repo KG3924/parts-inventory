@@ -31,6 +31,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 6. **Do not alter** original supplier spreadsheets under `inmarinventory/`.
 7. **User required before mutations.** User selection is **session-only** (in-memory `sessionUser`); **do not** restore from `localStorage` (legacy `inv_user` is cleared on load so the UI always starts at “— Select —”).
 8. **Keep on-screen hints to one short line.** Explain the field; do not fill the screen with tooltips. Printed quote / packing list / invoice legal lines stay short too.
+9. **Do not show the stable label ID (barcode)** on Home, Scan, or Add/Edit. It is internal to QR labels only.
 
 ---
 
@@ -57,9 +58,12 @@ id (uuid, pk)
 name (text, not null)
 part_number (text, unique, not null)   -- human / catalog PN; may change
 barcode (text, unique)                 -- STABLE label code; never change on edit
-qty, reorder_level, buy_price, sell_price
+qty                  -- NEW stock (valued)
+qty_used             -- used/salvage on the SAME SKU; $0 for valuation
+reorder_level        -- default 0; Low only if > 0 and new qty ≤ reorder
+buy_price, sell_price
 list_price, list_currency, sell_factor
-exclude_from_valuation
+exclude_from_valuation  -- whole SKU (consignment). Used qty is already excluded.
 source, category, location, notes
 open_order, date_ordered, estimated_delivery, ordered_qty
 updated_by, created_at, updated_at
@@ -81,8 +85,9 @@ created_at (timestamptz)
 **One-time SQL** is on the **More** tab in the app (Copy SQL). Also:
 - `schema/quotes_phase1.sql` — customers / quotes / quote_lines / document_counters
 - `schema/quotes_phase2.sql` — quote extras, packing lists, invoices, settings, lookups
+- `schema/inventory_costing.sql` — qty_used, price history, LIFO/FIFO cost layers
 
-App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`.  
+App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
 
 ### Phase 1 sales docs (additive — safe alongside inventory)
@@ -121,27 +126,41 @@ Status enum (app): draft | sent | accepted | expired | void.
 ### Home
 - Search includes barcode
 - Source + Category filter chips
-- Source/category badges; stable BC shown under part #
+- Source/category badges (label ID is not shown)
 - **Clickable tiles:** Open Orders, Low, Needs Delivery Date (value card), Parts (clears filter)
 - Home filter bar with Clear filter
 - +/− qty logs adjustments; Quote / Edit / Del
 
 ### Scan
-- Lookup by **barcode or part number**
-- Found card: notes (view/edit), **Quote**, **Edit part**, Commit / Save notes / Scan again
-- Commit logs stock_in / stock_out / set_qty
+- Lookup by **barcode or part number** (label ID not displayed)
+- Found card: New vs Used, action, qty; **Quote**, **Edit part**, Commit / Save notes / Scan again
+- Commit logs stock_in / stock_out / set_qty against the chosen condition
 
 ### Add / Edit
-- Same form; **barcode never edited by user** — generated on create, shown as read-only hint on edit
-- Create / update / qty change on form → adjustment log
+- Same form; **barcode never shown** on the form (still generated on create for QR labels)
+- Source, category, location: **dropdown + typeahead**. Matching existing values snap to the stored spelling; new values can still be kept
+- Qty (new) and Qty (used) on the same SKU
+- Reorder default **0**. Edit must load the saved value (`0` is valid — never treat as missing)
+- Create / update / qty change on form → adjustment log + cost layers + price history
 
 ### Pricing
-- List currency follows source: **Wynn = £ GBP**, **FFS = € EUR**, else **$ USD**
-- Sell $ = list × sell factor, then **rounded up to the next $5** (130.01 → 135.00; 129.99 → 130.00; 130.00 stays 130.00)
-- Per-item sell factor can still be edited on Add/Edit
-- **More → Global sell factors:** Wynn and FFS fields; Save factors, or **Apply to all Wynn / FFS parts** that have a list price (other sources untouched)
-- **Wynn buy $** auto-fills as converted list minus 30% (`list × factor × 0.70`), still editable
-- FFS EUR factor is a field only until a number is known
+- List currency follows source: **Wynn = £ GBP**, **FFS = € EUR**, **Alu Design = kr NOK**, else **$ USD**
+- **Sell $** = list × sell factor, then **rounded up to the next $5**
+- **Buy $** = list × **exchange rate** (not sell factor) × 0.70 (minus 30%). Auto-fills for Wynn / FFS / Alu when a rate exists
+- **More → Global sell factors:** Wynn and FFS; Apply updates sell $ only
+- **More → Exchange rates:** GBP, EUR, NOK → USD. Fetch from ECB (Frankfurter) or type. Apply buy $ to Wynn / FFS / Alu
+
+### New vs used (same part #)
+- `qty` = new (counts in inventory $). `qty_used` = salvage from paid-off systems ($0)
+- Do **not** create a second SKU. Scan **Adjust / Commit** asks New vs Used
+- Tax/accounting: original system cost already paid; recovered parts are not added to inventory asset value
+- Whole-SKU **Exclude from valuation** remains for consignment
+
+### Cost layers / LIFO / FIFO
+- Tables `inventory_price_history`, `inventory_cost_layers`
+- Stock in (new) adds a layer at current buy $; stock out consumes layers FIFO or LIFO (More toggle)
+- Used movements are tracked at $0 and never enter valued layers
+- Reports: **Price history**, **Ending inventory (LIFO/FIFO)**
 
 ### Quote (Phase 2 — quote / packing list / invoice)
 - Working **cart** still in `localStorage` (`inv_quote`) until Save
@@ -169,17 +188,20 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Deep link on load: read `?part=` / `?pn=`, open Scan found card, `history.replaceState` cleans URL
 
 ### Reports (tab order)
-1. **Inventory Valuation**
-2. **Inventory Adjustment Report** (directly under valuation) — user/date/action filters → Generate, CSV, Print  
-   - Requires `inventory_adjustments` table
-3. **Items Needing Attention** — All | Out of Stock | Needs Delivery Date | Low Stock | Open Orders
-4. About these numbers
+1. **Inventory Valuation** (new qty × buy; used excluded)
+2. **Inventory Adjustment Report**
+3. **Price history**
+4. **Ending inventory (LIFO / FIFO)**
+5. **Items Needing Attention** — Low only if reorder > 0
+6. About these numbers
 
 ### More
 - Export/Import JSON (import generates barcode if column exists)
-- **Global sell factors** (Wynn GBP → $, FFS EUR → $) + apply-all
+- **Global sell factors** (Wynn / FFS) + apply sell $
+- **Exchange rates** GBP / EUR / NOK + fetch + apply buy $
+- **Costing method** FIFO or LIFO
 - Schema status line (includes quotes + docs/factors)
-- Full setup SQL (inventory extras + Phase 1 + Phase 2) + clear all inventory
+- Full setup SQL (inventory extras + Phase 1 + Phase 2 + Phase 3) + clear all inventory
 
 ---
 
@@ -252,8 +274,9 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ## Possible next work
 
-- User must run **More-tab / `schema/quotes_phase2.sql`** so packing lists, invoices, and global factors persist
-- Enter FFS EUR → $ factor when known, then Apply on More
+- User must run **More-tab SQL** including Phase 3 (`schema/inventory_costing.sql`) for used qty, history, LIFO/FIFO
+- Enter FFS sell factor when known; fetch or type FX rates, then Apply buy $
+- Review existing Alu rows: list should be **NOK**, not USD, before applying NOK rates
 - Sales orders from accepted quotes
 - Email / multi-page terms
 - Real auth / tighter RLS
@@ -275,6 +298,7 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 | `COUNT.md` | How to count on phone and import JSON |
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
+| `schema/inventory_costing.sql` | Used qty, price history, cost layers |
 
 ## Local-only (this Mac, not in git)
 
@@ -294,4 +318,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-08-17 — factors/quotes/packing/invoices on GitHub (`3b4fd34`); short hints (`57d95d8`); this file records where data lives so a new session can recover.*
+*Last updated: 2026-08-17 — combobox source/category/location; hide label ID; reorder default 0; buy = list × FX − 30%; used vs new on same SKU; price history + LIFO/FIFO.*
