@@ -40,7 +40,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 | Piece | Detail |
 |-------|--------|
 | UI | Single `index.html`, light theme |
-| Backend | Supabase JS v2: `inventory`, `inventory_adjustments`, Phase 1 quotes, Phase 2 packing lists / invoices / `app_settings` / `app_lookups` |
+| Backend | Supabase JS v2: `inventory` (+ `qty_used`), `inventory_adjustments`, quotes/packing/invoices, `app_settings` / `app_lookups`, `inventory_price_history`, `inventory_cost_layers` |
 | Labels | QR (`qrcode` CDN) deep-link `?part=` stable `barcode` ID; human part # printed beside QR |
 | Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate; deep-link `?part=` |
 | Hosting | GitHub Pages from `main` |
@@ -110,8 +110,18 @@ packing_lists / packing_list_lines  -- PL-YYYY-###, no prices
 invoices / invoice_lines            -- INV-YYYY-### + PO, ship-to, due date, fees
 ```
 
+### Phase 3 (additive — run after Phase 2; **already applied** on production)
+
+```
+inventory.qty_used
+inventory_price_history   -- buy/sell/list snapshots
+inventory_cost_layers     -- FIFO/LIFO layers for NEW stock
+```
+
+`app_settings` keys: `wynn_sell_factor`, `ffs_sell_factor`, `fx_gbp_usd`, `fx_eur_usd`, `fx_nok_usd`, `costing_method` (`fifo` | `lifo`).
+
 Status enum (app): draft | sent | accepted | expired | void.  
-**Main branch safety:** only CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS — does not drop inventory. Old Pages builds ignore new tables. User must run Phase 2 SQL for packing/invoice saves and global factors in Supabase.
+**Main branch safety:** only CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS — does not drop inventory. Old Pages builds ignore new tables.
 
 ---
 
@@ -129,7 +139,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Source/category badges (label ID is not shown)
 - **Clickable tiles:** Open Orders, Low, Needs Delivery Date (value card), Parts (clears filter)
 - Home filter bar with Clear filter
-- +/− qty logs adjustments; Quote / Edit / Del
+- +/− qty logs adjustments on **new** stock only; Quote / Edit / Del / Adjust (Scan, New vs Used)
 
 ### Scan
 - Lookup by **barcode or part number** (label ID not displayed)
@@ -148,7 +158,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Sell $** = list × sell factor, then **rounded up to the next $5**
 - **Buy $** = list × **exchange rate** (not sell factor) × 0.70 (minus 30%). Auto-fills for Wynn / FFS / Alu when a rate exists
 - **More → Global sell factors:** Wynn and FFS; Apply updates sell $ only
-- **More → Exchange rates:** GBP, EUR, NOK → USD. Fetch from ECB (Frankfurter) or type. Apply buy $ to Wynn / FFS / Alu
+- **More → Exchange rates:** GBP, EUR, NOK → USD (USD per 1 foreign unit). **Fetch current rates** calls `api.frankfurter.dev` (not `.app` — that host 301s without CORS, which looks like a GitHub Pages failure but is not). Fallback: `open.er-api.com`. Manual entry always works. Apply buy $ to Wynn / FFS / Alu
 
 ### New vs used (same part #)
 - `qty` = new (counts in inventory $). `qty_used` = salvage from paid-off systems ($0)
@@ -200,7 +210,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Global sell factors** (Wynn / FFS) + apply sell $
 - **Exchange rates** GBP / EUR / NOK + fetch + apply buy $
 - **Costing method** FIFO or LIFO
-- Schema status line (includes quotes + docs/factors)
+- Schema status line (quotes, docs/factors, used-qty, price-history, cost-layers)
 - Full setup SQL (inventory extras + Phase 1 + Phase 2 + Phase 3) + clear all inventory
 
 ---
@@ -229,8 +239,10 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 ```
 
 - Optional `barcode` in JSON; otherwise app generates on insert
+- Optional `qty_used`, `list_price`, `list_currency`, `sell_factor`, `exclude_from_valuation`
 - Existing part numbers skipped
 - User must be selected before import
+- Reorder default on import is **0** if omitted
 
 ---
 
@@ -261,10 +273,10 @@ Grok chat sessions are **not** the source of truth. Recover from GitHub + this f
 
 | What | Where it actually lives |
 |------|-------------------------|
-| App source, docs, count tool, SQL | GitHub `KG3924/parts-inventory` `main` (Pages). Latest relevant commits: `3b4fd34` (factors/quotes/packing/invoices), `57d95d8` (shorter hints) |
-| Live inventory, quotes, packing lists, invoices, settings | **Supabase** project (realtime). Survives browser close and new AI sessions |
+| App source, docs, count tool, SQL | GitHub `KG3924/parts-inventory` `main` (Pages). Head includes `51f4b97` (used/FX/LIFO), `37e1e52` (FX fetch via frankfurter.dev) |
+| Live inventory, quotes, packing lists, invoices, settings, cost layers | **Supabase** (realtime). Phase 1–3 SQL has been run on production |
 | Working quote **cart** (unsaved) | Browser `localStorage` key `inv_quote` — device/browser only until Save quote |
-| Global factors fallback | `localStorage` + `app_settings` in Supabase (after Phase 2 SQL) |
+| Sell factors / FX / costing method | `localStorage` + `app_settings` in Supabase |
 | Physical count **draft** | That phone/browser only (`count.html` localStorage). **Export JSON** is the backup. Safari ≠ Chrome |
 | Original supplier sheets, 2026 catalogs, helper xlsx/json | **This Mac only** (not in git — see local file map). Do not rely on GitHub for those |
 
@@ -274,7 +286,6 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ## Possible next work
 
-- User must run **More-tab SQL** including Phase 3 (`schema/inventory_costing.sql`) for used qty, history, LIFO/FIFO
 - Enter FFS sell factor when known; fetch or type FX rates, then Apply buy $
 - Review existing Alu rows: list should be **NOK**, not USD, before applying NOK rates
 - Sales orders from accepted quotes
@@ -318,4 +329,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-08-17 — combobox source/category/location; hide label ID; reorder default 0; buy = list × FX − 30%; used vs new on same SKU; price history + LIFO/FIFO.*
+*Last updated: 2026-09-01 — docs match production: Phase 3 SQL applied; FX fetch uses frankfurter.dev (CORS); used vs new, LIFO/FIFO, short hints.*

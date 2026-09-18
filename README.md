@@ -12,7 +12,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 
 | Area | What it does |
 |------|----------------|
-| **Home** | Live list; search (name, part #, barcode, source, category); **source + category** filter chips; badges; clickable **Open Orders / Low / Needs Delivery Date** tiles; quick +/−; cost value; **Quote**, **Edit**, **Del** |
+| **Home** | Live list; search; source + category chips; tiles; **+/−** on new qty; **Adjust** (Scan, New vs Used); Quote / Edit / Del |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
 | **Add / Edit** | Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
 | **Quote** | Cart + saved quotes: **customer vs project**, RFQ #, FOB, payment terms, lead time, 90-day validity, prepared-by = logged-in user; **Print quote**, **Packing list**, **Invoice**; free-text customer with optional save |
@@ -73,6 +73,7 @@ Use **More → Import JSON**.
 - Select your **user name** before importing (required).
 - Existing part numbers are **skipped**.
 - Optional `barcode`; if omitted and the column exists, the app generates one.
+- Optional `qty_used` (used/salvage on the same part #). Reorder defaults to **0** if omitted.
 - No spaces in part numbers.
 - Placeholders: include `PLACEHOLDER` in the part number (e.g. `WYNN-PLACEHOLDER-001`).
 - Wipe and restart: **More → Clear all inventory…** (type `DELETE ALL`). Export a backup first.
@@ -96,7 +97,7 @@ The value is the part’s **stable label ID** (`barcode` in Supabase), not the h
 - **Print on letter paper (8 / sheet)** — 2×4 grid, larger QR
 
 ### Scanning
-1. **Phone Camera app** → opens the web app → Scan screen with that part → choose action/qty → **Commit change**
+1. **Phone Camera app** → opens the web app → Scan screen with that part → pick **New or Used**, action, qty → **Commit change**
 2. **In-app scanner** → reads the same QR (or a plain part number) → same Commit flow
 
 ---
@@ -128,8 +129,8 @@ Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart 
 - **Wynn** list is £ GBP. **FFS** list is € EUR. **Alu Design** list is kr NOK. Everything else is $ USD.
 - **Sell $** = list × sell factor, then **rounded up to the next $5**.
 - **Buy $** = list × **exchange rate** × 0.70 (minus 30%). Not the sell factor.
-- **More → Global sell factors** apply sell $. **Exchange rates** (fetch or type GBP / EUR / NOK) apply buy $.
-- Same part # can have **new** qty (valued) and **used/salvage** qty (not valued). Scan asks which one to issue.
+- **More → Global sell factors** apply sell $. **Exchange rates** (GBP / EUR / NOK) apply buy $. Fetch uses `api.frankfurter.dev` (the old `.app` URL 301s without CORS). You can still type rates.
+- Same part # can have **new** qty (valued) and **used/salvage** qty (not valued). Scan asks which one to issue. Home **+/−** changes new qty only.
 
 ---
 
@@ -165,4 +166,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-08-17 — comboboxes, hide label ID, reorder 0, FX buy, used vs new, price history, LIFO/FIFO*
+*Last updated: 2026-09-01 — docs match live app: used vs new, FX buy via frankfurter.dev, LIFO/FIFO, Phase 3 SQL applied*

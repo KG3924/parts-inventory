@@ -56,9 +56,9 @@ On the iPad, open `http://YOUR-MAC-LAN-IP:8000/count.html`. Fine for a test; Pag
    Catalog / live-app **name, notes, source, category, location, and prices** fill in so you can keep or edit them. Shelf **qty** is always what you type (old app qty is shown only as a reference).
 3. **+ New part** for something not in the catalog (`Generic, specific…`, no spaces in the part #).
 4. On any saved line, tap **Edit** to change name, qty, source, prices, or notes. Searching a part already in the count opens that line to edit.
-4. Draft **auto-saves on this iPad**. Tap **Save draft** if you want a confirmation toast.
-5. You can lock the iPad or switch apps. Re-open the **same Home Screen icon** and the draft should still be there.
-6. **End of each day:** tap **Backup file…** and AirDrop / save to Files. A multi-day count is not safe with only the on-device draft.
+5. Draft **auto-saves on this iPad**. Tap **Save draft** if you want a confirmation toast.
+6. You can lock the iPad or switch apps. Re-open the **same Home Screen icon** and the draft should still be there.
+7. **End of each day:** tap **Backup file…** and AirDrop / save to Files. A multi-day count is not safe with only the on-device draft.
 
 Do **not** use Private / Incognito. Do **not** clear Safari or Chrome website data until you have a backup file. A lost or wiped iPad cannot recover an un-backed-up draft.
 
@@ -77,7 +77,7 @@ Do **not** use Private / Incognito. Do **not** clear Safari or Chrome website da
 
 **Existing part numbers in Supabase are skipped.** Qty on those rows is **not** updated. Use this export to load a **clean** list (empty database, or only PNs that are not already in the app). If the 609 old rows are still live and you want this count to be the new truth, export a backup from **More** first, then **Clear all inventory…**, then import the count JSON.
 
-After import, the live app owns pricing: Wynn sell = £ × factor rounded **up to the next $5**; Wynn buy auto-fills as converted list minus 30%. Use **More → Global sell factors** to set or apply Wynn / FFS factors in bulk.
+After import, the live app owns pricing: **sell $** = list × sell factor, rounded **up to the next $5**; **buy $** = list × **exchange rate** − 30% (Wynn £, FFS €, Alu kr). Use **More** to set/apply sell factors and FX rates.
 
 7. Spot-check Home: names, sources, qtys. Then print labels from the **Labels** tab when you are ready.
 8. Keep the exported JSON as the archive of that count. You can **Clear this count…** on the iPad after you know the import succeeded (two confirms). That only wipes the iPad draft.
@@ -124,7 +124,8 @@ Array of objects. Fields the live app already accepts:
     "part_number": "1279-553-800",
     "name": "Blade, Artic 800mm",
     "qty": 4,
-    "reorder_level": 5,
+    "qty_used": 0,
+    "reorder_level": 0,
     "source": "Wynn",
     "category": "Blade",
     "location": "Shelf A-3",
@@ -138,8 +139,8 @@ Array of objects. Fields the live app already accepts:
 ]
 ```
 
-Optional extras the app ignores if columns are missing: `list_price`, `list_currency`, `exclude_from_valuation`.  
-`barcode` is omitted — the web app generates a stable label ID on import.
+Optional extras the app ignores if columns are missing: `list_price`, `list_currency`, `exclude_from_valuation`, `qty_used`.  
+`barcode` is omitted — the web app generates a stable label ID on import. Reorder defaults to **0** in the live app if omitted.
 
 `qty` is **what you counted**. Old spreadsheet quantities are never written into the export.
 
@@ -164,4 +165,4 @@ After the catalog has loaded once (or you picked the seed file), search and draf
 
 ---
 
-*Last updated: 2026-08-17 — count tool is live on Pages; drafts stay in that browser until you Export JSON.*
+*Last updated: 2026-09-01 — count tool live on Pages; after import, live app uses FX for buy (not sell factor).*

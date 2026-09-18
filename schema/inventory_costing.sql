@@ -1,6 +1,7 @@
 -- Phase 3: used/salvage qty, exchange-rate buy, price history, LIFO/FIFO cost layers
 -- ADDITIVE ONLY — does not drop inventory or quote tables.
 -- Safe to re-run. Run in Supabase SQL Editor after Phase 1 / Phase 2.
+-- Production (In-Mar) has already run this. FX rates themselves are stored in app_settings, not here.
 
 -- Used / salvage stock on the SAME part (not a second SKU).
 -- inventory.qty remains NEW stock (valued). qty_used is tracked but $0 for tax/valuation.
