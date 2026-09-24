@@ -25,15 +25,9 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 
 The public anon key is in `public-config.js`. Never commit a service-role key.
 
-### Safe cutover (preview first, lock SQL last)
+### Database lock
 
-1. QA the phone preview (link is on the pull request). Do not merge until that passes.
-2. Merge to `main`. Live Pages then shows the login wall.
-3. **Then** run `schema/auth_lock_after_merge.sql` in Supabase, and turn off “Allow new users to sign up” under Authentication if it is still on.
-4. Save the login again on the live Pages address. The preview address is a different site.
-5. Smoke: unlock → scan → new or used → Commit → the printed label still scans.
-
-Running the lock SQL before the merge locks the current live app out of stock.
+`schema/auth_lock_after_merge.sql` is **already applied** on the live database. Unsigned requests cannot read or change stock. Do not recreate open “anyone can edit” policies. More → Copy SQL only adds columns and tables, and grants them to signed-in users.
 
 **Theme:** Light (white background)
 
@@ -59,9 +53,9 @@ Running the lock SQL before the merge locks the current live app out of stock.
    - Phase 1 quotes: `customers`, `quotes`, `quote_lines`, `document_counters`
    - Phase 2: quote extras (project, RFQ, FOB, terms, lead time), `app_settings`, `app_lookups`, packing lists, invoices
    - Phase 3: `qty_used`, `inventory_price_history`, `inventory_cost_layers`
-3. **Project Settings → API** → copy Project URL and `anon` public key into `index.html` (do not overwrite existing production keys unless intentional).
+3. **Project Settings → API** → the public anon key belongs in `public-config.js` only. Never commit a service-role key.
 
-Open RLS policies are used for trusted internal access (same model as the live app).
+Shop tables are signed-in only. The live database lock is already applied (`schema/auth_lock_after_merge.sql`). Do not paste old “allow all” policies back in.
 
 ---
 
@@ -82,7 +76,7 @@ Use **More → Import JSON**.
 ]
 ```
 
-- Select your **user name** before importing (required).
+- Sign in first. Import stamps the signed-in person.
 - Existing part numbers are **skipped**.
 - Optional `barcode`; if omitted and the column exists, the app generates one.
 - Optional `qty_used` (used/salvage on the same part #). Reorder defaults to **0** if omitted.
@@ -158,7 +152,7 @@ Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart 
 
 ## Tips
 
-- Select a user every session before changing stock or saving quotes.
+- Unlock on that phone before changing stock or saving quotes. Stamps use the signed-in person.
 - Leave Est. Delivery blank when unknown — “Needs Delivery Date” flags it.
 - Use source/category chips and Home tiles to narrow the list.
 - Export JSON from More before large imports or clears.
@@ -178,4 +172,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-09-21 — login wall on a PR preview. Lock SQL waits until that app is on main.*
+*Last updated: 2026-09-24 — live lock is applied. More → Copy SQL does not recreate open policies.*

@@ -71,7 +71,7 @@ Do **not** use Private / Incognito. Do **not** clear Safari or Chrome website da
 1. On the iPad, tap **Export JSON**. Safari saves a file like `Parts_room_2026-08-14.json` (Files → Downloads, or the share sheet).
 2. Get that file to wherever you import from (AirDrop to Mac, iCloud Drive, email to yourself).
 3. Open the **live inventory app**: https://kg3924.github.io/parts-inventory/
-4. Select **your name** in the header (required).
+4. Sign in (five shop accounts). There is no name dropdown.
 5. **More → Import JSON** → pick the exported file.
 6. Confirm the import. The app **creates new part numbers only**.
 

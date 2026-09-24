@@ -129,16 +129,16 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Sign-in
 - Unsigned visitors see a login wall. The app does not load inventory, quotes, packing lists, or invoices until unlock.
-- Accounts (no public signup): `glynn@inmarsystems.com`, `ricky@inmarsystems.com`, `grant@inmarsystems.com`, `toby@inmarsystems.com`, `kyle.grantham.kg@gmail.com`. Full names land on `profiles` after the lock SQL.
+- Five accounts, no public signup: `glynn@inmarsystems.com`, `ricky@inmarsystems.com`, `grant@inmarsystems.com`, `toby@inmarsystems.com`, `kyle.grantham.kg@gmail.com`. Stamps and Prepared By use that signed-in full name. There is no header name dropdown.
 - First open on a phone: pick the name, type the password, let the phone **save the password**. Next open, Face ID / Touch ID / fingerprint fills it. That is the biometric unlock. There is no in-app fake Face ID button.
 - Session lasts **12 hours** on that phone (`inmar_shift_expires_at`). Five phones can be signed in as five people at once.
 - **Sign out** is in the header. `count.html` uses the same gate and still does not write Supabase.
 - **More → Passwords** lets a signed-in person set a new password for any of the five. The admin key stays on Supabase (edge function `set-staff-password`), not in the page. That person unlocks once on their phone and saves the new password.
 - Passkeys were not turned on: Supabase passkeys are experimental and the relying-party id is one domain. Preview and live Pages are different addresses, so a passkey enrolled on preview would not be the live one anyway.
 
-### Database lock (not applied yet)
-- `schema/auth_lock_after_merge.sql` drops the open policies and allows only `authenticated`.
-- **Do not run it until this login app is on `main`.** The live site is still the old page until merge.
+### Database lock (already applied on live)
+- `schema/auth_lock_after_merge.sql` has been run. Unsigned (anon) cannot read or change stock. Signed-in shop accounts can.
+- Do not paste “allow all” or anon policies. More → Copy SQL does not create them.
 
 ### Home
 - Search includes barcode
@@ -266,7 +266,7 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 
 - Light theme; source + category chips; easy delete
 - Scan: lookup → review → commit (no silent stock change)
-- Employee name required each session for future audit reports
+- Audit stamps come from the signed-in person, not a name dropdown
 - Labels must scan on QL-710W + **DK-1201** (1.1″ × 3.5″). **DK-11240 does not fit** the QL-710W
 - Prefer not reprinting labels when only name/PN text changes
 - Shelf tags: letter paper, 8/sheet, laminate as needed
@@ -291,13 +291,9 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ---
 
-## Login cutover (do not skip the order)
+## Login and lock (live)
 
-1. QA on the phone preview `https://kg3924.github.io/parts-inventory-preview/` — login wall, saved-password unlock, scan → new/used → Commit → label still scans. **Pass before merge.**
-2. Merge to `main`. Live Pages becomes the login app. The old open database rules are still in place during this step, so do not treat preview as a test of the lock.
-3. Run `schema/auth_lock_after_merge.sql` in Supabase. Confirm dashboard signup is off.
-4. On each phone, open the **live** URL and save the login again. Preview and live are different addresses.
-5. Smoke the live URL: unlock → scan → new or used → Commit → printed label still scans.
+The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applied. Do not leave or restore open policies. Smoke after any later merge: unlock → scan → new or used → Commit → printed label still scans.
 
 ## Possible next work
 
@@ -305,7 +301,6 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 - Review existing Alu rows: list should be **NOK**, not USD, before applying NOK rates
 - Sales orders from accepted quotes
 - Email / multi-page terms
-- Real auth / tighter RLS
 - `config.js` + gitignore for secrets
 - Optional helper scripts: export-from-supabase, sheet-to-json, db-vs-sheet diff
 
@@ -318,7 +313,7 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 | `index.html` | Entire app |
 | `public-config.js` | Public Supabase URL + anon key only |
 | `shop-auth.js` | Shared login wall for the app and count tool |
-| `schema/auth_lock_after_merge.sql` | Run only after the login app is on main |
+| `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
 | `inmar-logo.jpg` | Quote / packing list / invoice logo |
 | `README.md` | Setup docs |
 | `CONTEXT.md` | This file — read first in a new session |
@@ -347,4 +342,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-09-21 — sign-in wall (not merged). Database lock SQL is written and must wait until main has the login app.*
+*Last updated: 2026-09-24 — live lock is applied. More → Copy SQL no longer contains open policies.*
