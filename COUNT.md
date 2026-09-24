@@ -1,6 +1,6 @@
 # Physical count tool (phone / iPad)
 
-Fast shelf count for the parts room. It is **not** the live inventory app. When you finish, export JSON and import it in the web app.
+Fast shelf count for the parts room. It is **not** the live inventory app. Opening it requires the same sign-in as the inventory app. It still does not write Supabase. When you finish, export JSON and import it in the web app.
 
 | | |
 |--|--|

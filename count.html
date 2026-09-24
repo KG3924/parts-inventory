@@ -6,6 +6,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#2563eb">
   <title>Physical Count – In-Mar</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="public-config.js"></script>
+  <script src="shop-auth.js"></script>
   <style>
     :root {
       --bg: #f4f6f9;
@@ -70,6 +73,13 @@
       display: flex; gap: 0.45rem;
     }
     .dock button { flex: 1; }
+    #login-wall {
+      max-width: 420px; margin: 2rem auto; background: var(--card);
+      border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
+    }
+    #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.2rem; }
+    body.auth-locked header, body.auth-locked .wrap, body.auth-locked .dock { display: none; }
+    body:not(.auth-locked) #login-wall { display: none; }
     .search-box { position: relative; }
     .hits {
       margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; max-height: 40vh; overflow: auto;
@@ -122,14 +132,31 @@
     }
   </style>
 </head>
-<body>
+<body class="auth-locked">
+  <div id="login-wall">
+    <h1 style="font-size:1.15rem;margin-bottom:0.35rem;">Count tool</h1>
+    <p class="hint">Same sign-in as the inventory app. Unlock once on this phone. This page still does not write stock.</p>
+    <form id="login-form" autocomplete="on">
+      <label for="login-who">Name</label>
+      <select id="login-who"></select>
+      <label for="login-email">Login</label>
+      <input id="login-email" name="username" type="email" autocomplete="username">
+      <label for="login-password">Password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password">
+      <button type="submit" class="primary" id="login-btn" style="width:100%;margin-top:0.4rem;">Unlock</button>
+      <p id="login-error"></p>
+    </form>
+  </div>
   <header>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
       <div>
         <h1>Physical count</h1>
         <div class="sub" id="count-sub">New count — draft auto-saves</div>
       </div>
-      <button class="secondary" type="button" onclick="renameCount()" style="padding:0.45rem 0.65rem;font-size:0.8rem;">Rename</button>
+      <div style="display:flex;gap:0.35rem;">
+        <button class="secondary" type="button" id="count-sign-out" style="padding:0.45rem 0.65rem;font-size:0.8rem;">Sign out</button>
+        <button class="secondary" type="button" onclick="renameCount()" style="padding:0.45rem 0.65rem;font-size:0.8rem;">Rename</button>
+      </div>
     </div>
   </header>
 
@@ -1100,6 +1127,20 @@
     });
 
     (async function init() {
+      if (!window.InmarAuth) return;
+      const ok = await InmarAuth.restore();
+      if (!ok) {
+        InmarAuth.bindLoginForm(() => { location.reload(); });
+        return;
+      }
+      document.body.classList.remove('auth-locked');
+      const sub = document.querySelector('header .sub');
+      if (sub) sub.textContent = InmarAuth.currentName() + ' · draft stays on this phone';
+      const out = document.getElementById('count-sign-out');
+      if (out) out.addEventListener('click', async () => {
+        await InmarAuth.signOut();
+        location.reload();
+      });
       try {
         if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
       } catch (e) {}

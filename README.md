@@ -21,7 +21,19 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **More** | Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; clear all |
 | **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
-**Users (required before changes):** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — select in the header each session (not remembered after close). Stamps `updated_by` on inventory changes and defaults **Prepared By** on quotes.
+**Sign-in:** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, and Ricky Whitfield each have their own login. Unlock once on that phone for a 12-hour shift. The phone’s saved password (Face ID, Touch ID, or fingerprint) fills the next unlock. There is no name dropdown. Prepared By and the adjustment log use only the signed-in person. **Sign out** is in the header.
+
+The public anon key is in `public-config.js`. Never commit a service-role key.
+
+### Safe cutover (preview first, lock SQL last)
+
+1. QA the phone preview (link is on the pull request). Do not merge until that passes.
+2. Merge to `main`. Live Pages then shows the login wall.
+3. **Then** run `schema/auth_lock_after_merge.sql` in Supabase, and turn off “Allow new users to sign up” under Authentication if it is still on.
+4. Save the login again on the live Pages address. The preview address is a different site.
+5. Smoke: unlock → scan → new or used → Commit → the printed label still scans.
+
+Running the lock SQL before the merge locks the current live app out of stock.
 
 **Theme:** Light (white background)
 
@@ -156,7 +168,7 @@ Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart 
 
 ## Physical count (phone)
 
-Use **`count.html`** in the parts room (iPhone / iPad). Draft stays on the device. **Export JSON** → this app **More → Import JSON**.
+Use **`count.html`** in the parts room (iPhone / iPad). It asks for the same sign-in and still does not write stock. Draft stays on the device. **Export JSON** → this app **More → Import JSON**.
 
 - Names: `Generic, specific…` (enforced). Part #s: no spaces, max 40.
 - Catalog lookup: `count-seed.json` (Wynn 2026 prices + consolidated names). Old qtys are not imported.
@@ -166,4 +178,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-09-01 — docs match live app: used vs new, FX buy via frankfurter.dev, LIFO/FIFO, Phase 3 SQL applied*
+*Last updated: 2026-09-21 — login wall on a PR preview. Lock SQL waits until that app is on main.*

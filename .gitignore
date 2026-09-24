@@ -1,0 +1,6 @@
+.env
+.env.*
+*.service-role*
+*service-role*
+service-role*
+.DS_Store
