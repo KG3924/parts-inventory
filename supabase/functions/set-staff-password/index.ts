@@ -38,7 +38,10 @@ Deno.serve(async (req) => {
   });
   const { data: userData, error: userErr } = await userClient.auth.getUser();
   const caller = (userData?.user?.email || "").toLowerCase();
-  if (userErr || !STAFF.includes(caller)) return json({ error: "Not allowed" }, 403);
+  if (userErr || !userData?.user) {
+    return json({ error: "Sign out and unlock again, then set the password." }, 401);
+  }
+  if (!STAFF.includes(caller)) return json({ error: "Not allowed" }, 403);
 
   let body: { email?: string; password?: string };
   try {
@@ -54,21 +57,10 @@ Deno.serve(async (req) => {
   const admin = createClient(url, service, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  let targetId = "";
-  for (let page = 1; page <= 5 && !targetId; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) return json({ error: "Could not look up that person" }, 500);
-    const hit = (data?.users || []).find((u) => (u.email || "").toLowerCase() === email);
-    if (hit) targetId = hit.id;
-    if (!data?.users?.length) break;
-  }
-  if (!targetId) return json({ error: "That login does not exist yet" }, 404);
-
-  const { error: updErr } = await admin.auth.admin.updateUserById(targetId, { password });
+  const { error: updErr } = await admin.rpc("set_staff_password", {
+    target_email: email,
+    new_password: password,
+  });
   if (updErr) return json({ error: updErr.message || "Could not set password" }, 400);
-
-  if (targetId !== userData.user?.id) {
-    await admin.auth.admin.signOut(targetId, "global");
-  }
-  return json({ ok: true });
+  return json({ ok: true, self: caller === email });
 });

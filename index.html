@@ -767,7 +767,7 @@
     <div id="data" class="panel">
       <div class="card">
         <h2>Passwords</h2>
-        <p class="hint">Sets a new password for that person. They save it again on their phone.</p>
+        <p class="hint">At least 8 characters. They save it again on their phone.</p>
         <label for="pw-who">Person</label>
         <select id="pw-who"></select>
         <label for="pw-new">New password</label>
@@ -4696,9 +4696,13 @@ ${bodyHtml}
       }
       const mine = InmarAuth.STAFF.find(p => p.email === email);
       const self = mine && mine.name === currentUser();
-      const msg = self
-        ? 'Password saved. Sign out and unlock again with the new one.'
-        : 'Password saved. They unlock once on their phone and save it.';
+      let msg = 'Password saved. They unlock once on their phone and save it.';
+      if (self) {
+        const again = await InmarAuth.signIn(email, a);
+        msg = again.error
+          ? 'Password saved. Sign out and unlock with the new password, then set the others.'
+          : 'Password saved. You are still signed in.';
+      }
       if (status) status.textContent = msg;
       showStatus(msg, 'success');
     }
