@@ -14,15 +14,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Refuse secret keys in public files
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and build for the preview path
         run: |
-          if grep -RInE 'sb_secret_|SUPABASE_SERVICE_ROLE_KEY|service_role["'\'']?\s*[:=]' \
-            --include='*.html' --include='*.js' --include='*.md' --include='*.yml' .; then
+          npm ci
+          npm run build -- --base /parts-inventory-preview/
+
+      - name: Refuse secret keys in the published site
+        run: |
+          if grep -RInE 'sb_secret_|SUPABASE_SERVICE_ROLE_KEY|service_role["'\'']?\s*[:=]' dist; then
             echo "A secret key is in a file GitHub Pages would serve."
             exit 1
           fi
 
-      - name: Publish the same files to the stable preview site
+      - name: Publish the built site to the stable preview URL
         env:
           PREVIEW_DEPLOY_TOKEN: ${{ secrets.PREVIEW_DEPLOY_TOKEN }}
         run: |
@@ -32,8 +41,16 @@ jobs:
           fi
           git config user.email "preview@users.noreply.github.com"
           git config user.name "In-Mar preview"
-          git remote add preview "https://github.com/KG3924/parts-inventory-preview.git"
-          git -c http.extraheader="AUTHORIZATION: bearer ${PREVIEW_DEPLOY_TOKEN}" push preview "HEAD:main" --force
+          rm -rf /tmp/inmar-preview
+          mkdir -p /tmp/inmar-preview
+          cp -R dist/. /tmp/inmar-preview/
+          cd /tmp/inmar-preview
+          git init -b main
+          git config user.email "preview@users.noreply.github.com"
+          git config user.name "In-Mar preview"
+          git add -A
+          git commit -m "preview build"
+          git -c http.extraheader="AUTHORIZATION: bearer ${PREVIEW_DEPLOY_TOKEN}" push --force "https://github.com/KG3924/parts-inventory-preview.git" main
 
       - name: Comment the stable phone preview link
         uses: actions/github-script@v7

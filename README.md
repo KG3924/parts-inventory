@@ -2,6 +2,15 @@
 
 **Live app:** [https://kg3924.github.io/parts-inventory/](https://kg3924.github.io/parts-inventory/)
 
+### Run locally
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:5173/parts-inventory/ (the dev server uses the same `/parts-inventory/` base as the live site). `npm run build` writes `dist/`. GitHub Pages deploys that build, not the raw repo. After this is on `main`, the repo setting **Settings → Pages → Source** must be **GitHub Actions**, not “Deploy from a branch.” Count tool: http://localhost:5173/parts-inventory/count.html
+
 Phone-friendly inventory tracker for **In-Mar Systems** with live remote access, barcode scanning, labels, quotes, and basic reports.
 
 **Labels use QR codes** that deep-link into the app (`?part=` + stable label ID). The printed part number is human-readable text; the QR stays valid when name/part # change.
@@ -37,10 +46,12 @@ The public anon key is in `public-config.js`. Never commit a service-role key.
 
 | File | Purpose |
 |------|---------|
-| `index.html` | The app (includes Supabase URL + anon key) |
-| `inmar-logo.jpg` | Logo used on quotes / packing lists / invoices |
-| `count.html` | Physical count tool |
-| `count-seed.json` | Catalog lookup for the count tool |
+| `index.html` | The app (Vite entry; built into `dist/`) |
+| `public/public-config.js` | Public Supabase URL + anon key (copied into `dist/`) |
+| `public/shop-auth.js` | Sign-in wall (copied into `dist/`) |
+| `public/inmar-logo.jpg` | Logo used on quotes / packing lists / invoices |
+| `public/count.html` | Physical count tool |
+| `public/count-seed.json` | Catalog lookup for the count tool |
 
 ---
 
