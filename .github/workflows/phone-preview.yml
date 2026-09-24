@@ -1,0 +1,64 @@
+name: Phone preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse secret keys in public files
+        run: |
+          if grep -RInE 'sb_secret_|SUPABASE_SERVICE_ROLE_KEY|service_role["'\'']?\s*[:=]' \
+            --include='*.html' --include='*.js' --include='*.md' --include='*.yml' .; then
+            echo "A secret key is in a file GitHub Pages would serve."
+            exit 1
+          fi
+
+      - name: Comment the stable phone preview link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = 'https://kg3924.github.io/parts-inventory-preview/';
+            const marker = '<!-- inmar-phone-preview -->';
+            const body = [
+              marker,
+              'Phone preview (this is **not** the live shop on main):',
+              '',
+              url,
+              '',
+              'After a new commit, hard-refresh that page (pull down in Safari, or empty cache in Chrome). The address stays the same so a saved login / Face ID prompt can stick while you test.',
+              '',
+              'Saved logins are tied to that exact address. After this PR is merged, unlock once more on https://kg3924.github.io/parts-inventory/ — do not expect the preview password prompt to appear on the live URL.',
+              '',
+              'Do **not** run `schema/auth_lock_after_merge.sql` until this PR is on main. Running it earlier locks the live no-login app out of stock.'
+            ].join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const mine = comments.find((c) => (c.body || '').includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: mine.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }

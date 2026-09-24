@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Parts Inventory – Remote</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="public-config.js"></script>
+  <script src="shop-auth.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -243,6 +245,16 @@
       color: var(--text); padding: 0.55rem 0.7rem; border-radius: 8px; cursor: pointer;
     }
     .scan-match-row:hover { border-color: var(--accent); background: #eff6ff; }
+    #login-wall {
+      max-width: 420px; margin: 2.5rem auto; background: var(--card);
+      border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem;
+    }
+    #login-wall h1 { font-size: 1.25rem; margin-bottom: 0.35rem; }
+    #login-wall p { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.2rem; }
+    body.auth-locked #app-shell { display: none; }
+    body:not(.auth-locked) #login-wall { display: none; }
+    .user-bar button.secondary { width: auto; margin: 0; padding: 0.35rem 0.6rem; font-size: 0.8rem; }
     .scan-match-row .mn { font-weight: 600; display: block; }
     .scan-match-row .mp { font-size: 0.8rem; color: var(--muted); }
     @media (max-width: 520px) {
@@ -252,29 +264,35 @@
     /* Labels print in a dedicated popup window (avoids blank DK-1201 feeds from hidden page content). */
   </style>
 </head>
-<body>
-  <div class="container">
+<body class="auth-locked">
+  <div id="login-wall">
+    <h1>In-Mar parts</h1>
+    <p>Unlock once for this shift. Your phone can fill the saved login with Face ID, Touch ID, or fingerprint. Scanning does not ask again.</p>
+    <form id="login-form" autocomplete="on">
+      <label for="login-who">Name</label>
+      <select id="login-who"></select>
+      <label for="login-email">Login</label>
+      <input id="login-email" name="username" type="email" autocomplete="username">
+      <label for="login-password">Password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go">
+      <button type="submit" id="login-btn">Unlock</button>
+      <p id="login-error"></p>
+      <p class="hint">First time on this phone: unlock once and let the phone save the password. Next open, the phone unlocks it. A shared tablet uses the same password once per shift. Sign-in lasts 12 hours.</p>
+    </form>
+  </div>
+  <div class="container" id="app-shell">
     <header>
       <h1>📦 Parts Inventory</h1>
       <div class="user-bar">
-        <span style="color:var(--muted)">User:</span>
-        <select id="current-user" onchange="saveUser()" required title="Required before making inventory changes">
-          <option value="">— Select —</option>
-          <option value="Glynn Grantham">Glynn Grantham</option>
-          <option value="Kyle Grantham">Kyle Grantham</option>
-          <option value="Toby Whitfield">Toby Whitfield</option>
-          <option value="Grant Adams">Grant Adams</option>
-          <option value="Ricky Whitfield">Ricky Whitfield</option>
-        </select>
+        <span id="signed-in-name"></span>
+        <button type="button" class="secondary" id="sign-out-btn">Sign out</button>
       </div>
     </header>
 
     <div id="config-banner" class="config-banner" style="display:none;">
       <strong>Setup required:</strong> Paste your Supabase Project URL and anon key near the top of the script section.
     </div>
-    <div id="user-required-banner" class="user-required-banner">
-      <strong>Select your name</strong> before changing stock or saving quotes.
-    </div>
+    <div id="user-required-banner" class="user-required-banner" style="display:none;"></div>
 
     <div id="status" class="status"></div>
 
@@ -637,7 +655,7 @@
           </div>
           <div>
             <label>Prepared By</label>
-            <input type="text" id="quote-by" value="" placeholder="Defaults to logged-in user">
+            <input type="text" id="quote-by" value="" readonly placeholder="Signed-in person">
           </div>
         </div>
         <label style="display:flex;align-items:center;gap:0.45rem;margin-bottom:0.7rem;font-size:0.85rem;color:var(--muted);">
@@ -799,7 +817,7 @@
         <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Database setup (run once in Supabase SQL Editor)</h2>
-        <p class="hint">Safe to re-run. Does not delete inventory.</p>
+        <p class="hint">Column setup only. Do not re-run old open policies. The lock script runs after this login app is on main.</p>
         <pre id="category-sql" style="font-size:0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;max-height:240px;">-- Inventory extras
 alter table inventory add column if not exists category text;
 alter table inventory add column if not exists barcode text;
@@ -903,18 +921,14 @@ alter table packing_lists enable row level security;
 alter table packing_list_lines enable row level security;
 alter table invoices enable row level security;
 alter table invoice_lines enable row level security;
-do $$ begin create policy "Allow all app_settings" on app_settings for all using (true) with check (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "Allow all app_lookups" on app_lookups for all using (true) with check (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "Allow all packing_lists" on packing_lists for all using (true) with check (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "Allow all packing_list_lines" on packing_list_lines for all using (true) with check (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "Allow all invoices" on invoices for all using (true) with check (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "Allow all invoice_lines" on invoice_lines for all using (true) with check (true); exception when duplicate_object then null; end $$;
-grant select, insert, update, delete on table app_settings to anon, authenticated, service_role;
-grant select, insert, update, delete on table app_lookups to anon, authenticated, service_role;
-grant select, insert, update, delete on table packing_lists to anon, authenticated, service_role;
-grant select, insert, update, delete on table packing_list_lines to anon, authenticated, service_role;
-grant select, insert, update, delete on table invoices to anon, authenticated, service_role;
-grant select, insert, update, delete on table invoice_lines to anon, authenticated, service_role;
+-- Open "allow all" policies are retired. Do not paste them back.
+-- After the login app is on main, run schema/auth_lock_after_merge.sql once.
+grant select, insert, update, delete on table app_settings to authenticated;
+grant select, insert, update, delete on table app_lookups to authenticated;
+grant select, insert, update, delete on table packing_lists to authenticated;
+grant select, insert, update, delete on table packing_list_lines to authenticated;
+grant select, insert, update, delete on table invoices to authenticated;
+grant select, insert, update, delete on table invoice_lines to authenticated;
 notify pgrst, 'reload schema';
 
 -- Phase 3: used qty, price history, LIFO/FIFO layers
@@ -935,8 +949,8 @@ alter table inventory_price_history enable row level security;
 alter table inventory_cost_layers enable row level security;
 do $$ begin create policy "Allow all inventory_price_history" on inventory_price_history for all using (true) with check (true); exception when duplicate_object then null; end $$;
 do $$ begin create policy "Allow all inventory_cost_layers" on inventory_cost_layers for all using (true) with check (true); exception when duplicate_object then null; end $$;
-grant select, insert, update, delete on table inventory_price_history to anon, authenticated, service_role;
-grant select, insert, update, delete on table inventory_cost_layers to anon, authenticated, service_role;
+grant select, insert, update, delete on table inventory_price_history to authenticated;
+grant select, insert, update, delete on table inventory_cost_layers to authenticated;
 notify pgrst, 'reload schema';</pre>
         <button class="secondary" onclick="copyCategorySql()" style="margin-top:0.4rem;">Copy SQL</button>
         <div class="danger-zone">
@@ -959,8 +973,8 @@ notify pgrst, 'reload schema';</pre>
   </div>
 
   <script>
-    const SUPABASE_URL = 'https://tlxioipgywozonrgjvvs.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_UIhXT6BJLiMU_-eV13RRyA_T5b89806';
+    const SUPABASE_URL = window.INMAR_PUBLIC.url;
+    const SUPABASE_ANON_KEY = window.INMAR_PUBLIC.anonKey;
 
     const isConfigured = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
     let supabaseClient = null;
@@ -988,7 +1002,7 @@ notify pgrst, 'reload schema';</pre>
     let quotesListCache = [];
     let quoteStatusFilter = 'all';
     let editingQuoteId = null;
-    let sessionUser = ''; // in-memory only — cleared when tab/browser closes
+    let sessionUser = ''; // signed-in full name only; not a pick-list
 
     /** Suggested categories from consolidated spreadsheet (also grows from live data). */
     const DEFAULT_CATEGORIES = [
@@ -1002,8 +1016,8 @@ notify pgrst, 'reload schema';</pre>
       'Alu Design', 'FFS', 'In-Mar', 'Skum', 'Triplex', 'Versa', 'Wynn', 'Amazon', 'Uline'
     ];
 
-    if (isConfigured) {
-      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    if (isConfigured && window.InmarAuth) {
+      supabaseClient = window.InmarAuth.client;
     } else {
       document.getElementById('config-banner').style.display = 'block';
     }
@@ -1373,46 +1387,20 @@ notify pgrst, 'reload schema';</pre>
     function getGbpSellFactor() {
       return storedFactor('GBP') || DEFAULT_GBP_SELL_FACTOR;
     }
-    function currentUser() { return sessionUser || ''; }
-    function saveUser() {
-      // Do not persist to localStorage — force re-select each browser session
-      try { localStorage.removeItem('inv_user'); } catch (e) {}
-      sessionUser = document.getElementById('current-user').value || '';
-      updateUserUI();
+    function currentUser() { return (window.InmarAuth && InmarAuth.currentName()) || sessionUser || ''; }
+    function updateUserUI() {
+      sessionUser = currentUser();
+      const nameEl = document.getElementById('signed-in-name');
+      if (nameEl) nameEl.textContent = sessionUser ? sessionUser : '';
       const by = document.getElementById('quote-by');
       if (by && sessionUser) by.value = sessionUser;
     }
-    function updateUserUI() {
-      const sel = document.getElementById('current-user');
-      const banner = document.getElementById('user-required-banner');
-      const hasUser = !!currentUser();
-      if (sel) {
-        // Keep select in sync with session (always start as — Select — on first load)
-        if (sel.value !== sessionUser) sel.value = sessionUser;
-        sel.classList.toggle('user-missing', !hasUser);
-      }
-      if (banner) banner.classList.toggle('show', !hasUser);
-    }
-    /** Block inventory writes unless a user is selected. */
     function requireUser(actionLabel) {
       if (currentUser()) return true;
-      updateUserUI();
-      showStatus(`Select your name before ${actionLabel || 'making changes'}`, 'error');
-      const sel = document.getElementById('current-user');
-      if (sel) {
-        sel.focus();
-        sel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
+      showStatus(`Sign in before ${actionLabel || 'making changes'}`, 'error');
       return false;
     }
-    // Clear any legacy persisted user so Kyle (etc.) is not auto-selected
-    (function() {
-      try { localStorage.removeItem('inv_user'); } catch (e) {}
-      sessionUser = '';
-      const sel = document.getElementById('current-user');
-      if (sel) sel.value = '';
-      updateUserUI();
-    })();
+    try { localStorage.removeItem('inv_user'); } catch (e) {}
 
     /**
      * Stable short ID stored in inventory.barcode — never changes when name/part # is edited.
@@ -4624,7 +4612,6 @@ ${bodyHtml}
         if (el) el.addEventListener('input', updateInvoicePreview);
       });
       renderQuotePanel();
-      refreshQuoteLookups();
     })();
 
     // Refresh quote panel when switching to Quote tab
@@ -4638,15 +4625,25 @@ ${bodyHtml}
     });
 
     bindCombos();
-    if (isConfigured) {
+    async function enterShop() {
+      document.body.classList.remove('auth-locked');
+      updateUserUI();
+      if (!isConfigured) return;
       syncPricingUi();
-      loadGlobalFactorInputs();
-      loadInventory()
-        .then(() => subscribeRealtime())
-        .then(() => handleDeepLinkPart());
-    } else {
-      // Still try deep link message if offline/unconfigured
-      handleDeepLinkPart();
+      await loadGlobalFactorInputs();
+      await refreshQuoteLookups();
+      await loadInventory();
+      subscribeRealtime();
+      await handleDeepLinkPart();
+    }
+    const signOutBtn = document.getElementById('sign-out-btn');
+    if (signOutBtn) signOutBtn.addEventListener('click', async () => {
+      if (window.InmarAuth) await InmarAuth.signOut();
+      location.reload();
+    });
+    if (window.InmarAuth) {
+      InmarAuth.bindLoginForm(() => { enterShop(); });
+      InmarAuth.restore().then((ok) => { if (ok) enterShop(); });
     }
   </script>
 </body>

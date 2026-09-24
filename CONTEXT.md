@@ -23,13 +23,13 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 
 ## Critical rules for agents
 
-1. **Never overwrite or reset** `SUPABASE_URL` or `SUPABASE_ANON_KEY` in `index.html`.
+1. **Never put a service-role or `sb_secret_` key in the repo.** The public anon key lives only in `public-config.js`. Do not paste the database password into HTML.
 2. Prefer editing the existing file in place over rewriting the whole app.
 3. Part numbers must **not** contain spaces. Display part # as human text; **labels encode stable `barcode`**, not part #.
 4. Placeholders for missing part numbers: include `PLACEHOLDER` in the part number (e.g. `WYNN-PLACEHOLDER-008`).
 5. After meaningful feature changes, update this file + `README.md`. **Push only when the user asks.**
 6. **Do not alter** original supplier spreadsheets under `inmarinventory/`.
-7. **User required before mutations.** User selection is **session-only** (in-memory `sessionUser`); **do not** restore from `localStorage` (legacy `inv_user` is cleared on load so the UI always starts at “— Select —”).
+7. **Sign-in is the only identity.** There is no header name dropdown. `currentUser()` / quote Prepared By / adjustment `changed_by` are the signed-in person’s full name. Do not restore `localStorage.inv_user`. A shift lasts 12 hours on that phone only.
 8. **Keep on-screen hints to one short line.** Explain the field; do not fill the screen with tooltips. Printed quote / packing list / invoice legal lines stay short too.
 9. **Do not show the stable label ID (barcode)** on Home, Scan, or Add/Edit. It is internal to QR labels only.
 
@@ -44,8 +44,8 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 | Labels | QR (`qrcode` CDN) deep-link `?part=` stable `barcode` ID; human part # printed beside QR |
 | Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate; deep-link `?part=` |
 | Hosting | GitHub Pages from `main` |
-| Auth | None; open RLS for trusted internal use |
-| Users | Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — must select each session |
+| Auth | Email + password for five accounts. Browser saved-password / Face ID fills the next unlock. Public signup off. Anon key stays in `public-config.js`. Service key never in the repo. |
+| Users | Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — each has their own login |
 
 ---
 
@@ -127,11 +127,17 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ## Features (current)
 
-### User selection
-- Header dropdown always defaults to **— Select —** on open
-- Full names: Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield
-- Not persisted across browser restarts (clears `localStorage.inv_user`)
-- Banner + red outline when empty; blocks qty/save/delete/scan commit/import/clear
+### Sign-in
+- Unsigned visitors see a login wall. The app does not load inventory, quotes, packing lists, or invoices until unlock.
+- Accounts (no public signup): `glynn.grantham@inmarsystems.com`, `kyle.grantham@inmarsystems.com`, `toby.whitfield@inmarsystems.com`, `grant.adams@inmarsystems.com`, `ricky.whitfield@inmarsystems.com` — full names on `profiles` after the lock SQL.
+- First open on a phone: pick the name, type the password, let the phone **save the password**. Next open, Face ID / Touch ID / fingerprint fills it. That is the biometric unlock. There is no in-app fake Face ID button.
+- Session lasts **12 hours** on that phone (`inmar_shift_expires_at`). Five phones can be signed in as five people at once.
+- **Sign out** is in the header. `count.html` uses the same gate and still does not write Supabase.
+- Passkeys were not turned on: Supabase passkeys are experimental and the relying-party id is one domain. Preview and live Pages are different addresses, so a passkey enrolled on preview would not be the live one anyway.
+
+### Database lock (not applied yet)
+- `schema/auth_lock_after_merge.sql` drops the open policies and allows only `authenticated`.
+- **Do not run it until this login app is on `main`.** The live site is still the old page until merge.
 
 ### Home
 - Search includes barcode
@@ -284,6 +290,14 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ---
 
+## Login cutover (do not skip the order)
+
+1. QA on the phone preview `https://kg3924.github.io/parts-inventory-preview/` — login wall, saved-password unlock, scan → new/used → Commit → label still scans. **Pass before merge.**
+2. Merge to `main`. Live Pages becomes the login app. The old open database rules are still in place during this step, so do not treat preview as a test of the lock.
+3. Run `schema/auth_lock_after_merge.sql` in Supabase. Confirm dashboard signup is off.
+4. On each phone, open the **live** URL and save the login again. Preview and live are different addresses.
+5. Smoke the live URL: unlock → scan → new or used → Commit → printed label still scans.
+
 ## Possible next work
 
 - Enter FFS sell factor when known; fetch or type FX rates, then Apply buy $
@@ -301,6 +315,9 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 | File | Role |
 |------|------|
 | `index.html` | Entire app |
+| `public-config.js` | Public Supabase URL + anon key only |
+| `shop-auth.js` | Shared login wall for the app and count tool |
+| `schema/auth_lock_after_merge.sql` | Run only after the login app is on main |
 | `inmar-logo.jpg` | Quote / packing list / invoice logo |
 | `README.md` | Setup docs |
 | `CONTEXT.md` | This file — read first in a new session |
@@ -329,4 +346,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-09-01 — docs match production: Phase 3 SQL applied; FX fetch uses frankfurter.dev (CORS); used vs new, LIFO/FIFO, short hints.*
+*Last updated: 2026-09-21 — sign-in wall (not merged). Database lock SQL is written and must wait until main has the login app.*
