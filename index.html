@@ -847,8 +847,10 @@
         <p class="hint" id="schema-status" style="margin-top:0.35rem;"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2 style="font-size:0.95rem;">Database setup (run once in Supabase SQL Editor)</h2>
-        <p class="hint">Column setup only. Do not re-run old open policies. The lock script runs after this login app is on main.</p>
-        <pre id="category-sql" style="font-size:0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;max-height:240px;">-- Inventory extras
+        <p class="hint">Columns and tables only. Shop access is signed-in users. Do not add open policies.</p>
+        <pre id="category-sql" style="font-size:0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem;overflow:auto;white-space:pre-wrap;max-height:240px;">-- Do not add "allow all" or anon policies. Shop access is signed-in only.
+-- The lock already lives in schema/auth_lock_after_merge.sql (already applied on live).
+-- Inventory extras
 alter table inventory add column if not exists category text;
 alter table inventory add column if not exists barcode text;
 alter table inventory add column if not exists exclude_from_valuation boolean default false;
@@ -899,12 +901,11 @@ alter table customers enable row level security;
 alter table quotes enable row level security;
 alter table quote_lines enable row level security;
 alter table document_counters enable row level security;
--- create policies once (ignore errors if they already exist):
--- create policy "Allow all customers" on customers for all using (true) with check (true);
--- create policy "Allow all quotes" on quotes for all using (true) with check (true);
--- create policy "Allow all quote_lines" on quote_lines for all using (true) with check (true);
--- create policy "Allow all document_counters" on document_counters for all using (true) with check (true);
--- create policy "Allow all for anon adj" on inventory_adjustments for all using (true) with check (true);
+grant select, insert, update, delete on table customers to authenticated;
+grant select, insert, update, delete on table quotes to authenticated;
+grant select, insert, update, delete on table quote_lines to authenticated;
+grant select, insert, update, delete on table document_counters to authenticated;
+grant select, insert, update, delete on table inventory_adjustments to authenticated;
 
 -- Phase 2 quote extras / packing lists / invoices (additive)
 alter table quotes add column if not exists project text;
@@ -951,8 +952,6 @@ alter table packing_lists enable row level security;
 alter table packing_list_lines enable row level security;
 alter table invoices enable row level security;
 alter table invoice_lines enable row level security;
--- Open "allow all" policies are retired. Do not paste them back.
--- After the login app is on main, run schema/auth_lock_after_merge.sql once.
 grant select, insert, update, delete on table app_settings to authenticated;
 grant select, insert, update, delete on table app_lookups to authenticated;
 grant select, insert, update, delete on table packing_lists to authenticated;
@@ -977,8 +976,6 @@ create table if not exists inventory_cost_layers (
 create index if not exists inventory_cost_layers_inv_idx on inventory_cost_layers (inventory_id, condition, acquired_at);
 alter table inventory_price_history enable row level security;
 alter table inventory_cost_layers enable row level security;
-do $$ begin create policy "Allow all inventory_price_history" on inventory_price_history for all using (true) with check (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "Allow all inventory_cost_layers" on inventory_cost_layers for all using (true) with check (true); exception when duplicate_object then null; end $$;
 grant select, insert, update, delete on table inventory_price_history to authenticated;
 grant select, insert, update, delete on table inventory_cost_layers to authenticated;
 notify pgrst, 'reload schema';</pre>
