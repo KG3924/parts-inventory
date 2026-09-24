@@ -106,7 +106,7 @@
   function fillStaffSelect(sel) {
     if (!sel || sel.dataset.filled) return;
     sel.dataset.filled = '1';
-    sel.innerHTML = STAFF.map(function (p) {
+    sel.innerHTML = '<option value="">— Select —</option>' + STAFF.map(function (p) {
       return '<option value="' + p.email + '">' + p.name + '</option>';
     }).join('');
   }
@@ -129,6 +129,10 @@
     async function go() {
       if (busy) return;
       syncEmail();
+      if (!who || !who.value) {
+        if (err) err.textContent = 'Select your name.';
+        return;
+      }
       if (!pw.value) {
         pw.focus();
         return;
@@ -171,4 +175,15 @@
     fillStaffSelect: fillStaffSelect,
     SHIFT_MS: SHIFT_MS
   };
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('.pw-toggle') : null;
+    if (!btn) return;
+    e.preventDefault();
+    var input = document.getElementById(btn.getAttribute('data-for'));
+    if (!input) return;
+    var show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'Hide' : 'Show';
+  });
 })();

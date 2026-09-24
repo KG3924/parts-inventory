@@ -80,6 +80,13 @@
     #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.2rem; }
     body.auth-locked header, body.auth-locked .wrap, body.auth-locked .dock { display: none; }
     body:not(.auth-locked) #login-wall { display: none; }
+    .pw-field { position: relative; margin-bottom: 0.7rem; }
+    .pw-field input { padding-right: 4.4rem; margin-bottom: 0; }
+    .pw-toggle {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: auto; min-height: 0; margin: 0; padding: 0.3rem 0.5rem;
+      background: transparent; color: var(--accent); font-size: 0.8rem;
+    }
     .search-box { position: relative; }
     .hits {
       margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; max-height: 40vh; overflow: auto;
@@ -142,7 +149,10 @@
       <label for="login-email">Login</label>
       <input id="login-email" name="username" type="email" autocomplete="username">
       <label for="login-password">Password</label>
-      <input id="login-password" name="password" type="password" autocomplete="current-password">
+      <div class="pw-field">
+        <input id="login-password" name="password" type="password" autocomplete="current-password">
+        <button type="button" class="pw-toggle" data-for="login-password">Show</button>
+      </div>
       <button type="submit" class="primary" id="login-btn" style="width:100%;margin-top:0.4rem;">Unlock</button>
       <p id="login-error"></p>
     </form>

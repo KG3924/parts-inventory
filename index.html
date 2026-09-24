@@ -255,6 +255,14 @@
     body.auth-locked #app-shell { display: none; }
     body:not(.auth-locked) #login-wall { display: none; }
     .user-bar button.secondary { width: auto; margin: 0; padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+    .pw-field { position: relative; margin-bottom: 0.7rem; }
+    .pw-field input { padding-right: 4.4rem; margin-bottom: 0; }
+    .pw-toggle {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: auto; min-height: 0; margin: 0; padding: 0.3rem 0.5rem;
+      background: transparent; color: var(--accent); font-size: 0.8rem;
+    }
+    .pw-toggle:hover { background: transparent; }
     .scan-match-row .mn { font-weight: 600; display: block; }
     .scan-match-row .mp { font-size: 0.8rem; color: var(--muted); }
     @media (max-width: 520px) {
@@ -274,7 +282,10 @@
       <label for="login-email">Login</label>
       <input id="login-email" name="username" type="email" autocomplete="username">
       <label for="login-password">Password</label>
-      <input id="login-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go">
+      <div class="pw-field">
+        <input id="login-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go">
+        <button type="button" class="pw-toggle" data-for="login-password">Show</button>
+      </div>
       <button type="submit" id="login-btn">Unlock</button>
       <p id="login-error"></p>
       <p class="hint">First time on this phone: unlock once and let the phone save the password. Next open, the phone unlocks it. A shared tablet uses the same password once per shift. Sign-in lasts 12 hours.</p>
@@ -760,9 +771,15 @@
         <label for="pw-who">Person</label>
         <select id="pw-who"></select>
         <label for="pw-new">New password</label>
-        <input type="password" id="pw-new" autocomplete="new-password" minlength="8">
+        <div class="pw-field">
+          <input type="password" id="pw-new" autocomplete="new-password" minlength="8">
+          <button type="button" class="pw-toggle" data-for="pw-new">Show</button>
+        </div>
         <label for="pw-again">Type it again</label>
-        <input type="password" id="pw-again" autocomplete="new-password" minlength="8">
+        <div class="pw-field">
+          <input type="password" id="pw-again" autocomplete="new-password" minlength="8">
+          <button type="button" class="pw-toggle" data-for="pw-again">Show</button>
+        </div>
         <div class="btn-group">
           <button type="button" onclick="setStaffPassword()">Set password</button>
         </div>
@@ -4643,6 +4660,10 @@ ${bodyHtml}
       const status = document.getElementById('pw-status');
       const email = document.getElementById('pw-who')?.value || '';
       const a = document.getElementById('pw-new')?.value || '';
+      if (!email) {
+        if (status) status.textContent = 'Select a person.';
+        return;
+      }
       const b = document.getElementById('pw-again')?.value || '';
       if (a.length < 8) {
         if (status) status.textContent = 'Use at least 8 characters.';
