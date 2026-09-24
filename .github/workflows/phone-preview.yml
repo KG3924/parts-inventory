@@ -25,11 +25,7 @@ jobs:
           npm run build -- --base /parts-inventory-preview/
 
       - name: Refuse secret keys in the published site
-        run: |
-          if grep -RInE 'sb_secret_|SUPABASE_SERVICE_ROLE_KEY|service_role["'\'']?\s*[:=]' dist; then
-            echo "A secret key is in a file GitHub Pages would serve."
-            exit 1
-          fi
+        run: sh scripts/refuse-shipped-secrets.sh dist
 
       - name: Publish the built site to the stable preview URL
         env:
