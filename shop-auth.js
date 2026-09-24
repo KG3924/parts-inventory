@@ -8,11 +8,11 @@
   var SHIFT_MS = 12 * 60 * 60 * 1000;
   var EXP_KEY = 'inmar_shift_expires_at';
   var STAFF = [
-    { name: 'Glynn Grantham', email: 'glynn.grantham@inmarsystems.com' },
-    { name: 'Kyle Grantham', email: 'kyle.grantham@inmarsystems.com' },
-    { name: 'Toby Whitfield', email: 'toby.whitfield@inmarsystems.com' },
-    { name: 'Grant Adams', email: 'grant.adams@inmarsystems.com' },
-    { name: 'Ricky Whitfield', email: 'ricky.whitfield@inmarsystems.com' }
+    { name: 'Glynn Grantham', email: 'glynn@inmarsystems.com' },
+    { name: 'Kyle Grantham', email: 'kyle.grantham.kg@gmail.com' },
+    { name: 'Toby Whitfield', email: 'toby@inmarsystems.com' },
+    { name: 'Grant Adams', email: 'grant@inmarsystems.com' },
+    { name: 'Ricky Whitfield', email: 'ricky@inmarsystems.com' }
   ];
 
   function assertPublic(cfg) {

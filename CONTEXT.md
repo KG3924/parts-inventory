@@ -129,7 +129,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Sign-in
 - Unsigned visitors see a login wall. The app does not load inventory, quotes, packing lists, or invoices until unlock.
-- Accounts (no public signup): `glynn.grantham@inmarsystems.com`, `kyle.grantham@inmarsystems.com`, `toby.whitfield@inmarsystems.com`, `grant.adams@inmarsystems.com`, `ricky.whitfield@inmarsystems.com` — full names on `profiles` after the lock SQL.
+- Accounts (no public signup): `glynn@inmarsystems.com`, `ricky@inmarsystems.com`, `grant@inmarsystems.com`, `toby@inmarsystems.com`, `kyle.grantham.kg@gmail.com`. Full names land on `profiles` after the lock SQL.
 - First open on a phone: pick the name, type the password, let the phone **save the password**. Next open, Face ID / Touch ID / fingerprint fills it. That is the biometric unlock. There is no in-app fake Face ID button.
 - Session lasts **12 hours** on that phone (`inmar_shift_expires_at`). Five phones can be signed in as five people at once.
 - **Sign out** is in the header. `count.html` uses the same gate and still does not write Supabase.

@@ -29,11 +29,11 @@ insert into public.profiles (id, full_name, email)
 select u.id, v.full_name, v.email
 from auth.users u
 join (values
-  ('glynn.grantham@inmarsystems.com', 'Glynn Grantham'),
-  ('kyle.grantham@inmarsystems.com', 'Kyle Grantham'),
-  ('toby.whitfield@inmarsystems.com', 'Toby Whitfield'),
-  ('grant.adams@inmarsystems.com', 'Grant Adams'),
-  ('ricky.whitfield@inmarsystems.com', 'Ricky Whitfield')
+  ('glynn@inmarsystems.com', 'Glynn Grantham'),
+  ('kyle.grantham.kg@gmail.com', 'Kyle Grantham'),
+  ('toby@inmarsystems.com', 'Toby Whitfield'),
+  ('grant@inmarsystems.com', 'Grant Adams'),
+  ('ricky@inmarsystems.com', 'Ricky Whitfield')
 ) as v(email, full_name) on lower(u.email) = lower(v.email)
 on conflict (id) do update set full_name = excluded.full_name, email = excluded.email;
 
