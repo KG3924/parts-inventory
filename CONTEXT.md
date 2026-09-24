@@ -311,14 +311,14 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | File | Role |
 |------|------|
 | `index.html` | Entire app |
-| `public-config.js` | Public Supabase URL + anon key only |
-| `shop-auth.js` | Shared login wall for the app and count tool |
+| `public/public-config.js` | Public Supabase URL + anon key only (copied into the Pages build) |
+| `public/shop-auth.js` | Shared login wall for the app and count tool |
 | `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
-| `inmar-logo.jpg` | Quote / packing list / invoice logo |
+| `public/inmar-logo.jpg` | Quote / packing list / invoice logo |
 | `README.md` | Setup docs |
 | `CONTEXT.md` | This file — read first in a new session |
-| `count.html` | Mobile physical-count capture (no Supabase writes) |
-| `count-seed.json` | Known-parts lookup for the count tool |
+| `public/count.html` | Mobile physical-count capture (no Supabase writes) |
+| `public/count-seed.json` | Known-parts lookup for the count tool |
 | `COUNT.md` | How to count on phone and import JSON |
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |

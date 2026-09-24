@@ -4,3 +4,5 @@
 *service-role*
 service-role*
 .DS_Store
+node_modules
+dist
