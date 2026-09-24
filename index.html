@@ -755,6 +755,19 @@
     <!-- MORE -->
     <div id="data" class="panel">
       <div class="card">
+        <h2>Passwords</h2>
+        <p class="hint">Sets a new password for that person. They save it again on their phone.</p>
+        <label for="pw-who">Person</label>
+        <select id="pw-who"></select>
+        <label for="pw-new">New password</label>
+        <input type="password" id="pw-new" autocomplete="new-password" minlength="8">
+        <label for="pw-again">Type it again</label>
+        <input type="password" id="pw-again" autocomplete="new-password" minlength="8">
+        <div class="btn-group">
+          <button type="button" onclick="setStaffPassword()">Set password</button>
+        </div>
+        <p class="hint" id="pw-status"></p>
+        <hr style="border-color:var(--border); margin:1.25rem 0;">
         <h2>Backup</h2>
         <div class="btn-group">
           <button onclick="exportData()">Export JSON</button>
@@ -4625,9 +4638,54 @@ ${bodyHtml}
     });
 
     bindCombos();
+    async function setStaffPassword() {
+      if (!requireUser('changing a password')) return;
+      const status = document.getElementById('pw-status');
+      const email = document.getElementById('pw-who')?.value || '';
+      const a = document.getElementById('pw-new')?.value || '';
+      const b = document.getElementById('pw-again')?.value || '';
+      if (a.length < 8) {
+        if (status) status.textContent = 'Use at least 8 characters.';
+        return;
+      }
+      if (a !== b) {
+        if (status) status.textContent = 'The two passwords do not match.';
+        return;
+      }
+      if (status) status.textContent = 'Saving…';
+      const { data, error } = await supabaseClient.functions.invoke('set-staff-password', {
+        body: { email, password: a }
+      });
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-again').value = '';
+      if (error) {
+        let msg = error.message || 'Could not set password.';
+        try {
+          const ctx = await error.context?.json?.();
+          if (ctx && ctx.error) msg = ctx.error;
+        } catch (e) {}
+        if (status) status.textContent = msg;
+        showStatus(msg, 'error');
+        return;
+      }
+      if (data && data.error) {
+        if (status) status.textContent = data.error;
+        showStatus(data.error, 'error');
+        return;
+      }
+      const mine = InmarAuth.STAFF.find(p => p.email === email);
+      const self = mine && mine.name === currentUser();
+      const msg = self
+        ? 'Password saved. Sign out and unlock again with the new one.'
+        : 'Password saved. They unlock once on their phone and save it.';
+      if (status) status.textContent = msg;
+      showStatus(msg, 'success');
+    }
+
     async function enterShop() {
       document.body.classList.remove('auth-locked');
       updateUserUI();
+      if (window.InmarAuth) InmarAuth.fillStaffSelect(document.getElementById('pw-who'));
       if (!isConfigured) return;
       syncPricingUi();
       await loadGlobalFactorInputs();

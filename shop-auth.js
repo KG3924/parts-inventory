@@ -168,6 +168,7 @@
     signIn: signIn,
     signOut: signOut,
     bindLoginForm: bindLoginForm,
+    fillStaffSelect: fillStaffSelect,
     SHIFT_MS: SHIFT_MS
   };
 })();
