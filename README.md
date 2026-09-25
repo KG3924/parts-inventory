@@ -24,7 +24,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **Home** | Live list; search; source + category chips; tiles; **+/−** on new qty; **Adjust** (Scan, New vs Used); Quote / Edit / Del |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
 | **Add / Edit** | Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
-| **Quote** | Cart + saved quotes: **customer vs project**, RFQ #, FOB, payment terms, lead time, 90-day validity, prepared-by = logged-in user; **Print quote**, **Packing list**, **Invoice**; free-text customer with optional save |
+| **Quote** | Cart + saved quotes in `src/quote.js` (same behavior): customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person; print quote, packing list, invoice from the quote. Quotes do not change stock |
 | **Reports** | Valuation (new qty only); adjustment log; **price history**; **LIFO/FIFO ending inventory**; needs-attention |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
 | **More** | Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; clear all |
