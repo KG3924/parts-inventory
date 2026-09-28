@@ -22,7 +22,7 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_type text := lower(btrim(doc_type));
+  v_type text := lower(btrim($1));
   v_year integer := extract(year from (now() at time zone 'America/Chicago'))::integer;
   v_prefix text;
   v_next integer;
@@ -43,14 +43,21 @@ begin
 
   perform pg_advisory_xact_lock(hashtext('inmar-doc:' || v_type || ':' || v_year::text));
 
-  insert into public.document_counters (doc_type, year, last_value)
-  values (v_type, v_year, 0)
-  on conflict (doc_type, year) do nothing;
+  -- Column names stay inside the format string so doc_type is not ambiguous (42702).
+  execute format(
+    'insert into public.document_counters (doc_type, year, last_value)
+     values (%L, %s, 0)
+     on conflict (doc_type, year) do nothing',
+    v_type, v_year
+  );
 
-  update public.document_counters
-    set last_value = last_value + 1
-    where doc_type = v_type and year = v_year
-    returning last_value into v_next;
+  execute format(
+    'update public.document_counters as c
+     set last_value = c.last_value + 1
+     where c.doc_type = %L and c.year = %s
+     returning c.last_value',
+    v_type, v_year
+  ) into v_next;
 
   if v_next is null then
     raise exception 'Could not assign a document number';
