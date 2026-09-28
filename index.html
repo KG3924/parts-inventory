@@ -747,7 +747,7 @@ alter table document_counters enable row level security;
 grant select, insert, update, delete on table customers to authenticated;
 grant select, insert, update, delete on table quotes to authenticated;
 grant select, insert, update, delete on table quote_lines to authenticated;
-grant select, insert, update, delete on table document_counters to authenticated;
+grant select on table document_counters to authenticated;
 grant select, insert, update, delete on table inventory_adjustments to authenticated;
 
 -- Phase 2 quote extras / packing lists / invoices (additive)
@@ -1544,6 +1544,23 @@ notify pgrst, 'reload schema';</pre>
       } catch (e) { /* optional */ }
     }
 
+    async function commitQtyOnServer({ id, action, qty, condition, details }) {
+      if (!supabaseClient) return null;
+      const { data, error } = await supabaseClient.rpc('shop_commit_qty', {
+        p_inventory_id: id,
+        p_action: action,
+        p_qty: qty,
+        p_condition: condition || 'new',
+        p_details: details || null
+      });
+      if (error || !data || data.ok === false) {
+        console.warn('shop_commit_qty', error || data);
+        showStatus("Couldn't commit — try again", 'error');
+        return null;
+      }
+      return data;
+    }
+
     async function applyQtyDeltaToLayers({ id, part_number, buy_price, delta, condition, source }) {
       const d = Number(delta);
       if (!isFinite(d) || d === 0) return;
@@ -2307,10 +2324,12 @@ notify pgrst, 'reload schema';</pre>
       const newQty = parseInt(document.getElementById('item-qty').value) || 0;
       const newUsed = parseInt(document.getElementById('item-qty-used')?.value) || 0;
       const existingItem = id ? inventory.find(i => i.id === id) : null;
+      const stockQty = newQty;
+      const stockUsed = newUsed;
       const payload = {
         name, part_number,
-        qty: newQty,
-        qty_used: newUsed,
+        qty: id ? undefined : 0,
+        qty_used: id ? undefined : 0,
         reorder_level: parseInt(document.getElementById('item-reorder').value) || 0,
         buy_price: parseFloat(document.getElementById('item-buy-price').value) || null,
         sell_price: parseFloat(document.getElementById('item-sell-price').value) || null,
@@ -2330,7 +2349,8 @@ notify pgrst, 'reload schema';</pre>
         updated_at: new Date().toISOString()
       };
       if (!hasCategoryColumn) delete payload.category;
-      if (!hasQtyUsedColumn) delete payload.qty_used;
+      if (id || !hasQtyUsedColumn) delete payload.qty_used;
+      if (id) delete payload.qty;
       if (!hasExcludeValueColumn) delete payload.exclude_from_valuation;
       if (!hasListPriceColumn) {
         delete payload.list_price;
@@ -2402,37 +2422,57 @@ notify pgrst, 'reload schema';</pre>
         return;
       }
       if (id) {
-        const qtyChanged = existingItem && (existingItem.qty || 0) !== newQty;
-        const usedChanged = existingItem && qtyUsedOf(existingItem) !== newUsed;
-        await logAdjustment({
-          inventory_id: id,
-          part_number,
-          name,
-          action: qtyChanged ? 'set_qty' : 'update',
-          qty_before: existingItem?.qty,
-          qty_after: newQty,
-          details: qtyChanged ? 'Qty changed via edit form' : (usedChanged ? 'Used qty updated' : 'Part details updated')
-        });
-        await logPriceHistory(existingItem, payload, 'Edit form');
-        const dNew = newQty - (existingItem?.qty || 0);
-        await applyQtyDeltaToLayers({ id, part_number, buy_price: payload.buy_price, delta: dNew, condition: 'new', source: 'edit' });
-        if (hasQtyUsedColumn) {
-          const dUsed = newUsed - qtyUsedOf(existingItem);
-          await applyQtyDeltaToLayers({ id, part_number, buy_price: 0, delta: dUsed, condition: 'used', source: 'edit' });
+        const qtyChanged = !existingItem || (existingItem.qty || 0) !== stockQty;
+        const usedChanged = !existingItem || qtyUsedOf(existingItem) !== stockUsed;
+        if (qtyChanged) {
+          const res = await commitQtyOnServer({
+            id, action: 'set', qty: stockQty, condition: 'new', details: 'Qty changed via edit form'
+          });
+          if (!res) { await loadInventory(); return; }
         }
+        if (usedChanged && hasQtyUsedColumn) {
+          const res = await commitQtyOnServer({
+            id, action: 'set', qty: stockUsed, condition: 'used', details: 'Used qty updated'
+          });
+          if (!res) { await loadInventory(); return; }
+        }
+        if (!qtyChanged && !usedChanged) {
+          await logAdjustment({
+            inventory_id: id,
+            part_number,
+            name,
+            action: 'update',
+            qty_before: existingItem?.qty,
+            qty_after: existingItem?.qty,
+            details: 'Part details updated'
+          });
+        }
+        await logPriceHistory(existingItem, payload, 'Edit form');
       } else {
-        await logAdjustment({
-          inventory_id: insertedId,
-          part_number,
-          name,
-          action: 'create',
-          qty_before: null,
-          qty_after: newQty,
-          details: 'Created'
-        });
-        await logPriceHistory({ id: insertedId, part_number, name, qty: newQty, qty_used: newUsed }, payload, 'Created');
-        if (newQty > 0) await addCostLayer({ inventory_id: insertedId, part_number, unit_cost: payload.buy_price || 0, qty: newQty, condition: 'new', source: 'create' });
-        if (newUsed > 0) await addCostLayer({ inventory_id: insertedId, part_number, unit_cost: 0, qty: newUsed, condition: 'used', source: 'create' });
+        if (stockQty > 0) {
+          const res = await commitQtyOnServer({
+            id: insertedId, action: 'set', qty: stockQty, condition: 'new', details: 'Created'
+          });
+          if (!res) { await loadInventory(); return; }
+        }
+        if (stockUsed > 0 && hasQtyUsedColumn) {
+          const res = await commitQtyOnServer({
+            id: insertedId, action: 'set', qty: stockUsed, condition: 'used', details: 'Created'
+          });
+          if (!res) { await loadInventory(); return; }
+        }
+        if (stockQty === 0 && stockUsed === 0) {
+          await logAdjustment({
+            inventory_id: insertedId,
+            part_number,
+            name,
+            action: 'create',
+            qty_before: null,
+            qty_after: 0,
+            details: 'Created'
+          });
+        }
+        await logPriceHistory({ id: insertedId, part_number, name, qty: stockQty, qty_used: stockUsed }, payload, 'Created');
       }
       showStatus((id ? 'Updated' : 'Added') + ` by ${currentUser()}`, 'success');
       clearForm();
@@ -2505,25 +2545,14 @@ notify pgrst, 'reload schema';</pre>
       if (!supabaseClient) return;
       const item = inventory.find(i => i.id === id);
       if (!item) return;
-      const oldQty = item.qty || 0;
-      const newQty = Math.max(0, oldQty + delta);
-      const { error } = await supabaseClient.from('inventory')
-        .update({ qty: newQty, updated_by: currentUser(), updated_at: new Date().toISOString() })
-        .eq('id', id);
-      if (error) showStatus(error.message, 'error');
-      else {
-        await logAdjustment({
-          inventory_id: id,
-          part_number: item.part_number,
-          name: item.name,
-          action: delta > 0 ? 'stock_in' : 'stock_out',
-          qty_before: oldQty,
-          qty_after: newQty,
-          details: delta > 0 ? '+1 on Home (new)' : '−1 on Home (new)'
-        });
-        await applyQtyDeltaToLayers({ id, part_number: item.part_number, buy_price: item.buy_price, delta, condition: 'new', source: 'home' });
-        await loadInventory();
-      }
+      const res = await commitQtyOnServer({
+        id,
+        action: delta > 0 ? 'add' : 'remove',
+        qty: Math.abs(delta),
+        condition: 'new',
+        details: delta > 0 ? '+1 on Home (new)' : '−1 on Home (new)'
+      });
+      if (res) await loadInventory();
     }
 
     let pendingScanItem = null; // item waiting for Commit
@@ -2709,54 +2738,30 @@ notify pgrst, 'reload schema';</pre>
         return;
       }
       const cond = (hasQtyUsedColumn && document.getElementById('scan-condition')?.value === 'used') ? 'used' : 'new';
-      const oldNew = item.qty || 0;
-      const oldUsed = qtyUsedOf(item);
-      const oldQty = cond === 'used' ? oldUsed : oldNew;
-      let newQty = oldQty;
-      let logAction = 'set_qty';
-      if (action === 'out') { newQty = Math.max(0, oldQty - qty); logAction = 'stock_out'; }
-      else if (action === 'in') { newQty = oldQty + qty; logAction = 'stock_in'; }
-      else if (action === 'set') { newQty = qty; logAction = 'set_qty'; }
-
       const notesRaw = document.getElementById('scan-notes')?.value;
       const notes = notesRaw != null ? (notesRaw.trim() || null) : (item.notes || null);
-
-      const patch = {
-        notes,
-        updated_by: currentUser(),
-        updated_at: new Date().toISOString()
-      };
-      if (cond === 'used') patch.qty_used = newQty;
-      else patch.qty = newQty;
-
-      const { error } = await supabaseClient.from('inventory')
-        .update(patch)
-        .eq('id', item.id);
-
       const resultEl = document.getElementById('scan-result');
-      if (error) {
-        showStatus(error.message, 'error');
-        return;
+
+      if (notes !== (item.notes || null)) {
+        const { error: noteErr } = await supabaseClient.from('inventory')
+          .update({ notes, updated_by: currentUser(), updated_at: new Date().toISOString() })
+          .eq('id', item.id);
+        if (noteErr) {
+          showStatus(noteErr.message, 'error');
+          return;
+        }
       }
 
-      await logAdjustment({
-        inventory_id: item.id,
-        part_number: item.part_number,
-        name: item.name,
-        action: logAction,
-        qty_before: oldQty,
-        qty_after: newQty,
+      const res = await commitQtyOnServer({
+        id: item.id,
+        action: action === 'in' ? 'add' : action === 'set' ? 'set' : 'remove',
+        qty,
+        condition: cond,
         details: `Scan commit · ${cond} · ${action} ${qty}`
       });
-      const delta = newQty - oldQty;
-      await applyQtyDeltaToLayers({
-        id: item.id,
-        part_number: item.part_number,
-        buy_price: item.buy_price,
-        delta,
-        condition: cond,
-        source: 'scan'
-      });
+      if (!res) return;
+      const oldQty = Number(res.qty_before);
+      const newQty = Number(res.qty_after);
 
       const savedId = item.id;
       pendingScanItem = null;
