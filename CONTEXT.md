@@ -291,6 +291,10 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ---
 
+## A1 stock and document numbers (not applied until after the app deploy)
+
+`schema/a1_stock_doc_referee.sql` is the database referee for qty and Q- / INV- / PL- numbers. Do **not** run it until the app that calls `shop_commit_qty` and `shop_next_doc_number` is on the phones. Order: deploy app → hard-refresh every phone → run that SQL → then floor-smoke. Running the SQL first breaks Commit and new document numbers on the old page.
+
 ## Login and lock (live)
 
 The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applied. Do not leave or restore open policies. Smoke after any later merge: unlock → scan → new or used → Commit → printed label still scans.

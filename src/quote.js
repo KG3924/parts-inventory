@@ -243,37 +243,18 @@ export function installQuote() {
   }
 
   async function nextDocNumber(docType) {
-    const year = new Date().getFullYear();
-    const prefix = docType === 'quote' ? 'Q' : docType === 'order' ? 'SO' : docType === 'invoice' ? 'INV' : docType === 'packing_list' ? 'PL' : 'DOC';
-    if (!shop().supabaseClient || !shop().hasQuotesTables) {
-      return `${prefix}-${year}-001`;
+    const client = shop().supabaseClient;
+    if (!client) {
+      shop().showStatus("Couldn't assign a document number — try again", 'error');
+      throw new Error('Not connected');
     }
-    // Prefer document_counters; fall back to max existing quote number
-    try {
-      const { data: row } = await shop().supabaseClient.from('document_counters')
-        .select('last_value').eq('doc_type', docType).eq('year', year).maybeSingle();
-      let next = (row?.last_value || 0) + 1;
-      if (!row) {
-        await shop().supabaseClient.from('document_counters').insert({ doc_type: docType, year, last_value: next });
-      } else {
-        await shop().supabaseClient.from('document_counters').update({ last_value: next }).eq('doc_type', docType).eq('year', year);
-      }
-      return `${prefix}-${year}-${String(next).padStart(3, '0')}`;
-    } catch (e) {
-      console.warn('counter failed', e);
+    const { data, error } = await client.rpc('shop_next_doc_number', { doc_type: docType });
+    if (error || data == null || data === '') {
+      console.warn('shop_next_doc_number', error);
+      shop().showStatus("Couldn't assign a document number — try again", 'error');
+      throw error || new Error('no number');
     }
-    const table = docType === 'invoice' ? 'invoices' : docType === 'packing_list' ? 'packing_lists' : 'quotes';
-    try {
-      const { data: existing } = await shop().supabaseClient.from(table).select('number').like('number', `${prefix}-${year}-%`);
-      let max = 0;
-      (existing || []).forEach(r => {
-        const m = String(r.number || '').match(/-(\d+)$/);
-        if (m) max = Math.max(max, parseInt(m[1], 10));
-      });
-      return `${prefix}-${year}-${String(max + 1).padStart(3, '0')}`;
-    } catch (e2) {
-      return `${prefix}-${year}-001`;
-    }
+    return data;
   }
 
   async function ensureQuotesTables() {
@@ -707,7 +688,7 @@ export function installQuote() {
     }
     const data = collectQuoteHeader();
     let plNumber = '';
-    try { plNumber = await nextDocNumber('packing_list'); } catch (e) { plNumber = 'PL-' + data.number; }
+    try { plNumber = await nextDocNumber('packing_list'); } catch (e) { return; }
     const quoteId = editingQuoteId || document.getElementById('quote-edit-id')?.value || null;
     if (shop().supabaseClient && quoteId) {
       try {
