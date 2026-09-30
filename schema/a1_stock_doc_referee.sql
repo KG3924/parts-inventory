@@ -12,6 +12,8 @@
 --   4. Floor-smoke only after both are live.
 --
 -- Additive. Safe to re-run. Does not delete inventory rows.
+-- Already applied on production. The strict-remove check in shop_commit_qty
+-- must stay: invoice Approve sets inmar.strict_remove, floor Commit does not.
 -- =============================================================================
 
 -- Next Q- / INV- / PL- / SO- number. One row lock so two phones cannot tie.
@@ -139,6 +141,13 @@ begin
     v_after := v_before + v_amount;
     v_log_action := 'stock_in';
   elsif v_action = 'remove' then
+    -- Floor Commit stays soft (floors at zero). Invoice Approve sets inmar.strict_remove
+    -- so a short invoice fails instead of taking more than is on the shelf.
+    if coalesce(current_setting('inmar.strict_remove', true), '') = 'on'
+       and v_before < v_amount then
+      raise exception 'Not enough on hand for % (have %, need %)',
+        coalesce(v_row.part_number, 'part'), v_before, v_amount;
+    end if;
     v_after := greatest(0, v_before - v_amount);
     v_log_action := 'stock_out';
   else

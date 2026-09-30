@@ -24,7 +24,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **Home** | Live list; search; source + category chips; tiles; **+/−** on new qty; **Adjust** (Scan, New vs Used); Quote / Edit / Del |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
 | **Add / Edit** | Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
-| **Quote** | Cart + saved quotes in `src/quote.js` (same behavior): customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person; print quote, packing list, invoice from the quote. Quotes do not change stock |
+| **Quote** | Cart + saved quotes in `src/quote.js`: customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person. Save, print, packing list, and draft invoice do not change stock. **Approve** on a draft invoice is the sale. |
 | **Reports** | Valuation (new qty only); adjustment log; **price history**; **LIFO/FIFO ending inventory**; needs-attention |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
 | **More** | Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; clear all |
@@ -67,6 +67,8 @@ The public anon key is in `public-config.js`. Never commit a service-role key.
 3. **Project Settings → API** → the public anon key belongs in `public-config.js` only. Never commit a service-role key.
 
 Shop tables are signed-in only. The live database lock is already applied (`schema/auth_lock_after_merge.sql`). Do not paste old “allow all” policies back in.
+
+Stock changes and document numbers already go through `schema/a1_stock_doc_referee.sql`. **Approve invoice** SQL is `schema/a2_approve_invoice.sql`. Run that file only after GitHub Pages is serving the build that shows **Approve**, and every phone has hard-refreshed. Smoke it on throwaway part numbers.
 
 ---
 
@@ -133,11 +135,12 @@ These are three related documents that share the same cart and look similar, but
 1. Add lines from Home or Scan with **Quote**.
 2. On the **Quote** tab fill: **Customer** (separate from **Project**), RFQ #, dates (valid until defaults to **+90 days**), FOB (Origin / Destination / type-and-save), payment terms (can be stored on the customer), lead time, prepared by (defaults to whoever is logged in).
 3. **Save quote** stores it in Supabase (after Phase 1 SQL). New header fields need **Phase 2 SQL**.
-4. **Print quote** — branded offer. **Packing list** — items + qty only (`PL-YYYY-###`). **Invoice…** — adds PO, ship-to, due date (from quote valid-until), shipping/duty/tariffs, optional CC fee (`INV-YYYY-###`).
-5. Open from the saved list to edit; **Void** instead of delete.
-6. Optional: check **Also save this customer**.
+4. **Print quote** — branded offer. **Packing list** — items + qty only (`PL-YYYY-###`). **Invoice…** — adds PO, ship-to, due date (from quote valid-until), shipping/duty/tariffs, optional CC fee (`INV-YYYY-###`). **Save & print invoice** stores a draft and does not change stock.
+5. **Approve** on that draft takes every stock line off the shelf, or none of them. A second Approve does nothing to the shelf. If the parts are not there, Approve fails and the invoice stays a draft. Once a quote has an approved invoice, **Invoice…** stays disabled.
+6. The saved list opens on **Open** (Draft, Sent, Accepted). **Archive** is Voided and Expired. **Open**, **Print**, **Dup**, **Void**. Void keeps the Q- number, does not put stock back, and does not undo an approved invoice. There is no Delete.
+7. Optional: check **Also save this customer**.
 
-Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart is still in the browser until you save; **none of these documents change inventory qty**.
+Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart is still in the browser until you save. Quote, packing list, and draft invoice do not change inventory qty. **Approve** does.
 
 ---
 

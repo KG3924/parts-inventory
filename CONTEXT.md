@@ -86,6 +86,8 @@ created_at (timestamptz)
 - `schema/quotes_phase1.sql` — customers / quotes / quote_lines / document_counters
 - `schema/quotes_phase2.sql` — quote extras, packing lists, invoices, settings, lookups
 - `schema/inventory_costing.sql` — qty_used, price history, LIFO/FIFO cost layers
+- `schema/a1_stock_doc_referee.sql` — qty and document-number referee (already applied)
+- `schema/a2_approve_invoice.sql` — Approve invoice debits stock (run only after this page is on the phones)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -108,6 +110,7 @@ app_settings (key, value)           -- global Wynn / FFS sell factors
 app_lookups (kind, value)           -- saved FOB points and payment terms
 packing_lists / packing_list_lines  -- PL-YYYY-###, no prices
 invoices / invoice_lines            -- INV-YYYY-### + PO, ship-to, due date, fees
+invoices.approved_at / approved_by  -- schema/a2_approve_invoice.sql (after the Approve page is on phones)
 ```
 
 ### Phase 3 (additive — run after Phase 2; **already applied** on production)
@@ -181,16 +184,16 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Quote (Phase 2 — quote / packing list / invoice)
 - Working **cart** still in `localStorage` (`inv_quote`) until Save
-- **Saved Quotes** list from Supabase (status filter chips)
+- **Saved Quotes** opens on **Open** (Draft / Sent / Accepted). **Archive** is Voided / Expired. Row actions: Open, Print, Dup, Void. Void keeps the Q- number. There is no Delete.
 - Builder fields: number, status, date, **valid until (default +90 days)**, **Customer** and **Project** (separate), **RFQ #**, **Prepared By** (defaults to logged-in full name), FOB dropdown (Origin / Destination / type-and-save), payment terms dropdown (customer-specific when saved), lead time, notes
 - Printed quote includes a **3.5% credit-card fee** notice
-- **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / Void (no hard delete)
-- Packing list (`PL-YYYY-###`): items + qty only. No prices, CC note, lead time, or payment terms. Packed-by / received-by lines.
-- Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (from quote valid-until), optional 3.5% CC fee, shipping, duty, tariffs. Same visual family as the quote.
+- **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / Void do **not** change stock. Void does not restock and does not clear `approved_at`.
+- Packing list (`PL-YYYY-###`): items + qty only. No prices, CC note, lead time, or payment terms. Packed-by / received-by lines. Doc only.
+- Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (from quote valid-until), optional 3.5% CC fee, shipping, duty, tariffs. **Save & print** stores a **draft** and does not change stock. **Approve** calls `shop_approve_invoice` and is the only sale.
+- After a quote has an approved invoice, **Invoice…** is disabled and the database refuses another invoice for that quote.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
-- Document numbers via `document_counters` (fallback: max existing)
+- Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
 - Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
-- **Does not change inventory qty**
 - Tables optional: if missing, inventory still works; print still works; save of extra fields / packing / invoices prompts for Phase 2 SQL
 
 ### Labels (QR deep-links)
@@ -291,9 +294,15 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ---
 
-## A1 stock and document numbers (not applied until after the app deploy)
+## A1 stock and document numbers (live)
 
-`schema/a1_stock_doc_referee.sql` is the database referee for qty and Q- / INV- / PL- numbers. Do **not** run it until the app that calls `shop_commit_qty` and `shop_next_doc_number` is on the phones. Order: deploy app → hard-refresh every phone → run that SQL → then floor-smoke. Running the SQL first breaks Commit and new document numbers on the old page.
+`schema/a1_stock_doc_referee.sql` is already applied. Commit and new Q- / INV- / PL- numbers go through `shop_commit_qty` and `shop_next_doc_number`. Floor Commit still floors a short remove at zero. Do not re-run A1 after Approve SQL unless you run `schema/a2_approve_invoice.sql` again afterward (A1 now includes the same strict-remove check, so a re-run stays safe).
+
+## Approve invoice (run SQL only after this page is on the phones)
+
+Stock leaves the shelf only when someone taps **Approve** on a draft invoice. The database function `shop_approve_invoice` debits every stock line or none, through the same referee as Commit. A second tap does not debit again. A short line fails the whole invoice and leaves the shelf as it was. Fee lines with no part number are not debited. A stock line missing a shelf id fails the whole Approve.
+
+`schema/a2_approve_invoice.sql` is **not** applied until after this build is on the phones. Order: merge → Pages live → hard-refresh every phone → run that SQL → smoke on throwaway part numbers. The old page never calls Approve, so running the SQL first does not fix the shelf; wait until the phones show **Approve**.
 
 ## Login and lock (live)
 
@@ -327,6 +336,8 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
 | `schema/inventory_costing.sql` | Used qty, price history, cost layers |
+| `schema/a1_stock_doc_referee.sql` | Live qty + document-number referee |
+| `schema/a2_approve_invoice.sql` | Approve invoice. Run after phones hard-refresh onto this page |
 
 ## Local-only (this Mac, not in git)
 
@@ -346,4 +357,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-09-24 — live lock is applied. More → Copy SQL no longer contains open policies.*
+*Last updated: 2026-09-30 — Approve invoice is in the app. Run `schema/a2_approve_invoice.sql` only after phones hard-refresh onto that page.*
