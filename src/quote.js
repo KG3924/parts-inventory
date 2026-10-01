@@ -456,14 +456,14 @@ export function installQuote() {
   }
 
   async function saveQuoteToDb() {
-    if (!shop().requireUser('saving quotes')) return;
+    if (!shop().requireUser('saving quotes')) return false;
     if (!(await ensureQuotesTables())) {
       shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
-      return;
+      return false;
     }
     if (quoteCart.length === 0) {
       shop().showStatus('Add at least one line before saving', 'error');
-      return;
+      return false;
     }
     let number = (document.getElementById('quote-number').value || '').trim();
     if (!number) {
@@ -537,7 +537,7 @@ export function installQuote() {
     }
     if (error) {
       shop().showStatus('Save failed: ' + error.message + ' — run Phase 2 SQL on the More tab for new quote fields', 'error');
-      return;
+      return false;
     }
     const lineRows = quoteCart.map((c, i) => ({
       quote_id: quoteId,
@@ -551,13 +551,18 @@ export function installQuote() {
     const { error: lErr } = await shop().supabaseClient.from('quote_lines').insert(lineRows);
     if (lErr) {
       shop().showStatus('Quote header saved but lines failed: ' + lErr.message, 'error');
-      return;
+      return false;
+    }
+    if (!quoteId) {
+      shop().showStatus("Couldn't save the quote — invoice was not created", 'error');
+      return false;
     }
     editingQuoteId = quoteId;
     document.getElementById('quote-edit-id').value = quoteId;
     shop().showStatus(`Quote ${number} saved (${shop().currentUser()})`, 'success');
     await refreshQuoteInvoices();
     await loadQuotesList();
+    return !!currentQuoteId();
   }
 
   async function voidQuoteById(id) {
@@ -833,11 +838,23 @@ export function installQuote() {
     renderQuoteInvoiceRows([]);
   }
 
+  async function ensureQuoteForInvoice() {
+    if (currentQuoteId()) return true;
+    if (!quoteCart.length) return false;
+    try {
+      const saved = await saveQuoteToDb();
+      return saved === true && !!currentQuoteId();
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function openInvoiceForm() {
     if (quoteCart.length === 0) {
       shop().showStatus('Add quote lines first', 'error');
       return;
     }
+    if (!(await ensureQuoteForInvoice())) return;
     await refreshQuoteInvoices();
     if (quoteSaleBlocked()) {
       shop().showStatus('This quote already has an approved invoice.', 'error');
@@ -911,6 +928,14 @@ export function installQuote() {
     renderQuoteInvoiceRows(data || []);
   }
 
+  function showApproveError(msg) {
+    shop().showStatus(msg, 'error');
+    const el = document.getElementById('status');
+    if (!el || typeof el.scrollIntoView !== 'function') return;
+    try { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+    catch (e) { try { el.scrollIntoView(true); } catch (e2) {} }
+  }
+
   function approveFailText(error) {
     const raw = [error && error.message, error && error.details, error && error.hint]
       .filter(v => v != null && String(v).trim())
@@ -927,13 +952,13 @@ export function installQuote() {
   async function approveInvoice(id) {
     if (!shop().requireUser('approving invoices')) return;
     if (!id || !shop().supabaseClient) {
-      shop().showStatus("Couldn't approve — try again", 'error');
+      showApproveError("Couldn't approve — try again");
       return;
     }
     const { data, error } = await shop().supabaseClient.rpc('shop_approve_invoice', { p_invoice_id: id });
     const quoteId = currentQuoteId();
     if (error) {
-      shop().showStatus(approveFailText(error), 'error');
+      showApproveError(approveFailText(error));
       if (quoteId) await refreshQuoteInvoices();
       return;
     }
@@ -947,7 +972,7 @@ export function installQuote() {
         if (st) st.value = 'accepted';
       }
     } else {
-      shop().showStatus(approveFailText(payload), 'error');
+      showApproveError(approveFailText(payload));
       if (quoteId) await refreshQuoteInvoices();
       return;
     }
@@ -1010,6 +1035,10 @@ export function installQuote() {
     }
     invoiceSaveBusy = true;
     try {
+      if (!currentQuoteId()) {
+        const saved = await ensureQuoteForInvoice();
+        if (!saved || !currentQuoteId()) return;
+      }
       await refreshQuoteInvoices();
       if (quoteSaleBlocked()) {
         shop().showStatus('This quote already has an approved invoice.', 'error');
@@ -1022,6 +1051,10 @@ export function installQuote() {
       const due = document.getElementById('inv-due')?.value || data.valid || '';
       const today = new Date().toISOString().slice(0, 10);
       const quoteId = currentQuoteId() || null;
+      if (!quoteId) {
+        shop().showStatus("Couldn't save the quote — invoice was not created", 'error');
+        return;
+      }
       const draft = quoteId ? newestOpenDraft() : null;
       const header = invoiceHeaderFields(data, m, po, shipTo, due, today);
       let invNumber = '';

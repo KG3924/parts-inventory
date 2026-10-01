@@ -193,6 +193,8 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Invoice…** follows the quote on screen. It is available when no quote is open, and when the open quote has no approved invoice. **New**, **Duplicate**, **Clear cart**, and opening another quote unlock it immediately. Reopening a quote that already has an approved invoice leaves it grey. The lock is not remembered separately from that quote’s invoices.
 - A quote line that wants more than the live new-shelf qty shows `wants N / shelf M` before Save & print. That is a warning only. Save & print and Approve stay available. Nothing is reserved.
 - **Save & print** reuses the newest open draft invoice on this quote: it refreshes that header and its lines from the cart and reprints the same INV- number. A new INV- is minted only when the quote has no open draft. An approved invoice still blocks another invoice.
+- **Invoice…** on a cart that is not saved yet runs **Save quote** first. **Save & print** does the same if there is still no quote. If that save fails, the invoice box stays closed and no INV- is minted. Draft reuse still needs that quote id.
+- An Approve failure (short shelf, missing shelf id, or any other fail) shows the red status at the top of the screen, over the page, and scrolls that banner into view. Approve stays available when a line is short.
 - Every Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows an error toast. Approve stays tappable. The shelf does not change and the draft stays a draft.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
@@ -309,7 +311,7 @@ Stock leaves the shelf only when someone taps **Approve** on a draft invoice. Th
 
 ## Quote screen follow-up (no SQL)
 
-Invoice… tracks the quote on screen. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Approve failures toast and leave the shelf and the draft alone. The quote action is labeled **Void quote**. This cut changes no stock function and no `schema/a2_approve_invoice.sql`. Smoke after merge → Pages → hard-refresh. Do not run SQL for this cut.
+Invoice… tracks the quote on screen. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Invoice… saves the quote first when the cart is not saved yet, so the draft is tied to that quote. Approve failures stay on screen at the top and leave the shelf and the draft alone. The quote action is labeled **Void quote**. This cut changes no stock function and no `schema/a2_approve_invoice.sql`. Smoke after merge → Pages → hard-refresh. Do not run SQL for this cut.
 
 ## Login and lock (live)
 
@@ -365,4 +367,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-01 — Quote screen: Invoice… follows the open quote, short lines warn only, Save & print reuses the open draft, Approve failures toast, button says Void quote. No new SQL.*
+*Last updated: 2026-10-01 — Invoice… saves the quote before the first draft. Approve failures stay on screen. No new SQL.*
