@@ -1677,6 +1677,7 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
       refreshSuggestionLists();
       renderAll();
+      if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
     }
 
     function refreshSuggestionLists() {

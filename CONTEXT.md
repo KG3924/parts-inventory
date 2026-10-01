@@ -184,13 +184,16 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Quote (Phase 2 — quote / packing list / invoice)
 - Working **cart** still in `localStorage` (`inv_quote`) until Save
-- **Saved Quotes** opens on **Open** (Draft / Sent / Accepted). **Archive** is Voided / Expired. Row actions: Open, Print, Dup, Void. Void keeps the Q- number. There is no Delete.
+- **Saved Quotes** opens on **Open** (Draft / Sent / Accepted). **Archive** is Voided / Expired. Row actions: Open, Print, Dup, **Void quote**. Void quote keeps the Q- number. There is no Delete.
 - Builder fields: number, status, date, **valid until (default +90 days)**, **Customer** and **Project** (separate), **RFQ #**, **Prepared By** (defaults to logged-in full name), FOB dropdown (Origin / Destination / type-and-save), payment terms dropdown (customer-specific when saved), lead time, notes
 - Printed quote includes a **3.5% credit-card fee** notice
-- **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / Void do **not** change stock. Void does not restock and does not clear `approved_at`.
+- **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / **Void quote** do **not** change stock. Void quote does not restock and does not clear `approved_at`, so a second invoice for that quote is still refused. The **Void quote** button sits outside the Invoice… buttons. The status dropdown says **Void quote** and still saves `void`. There is no draft-invoice void.
 - Packing list (`PL-YYYY-###`): items + qty only. No prices, CC note, lead time, or payment terms. Packed-by / received-by lines. Doc only.
 - Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (from quote valid-until), optional 3.5% CC fee, shipping, duty, tariffs. **Save & print** stores a **draft** and does not change stock. **Approve** calls `shop_approve_invoice` and is the only sale.
-- After a quote has an approved invoice, **Invoice…** is disabled and the database refuses another invoice for that quote.
+- **Invoice…** follows the quote on screen. It is available when no quote is open, and when the open quote has no approved invoice. **New**, **Duplicate**, **Clear cart**, and opening another quote unlock it immediately. Reopening a quote that already has an approved invoice leaves it grey. The lock is not remembered separately from that quote’s invoices.
+- A quote line that wants more than the live new-shelf qty shows `wants N / shelf M` before Save & print. That is a warning only. Save & print and Approve stay available. Nothing is reserved.
+- **Save & print** reuses the newest open draft invoice on this quote: it refreshes that header and its lines from the cart and reprints the same INV- number. A new INV- is minted only when the quote has no open draft. An approved invoice still blocks another invoice.
+- Every Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows an error toast. Approve stays tappable. The shelf does not change and the draft stays a draft.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
 - Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
@@ -302,7 +305,11 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 Stock leaves the shelf only when someone taps **Approve** on a draft invoice. The database function `shop_approve_invoice` debits every stock line or none, through the same referee as Commit. A second tap does not debit again. A short line fails the whole invoice and leaves the shelf as it was. Fee lines with no part number are not debited. A stock line missing a shelf id fails the whole Approve.
 
-`schema/a2_approve_invoice.sql` is **not** applied until after this build is on the phones. Order: merge → Pages live → hard-refresh every phone → run that SQL → smoke on throwaway part numbers. The old page never calls Approve, so running the SQL first does not fix the shelf; wait until the phones show **Approve**.
+`schema/a2_approve_invoice.sql` is **not** applied until after the Approve page is on the phones. Order for that SQL: merge of the Approve build → Pages live → hard-refresh every phone → run that SQL → smoke on throwaway part numbers. Do not re-run it for later screen fixes. The old page never calls Approve, so running the SQL first does not fix the shelf; wait until the phones show **Approve**.
+
+## Quote screen follow-up (no SQL)
+
+Invoice… tracks the quote on screen. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Approve failures toast and leave the shelf and the draft alone. The quote action is labeled **Void quote**. This cut changes no stock function and no `schema/a2_approve_invoice.sql`. Smoke after merge → Pages → hard-refresh. Do not run SQL for this cut.
 
 ## Login and lock (live)
 
@@ -310,6 +317,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 
 ## Possible next work
 
+- Later: block Save & print / Approve when a line wants more than the shelf. This cut only warns `wants N / shelf M`.
 - Enter FFS sell factor when known; fetch or type FX rates, then Apply buy $
 - Review existing Alu rows: list should be **NOK**, not USD, before applying NOK rates
 - Sales orders from accepted quotes
@@ -357,4 +365,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-09-30 — Approve invoice is in the app. Run `schema/a2_approve_invoice.sql` only after phones hard-refresh onto that page.*
+*Last updated: 2026-10-01 — Quote screen: Invoice… follows the open quote, short lines warn only, Save & print reuses the open draft, Approve failures toast, button says Void quote. No new SQL.*
