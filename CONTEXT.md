@@ -1,10 +1,10 @@
 # Parts Inventory App — Project Context
 
-**For Grok Build / future sessions.** Read this file + `README.md` + `index.html` before making changes.
+**For Grok Build / future sessions.** Read this file, `README.md`, and `src/quote.js` before quote work. Stock, scan, labels, reports, More, and sign-in still live in `index.html`.
 
 **Local project folder:** `/Users/kylegrantham/Inmar Parts Inventory`  
 Git repo for GitHub Pages: this folder’s `.git` → `KG3924/parts-inventory` (`main`).  
-Push to `main` when the user asks (GitHub Pages serves the live app).
+Push to `main` only when the user asks. GitHub Actions builds `dist/` and publishes that. Pages is not a raw branch deploy.
 
 ---
 
@@ -13,10 +13,10 @@ Push to `main` when the user asks (GitHub Pages serves the live app).
 Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Gonzales, LA).
 
 - Live app: https://kg3924.github.io/parts-inventory/
-- GitHub: https://github.com/KG3924/parts-inventory (public, GitHub Pages from `main`)
+- GitHub: https://github.com/KG3924/parts-inventory (public). **Settings → Pages → Source** is **GitHub Actions** (`.github/workflows/pages.yml`), not “Deploy from a branch.”
 - Data backend: **Supabase** (Postgres + realtime)
-- Frontend: single-file `index.html` (vanilla JS, no build step)
-- Logo for quotes: `inmar-logo.jpg`
+- Frontend: Vite. `index.html` is the shell. The Quote screen is `src/quote.js` and `src/quote-markup.js`, started from `src/main.js`. No React. There is no separate Invoice tab.
+- Logo for quotes: `public/inmar-logo.jpg` (copied into the Pages build)
 - Label printer: **Brother QL-710W** with **DK-1201** die-cut labels (1.1″ × 3.5″)
 
 ---
@@ -39,11 +39,11 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 
 | Piece | Detail |
 |-------|--------|
-| UI | Single `index.html`, light theme |
+| UI | Vite. `index.html` shell + `src/quote.js`. Light theme. `npm run build` writes `dist/` |
 | Backend | Supabase JS v2: `inventory` (+ `qty_used`), `inventory_adjustments`, quotes/packing/invoices, `app_settings` / `app_lookups`, `inventory_price_history`, `inventory_cost_layers` |
 | Labels | QR (`qrcode` CDN) deep-link `?part=` stable `barcode` ID; human part # printed beside QR |
 | Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate; deep-link `?part=` |
-| Hosting | GitHub Pages from `main` |
+| Hosting | GitHub Actions publishes `dist/` to Pages |
 | Auth | Email + password for five accounts. Browser saved-password / Face ID fills the next unlock. Public signup off. Anon key stays in `public-config.js`. Service key never in the repo. |
 | Users | Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — each has their own login |
 
@@ -194,8 +194,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - A quote line that wants more than the live new-shelf qty shows `wants N / shelf M` before Save & print. That is a warning only. Save & print and Approve stay available. Nothing is reserved.
 - **Save & print** reuses the newest open draft invoice on this quote: it refreshes that header and its lines from the cart and reprints the same INV- number. A new INV- is minted only when the quote has no open draft. An approved invoice still blocks another invoice.
 - **Invoice…** on a cart that is not saved yet runs **Save quote** first. **Save & print** does the same if there is still no quote. If that save fails, the invoice box stays closed and no INV- is minted. Draft reuse still needs that quote id.
-- An Approve failure (short shelf, missing shelf id, or any other fail) shows the red status at the top of the screen, over the page, and scrolls that banner into view. Approve stays available when a line is short.
-- Every Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows an error toast. Approve stays tappable. The shelf does not change and the draft stays a draft.
+- An Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows a red message fixed at the top of the screen and scrolls that banner into view. Approve stays tappable, including when a line is short. The shelf does not change and the draft stays a draft. The banner still clears after a few seconds.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
 - Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
@@ -256,7 +255,7 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 - Optional `barcode` in JSON; otherwise app generates on insert
 - Optional `qty_used`, `list_price`, `list_currency`, `sell_factor`, `exclude_from_valuation`
 - Existing part numbers skipped
-- User must be selected before import
+- Sign in before import. The stamp is the signed-in person. There is no name dropdown.
 - Reorder default on import is **0** if omitted
 
 ---
@@ -288,7 +287,7 @@ Grok chat sessions are **not** the source of truth. Recover from GitHub + this f
 
 | What | Where it actually lives |
 |------|-------------------------|
-| App source, docs, count tool, SQL | GitHub `KG3924/parts-inventory` `main` (Pages). Head includes `51f4b97` (used/FX/LIFO), `37e1e52` (FX fetch via frankfurter.dev) |
+| App source, docs, count tool, SQL | GitHub `KG3924/parts-inventory` `main`. Actions publishes the Vite build. `main` includes the stock referee, Approve invoice, and the quote-screen follow-up through draft reuse (PR #8). Save-before-invoice and the fixed fail banner are the open follow-up on top of that. |
 | Live inventory, quotes, packing lists, invoices, settings, cost layers | **Supabase** (realtime). Phase 1–3 SQL has been run on production |
 | Working quote **cart** (unsaved) | Browser `localStorage` key `inv_quote` — device/browser only until Save quote |
 | Sell factors / FX / costing method | `localStorage` + `app_settings` in Supabase |
@@ -307,11 +306,11 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 Stock leaves the shelf only when someone taps **Approve** on a draft invoice. The database function `shop_approve_invoice` debits every stock line or none, through the same referee as Commit. A second tap does not debit again. A short line fails the whole invoice and leaves the shelf as it was. Fee lines with no part number are not debited. A stock line missing a shelf id fails the whole Approve.
 
-`schema/a2_approve_invoice.sql` is **not** applied until after the Approve page is on the phones. Order for that SQL: merge of the Approve build → Pages live → hard-refresh every phone → run that SQL → smoke on throwaway part numbers. Do not re-run it for later screen fixes. The old page never calls Approve, so running the SQL first does not fix the shelf; wait until the phones show **Approve**.
+Run `schema/a2_approve_invoice.sql` **once**, and only after the Approve page is on the phones and every phone has hard-refreshed. Order: Approve build on Pages → hard-refresh → run that SQL → smoke on throwaway part numbers. Do not re-run it for later screen fixes. This file does not record whether production already has that SQL — check Supabase before running it again. Running it before the phones show **Approve** does not fix the shelf.
 
-## Quote screen follow-up (no SQL)
+## Quote screen (no new SQL)
 
-Invoice… tracks the quote on screen. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Invoice… saves the quote first when the cart is not saved yet, so the draft is tied to that quote. Approve failures stay on screen at the top and leave the shelf and the draft alone. The quote action is labeled **Void quote**. This cut changes no stock function and no `schema/a2_approve_invoice.sql`. Smoke after merge → Pages → hard-refresh. Do not run SQL for this cut.
+Invoice… follows the quote on screen and saves the cart first when that cart is not a saved quote yet. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Approve failures stay on screen at the top and leave the shelf and the draft alone. The quote action is labeled **Void quote**. None of that changes `shop_approve_invoice` or `schema/a2_approve_invoice.sql`. Smoke after the page is on Pages and every phone has hard-refreshed. Do not run SQL for these screen fixes.
 
 ## Login and lock (live)
 
@@ -324,7 +323,6 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 - Review existing Alu rows: list should be **NOK**, not USD, before applying NOK rates
 - Sales orders from accepted quotes
 - Email / multi-page terms
-- `config.js` + gitignore for secrets
 - Optional helper scripts: export-from-supabase, sheet-to-json, db-vs-sheet diff
 
 ---
@@ -333,7 +331,14 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 
 | File | Role |
 |------|------|
-| `index.html` | Entire app |
+| `index.html` | App shell: stock, scan, labels, reports, More, sign-in. Empty `#quote` mount |
+| `src/main.js` | Loads the quote screen |
+| `src/quote.js` | Quote, packing list, and invoice behavior |
+| `src/quote-markup.js` | Quote screen HTML |
+| `vite.config.js` | Build. Base path `/parts-inventory/`. Output `dist/` |
+| `package.json` | `npm run dev` / `npm run build` |
+| `.github/workflows/pages.yml` | `npm ci`, build, secret scan, publish `dist/` |
+| `scripts/refuse-shipped-secrets.sh` | Fails the Pages build if a real secret is in `dist/` |
 | `public/public-config.js` | Public Supabase URL + anon key only (copied into the Pages build) |
 | `public/shop-auth.js` | Shared login wall for the app and count tool |
 | `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
@@ -367,4 +372,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-01 — Invoice… saves the quote before the first draft. Approve failures stay on screen. No new SQL.*
+*Last updated: 2026-10-01 — Docs match the app: Vite build, quote modules, Invoice… saves the quote first, Approve failures stay on screen. No new SQL.*

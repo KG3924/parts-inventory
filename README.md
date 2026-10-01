@@ -24,7 +24,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **Home** | Live list; search; source + category chips; tiles; **+/−** on new qty; **Adjust** (Scan, New vs Used); Quote / Edit / Del |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
 | **Add / Edit** | Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
-| **Quote** | Cart + saved quotes in `src/quote.js`: customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person. Save, print, packing list, and draft invoice do not change stock. **Approve** on a draft invoice is the sale. A short line shows `wants N / shelf M` and does not block. **Save & print** reuses the newest open draft. **Void quote** does not restock. |
+| **Quote** | Cart + saved quotes in `src/quote.js`: customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person. Save, print, packing list, and draft invoice do not change stock. **Invoice…** saves the cart first if it is not a saved quote yet. **Approve** on a draft invoice is the sale. A short line shows `wants N / shelf M` and does not block. **Save & print** reuses the newest open draft. Approve failures stay at the top of the screen. **Void quote** does not restock. |
 | **Reports** | Valuation (new qty only); adjustment log; **price history**; **LIFO/FIFO ending inventory**; needs-attention |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
 | **More** | Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; clear all |
@@ -68,7 +68,7 @@ The public anon key is in `public-config.js`. Never commit a service-role key.
 
 Shop tables are signed-in only. The live database lock is already applied (`schema/auth_lock_after_merge.sql`). Do not paste old “allow all” policies back in.
 
-Stock changes and document numbers already go through `schema/a1_stock_doc_referee.sql`. **Approve invoice** SQL is `schema/a2_approve_invoice.sql`. Run that file only after GitHub Pages is serving the build that shows **Approve**, and every phone has hard-refreshed. Smoke it on throwaway part numbers. The quote-screen follow-up (Invoice… lock, short warning, draft reuse, Void quote) adds no SQL. Do not re-run A1 or A2 for that screen change.
+Stock changes and document numbers already go through `schema/a1_stock_doc_referee.sql`. **Approve invoice** SQL is `schema/a2_approve_invoice.sql`. Run that file once, only after GitHub Pages is serving the build that shows **Approve** and every phone has hard-refreshed. Smoke it on throwaway part numbers. Check Supabase before running it again. The quote-screen work after that (Invoice… lock, short warning, draft reuse, Void quote, save-before-invoice, fail banner) adds no SQL. Do not re-run A1 or A2 for those screen changes.
 
 ---
 
@@ -141,7 +141,7 @@ These are three related documents that share the same cart and look similar, but
 7. The saved list opens on **Open** (Draft, Sent, Accepted). **Archive** is Voided and Expired. **Open**, **Print**, **Dup**, **Void quote**. Void quote keeps the Q- number, does not put stock back, and does not undo an approved invoice, so a second invoice is still refused. There is no Delete and no draft-invoice void.
 8. Optional: check **Also save this customer**.
 
-Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart is still in the browser until you save. Quote, packing list, and draft invoice do not change inventory qty. **Approve** does.
+Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart stays in the browser until **Save quote** or **Invoice…** (Invoice… saves the quote first). Quote, packing list, and draft invoice do not change inventory qty. **Approve** does. If that save fails, no invoice number is created.
 
 ---
 
@@ -187,4 +187,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-09-24 — live lock is applied. More → Copy SQL does not recreate open policies.*
+*Last updated: 2026-10-01 — Quote screen matches the app: Invoice… saves an unsaved cart first, Save & print reuses the open draft, Approve failures stay on screen. Live lock is already applied. No new SQL in this screen work.*
