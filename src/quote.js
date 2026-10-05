@@ -388,6 +388,11 @@ export function installQuote() {
     return `${n} is approved. Voiding this quote won't undo the sale.`;
   }
 
+  function linesLockedMessage(number) {
+    const n = String(number || '').trim() || 'This invoice';
+    return `${n} is approved. This quote's lines can't change after the sale.`;
+  }
+
   async function blockingApprovedNumber(quoteId) {
     if (!quoteId) return '';
     if (quoteId === currentQuoteId()) {
@@ -519,23 +524,24 @@ export function installQuote() {
       shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
       return false;
     }
-    if (quoteCart.length === 0) {
-      shop().showStatus('Add at least one line before saving', 'error');
-      return false;
-    }
-    const requestedStatus = document.getElementById('quote-status').value || 'draft';
     const existingId = editingQuoteId || document.getElementById('quote-edit-id').value || '';
-    if ((requestedStatus === 'void' || requestedStatus === 'expired') && existingId) {
+    if (existingId) {
       const blockedNum = await blockingApprovedNumber(existingId);
       if (blockedNum === null) {
         shop().showStatus("Couldn't check invoices — quote was not saved", 'error');
         return false;
       }
       if (blockedNum) {
-        shop().showStatus(voidBlockedMessage(blockedNum), 'error');
+        applySaleLocks();
+        shop().showStatus(linesLockedMessage(blockedNum), 'error');
         return false;
       }
     }
+    if (quoteCart.length === 0) {
+      shop().showStatus('Add at least one line before saving', 'error');
+      return false;
+    }
+    const requestedStatus = document.getElementById('quote-status').value || 'draft';
     let number = (document.getElementById('quote-number').value || '').trim();
     if (!number) {
       number = await nextDocNumber('quote');
@@ -917,11 +923,12 @@ export function installQuote() {
 
   function applySaleLocks() {
     const blocked = quoteSaleBlocked();
-    const voidBtn = document.getElementById('quote-void-btn');
-    if (voidBtn) {
-      voidBtn.disabled = blocked;
-      voidBtn.style.opacity = blocked ? '0.45' : '';
-    }
+    ['quote-void-btn', 'quote-save-btn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = blocked;
+      btn.style.opacity = blocked ? '0.45' : '';
+    });
     const st = document.getElementById('quote-status');
     if (!st) return;
     [...st.options].forEach(opt => {
@@ -992,13 +999,17 @@ export function installQuote() {
     if (note) {
       if (linked && blocked) {
         const approved = currentQuoteInvoices.find(r => r && r.status === 'approved');
+        const num = approved && approved.number;
         note.style.display = 'block';
-        note.textContent = voidBlockedMessage(approved && approved.number);
+        note.style.whiteSpace = 'pre-line';
+        note.textContent = `${voidBlockedMessage(num)}\n${linesLockedMessage(num)}`;
       } else if (display.length) {
         note.style.display = 'block';
+        note.style.whiteSpace = '';
         note.textContent = 'Drafts do not change stock. Approve does.';
       } else {
         note.style.display = 'none';
+        note.style.whiteSpace = '';
         note.textContent = '';
       }
     }

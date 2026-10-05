@@ -139,7 +139,7 @@ These are three related documents that share the same cart and look similar, but
 5. A line that wants more than the shelf shows `wants N / shelf M` on the quote before Save & print. Save & print and Approve are still allowed.
 6. **Approve** on that draft takes every stock line off the shelf, or none of them. A second Approve does nothing to the shelf. If Approve fails (short shelf, missing shelf id, quote already sold, or anything else) a red message stays at the top of the screen, the shelf stays as it was, and the draft stays a draft. Approve is not greyed when a line is short. **Invoice…** is grey only while the quote on screen already has an approved invoice. New, Duplicate, Clear cart, or opening another quote unlocks it.
 7. **New quote** drops the working lines and starts a blank quote. It does not ask first. A successful **Approve** also clears those working lines. A failed Approve leaves them. Save quote and Save & print leave them too.
-8. The saved list opens on **Open** (Draft, Sent, Accepted). **Archive** is Voided and Expired. **Open**, **Print**, **Dup**, **Void quote**. Void quote keeps the Q- number and does not put stock back. If that quote already has an approved invoice, Void quote is grey, the note names that INV, and Void or Expired cannot be saved. A draft-only quote can still be voided. There is no Delete and no draft-invoice void.
+8. The saved list opens on **Open** (Draft, Sent, Accepted). **Archive** is Voided and Expired. **Open**, **Print**, **Dup**, **Void quote**. Void quote keeps the Q- number and does not put stock back. If that quote already has an approved invoice, Void quote and Save quote are grey, the note names that INV, Void or Expired cannot be saved, and Save quote does not replace the sold lines. A draft-only quote can still be voided and still saves. There is no Delete and no draft-invoice void.
 9. Optional: check **Also save this customer**.
 
 Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart stays in the browser until **Save quote** or **Invoice…** (Invoice… saves the quote first). **New quote** and a successful **Approve** empty that cart. Quote, packing list, and draft invoice do not change inventory qty. **Approve** does. If that save fails, no invoice number is created.
@@ -188,4 +188,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-10-05 — New quote and a successful Approve clear the working cart. An approved invoice blocks Void and Expired. No new SQL.*
+*Last updated: 2026-10-05 — New quote and a successful Approve clear the working cart. An approved invoice blocks Void, Expired, and Save quote. No new SQL.*
