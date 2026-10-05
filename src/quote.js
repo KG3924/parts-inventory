@@ -393,6 +393,15 @@ export function installQuote() {
     return `${n} is approved. This quote's lines can't change after the sale.`;
   }
 
+  function quoteVoidedMessage(number) {
+    const n = String(number || '').trim() || 'This quote';
+    return `${n} is void. This invoice can't be approved.`;
+  }
+
+  function openQuoteIsVoid() {
+    return (document.getElementById('quote-status')?.value || '') === 'void';
+  }
+
   async function blockingApprovedNumber(quoteId) {
     if (!quoteId) return '';
     if (quoteId === currentQuoteId()) {
@@ -442,7 +451,7 @@ export function installQuote() {
       </table>`;
   }
 
-  async function startNewQuote() {
+  async function startNewQuote(opts) {
     emptyWorkingCart();
     editingQuoteId = null;
     document.getElementById('quote-edit-id').value = '';
@@ -468,7 +477,9 @@ export function installQuote() {
     setComboValue('fob', '');
     setComboValue('terms', '');
     renderQuotePanel();
-    shop().showStatus('Builder ready — add lines then Save quote', 'info');
+    if (!opts || !opts.keepStatus) {
+      shop().showStatus('Builder ready — add lines then Save quote', 'info');
+    }
   }
 
   async function openQuote(id) {
@@ -642,6 +653,47 @@ export function installQuote() {
     return !!currentQuoteId();
   }
 
+  async function saveAsNewQuote() {
+    if (!shop().requireUser('saving quotes')) return false;
+    if (!(await ensureQuotesTables())) {
+      shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
+      return false;
+    }
+    if (!quoteCart.length) {
+      shop().showStatus('Add at least one line before saving', 'error');
+      return false;
+    }
+    const lines = quoteCart.map(c => ({ ...c }));
+    editingQuoteId = null;
+    const edit = document.getElementById('quote-edit-id');
+    if (edit) edit.value = '';
+    resetQuoteInvoiceUi();
+    const setVal = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value;
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    setVal('quote-status', 'draft');
+    setVal('quote-number', '');
+    setVal('quote-customer', '');
+    setVal('quote-project', '');
+    setVal('quote-rfq', '');
+    setVal('quote-lead', '');
+    setVal('quote-notes', '');
+    setVal('quote-date', today);
+    setVal('quote-valid', addDaysIso(today, 90));
+    setVal('quote-by', shop().currentUser() || '');
+    const saveCustomer = document.getElementById('quote-save-customer');
+    if (saveCustomer) saveCustomer.checked = false;
+    const invBox = document.getElementById('invoice-box');
+    if (invBox) invBox.style.display = 'none';
+    setComboValue('fob', '');
+    setComboValue('terms', '');
+    quoteCart = lines;
+    saveQuoteCart();
+    return saveQuoteToDb();
+  }
+
   async function voidQuoteById(id) {
     if (!shop().requireUser('voiding quotes')) return;
     if (!id) {
@@ -669,10 +721,12 @@ export function installQuote() {
       shop().showStatus(error.message, 'error');
       return;
     }
-    const openId = editingQuoteId || document.getElementById('quote-edit-id')?.value;
-    if (openId === id) {
+    const openId = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
+    if (openId && openId === String(id)) {
       const st = document.getElementById('quote-status');
       if (st) st.value = 'void';
+      emptyWorkingCart();
+      await refreshQuoteInvoices();
     }
     shop().showStatus(`${num} voided. Stock unchanged.`, 'success');
     await loadQuotesList();
@@ -929,6 +983,14 @@ export function installQuote() {
       btn.disabled = blocked;
       btn.style.opacity = blocked ? '0.45' : '';
     });
+    const saveNew = document.getElementById('quote-save-new-btn');
+    if (saveNew) saveNew.hidden = !blocked;
+    const printBtn = document.getElementById('quote-save-print-btn');
+    const voided = openQuoteIsVoid();
+    if (printBtn) {
+      printBtn.disabled = voided;
+      printBtn.style.opacity = voided ? '0.45' : '';
+    }
     const st = document.getElementById('quote-status');
     if (!st) return;
     [...st.options].forEach(opt => {
@@ -1003,6 +1065,10 @@ export function installQuote() {
         note.style.display = 'block';
         note.style.whiteSpace = 'pre-line';
         note.textContent = `${voidBlockedMessage(num)}\n${linesLockedMessage(num)}`;
+      } else if (linked && openQuoteIsVoid() && display.some(r => r && r.status !== 'approved')) {
+        note.style.display = 'block';
+        note.style.whiteSpace = '';
+        note.textContent = quoteVoidedMessage(document.getElementById('quote-number')?.value);
       } else if (display.length) {
         note.style.display = 'block';
         note.style.whiteSpace = '';
@@ -1018,12 +1084,16 @@ export function installQuote() {
       list.innerHTML = '';
       return;
     }
+    const quoteVoided = linked && openQuoteIsVoid();
+    const quoteNum = document.getElementById('quote-number')?.value || '';
     list.innerHTML = display.map(r => {
       const isApproved = r.status === 'approved';
+      const zombie = quoteVoided && !isApproved;
       return `<div class="btn-group" style="align-items:center;">
         <code>${shop().escapeHtml(r.number || '')}</code>
         <span class="badge ${isApproved ? 'open-order' : 'source-tag'}">${isApproved ? 'Approved' : 'Draft'}</span>
-        <button type="button" onclick="approveInvoice('${r.id}')">Approve</button>
+        ${zombie ? `<span>${shop().escapeHtml(quoteVoidedMessage(quoteNum))}</span>` : ''}
+        <button type="button" ${zombie ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
       </div>`;
     }).join('');
   }
@@ -1064,7 +1134,7 @@ export function installQuote() {
       return "Couldn't approve — run the invoice SQL after every phone has been refreshed.";
     }
     const lines = raw.split('\n').map(s => s.replace(/^ERROR:\s*/i, '').trim()).filter(Boolean);
-    const useful = lines.find(s => /not enough|shelf part|approved invoice|stayed a draft|missing part|whole number/i.test(s));
+    const useful = lines.find(s => /not enough|shelf part|approved invoice|stayed a draft|missing part|whole number|is void|quote is missing/i.test(s));
     return useful || lines[0] || "Couldn't approve — try again";
   }
 
@@ -1084,21 +1154,15 @@ export function installQuote() {
     const payload = data && typeof data === 'object' ? data : {};
     if (payload.already_approved) {
       shop().showStatus(`Already approved — ${payload.number || 'this invoice'}. Shelf unchanged.`, 'info');
-      emptyWorkingCart();
+      await startNewQuote({ keepStatus: true });
     } else if (payload.ok) {
-      shop().showStatus(`Approved ${payload.number || 'invoice'}. Parts left the shelf.`, 'success');
-      if (quoteId) {
-        const st = document.getElementById('quote-status');
-        if (st) st.value = 'accepted';
-      }
-      emptyWorkingCart();
+      shop().showStatus(`${payload.number || 'Invoice'} approved. Parts left the shelf.`, 'success');
+      await startNewQuote({ keepStatus: true });
     } else {
       showApproveError(approveFailText(payload));
       if (quoteId) await refreshQuoteInvoices();
       return;
     }
-    if (quoteId) await refreshQuoteInvoices();
-    else renderQuoteInvoiceRows([{ id, number: payload.number || '', status: 'approved' }], { linked: false });
     await loadQuotesList();
   }
 
@@ -1150,6 +1214,10 @@ export function installQuote() {
   async function saveAndPrintInvoice() {
     if (invoiceSaveBusy) return;
     if (!shop().requireUser('creating invoices')) return;
+    if (openQuoteIsVoid()) {
+      shop().showStatus(quoteVoidedMessage(document.getElementById('quote-number')?.value), 'error');
+      return;
+    }
     if (quoteCart.length === 0) {
       shop().showStatus('Add quote lines first', 'error');
       return;
@@ -1316,6 +1384,7 @@ export function installQuote() {
     startNewQuote,
     openQuote,
     saveQuoteToDb,
+    saveAsNewQuote,
     voidCurrentQuote,
     voidQuoteById,
     duplicateCurrentQuote,
@@ -1350,6 +1419,8 @@ export function installQuote() {
       if (el) el.addEventListener('input', updateInvoicePreview);
     });
     renderQuotePanel();
+    const statusSel = document.getElementById('quote-status');
+    if (statusSel) statusSel.addEventListener('change', () => applySaleLocks());
   })();
 
   // Refresh quote panel when switching to Quote tab
