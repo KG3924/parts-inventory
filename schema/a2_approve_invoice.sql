@@ -16,6 +16,11 @@
 -- Re-running schema/a1_stock_doc_referee.sql after this file is safe only
 -- because that file now has the same strict-remove check. Floor Commit does
 -- not set the flag, so it still floors at zero.
+--
+-- A2.4 also refuses a void quote, and a missing quote row when quote_id is
+-- set, before any debit. schema/a2_4_void_quote_approve_lock.sql is that same
+-- function for databases that already ran this file. Re-running either file
+-- keeps the refuse. Neither file voids a draft invoice.
 -- =============================================================================
 
 alter table public.invoices add column if not exists approved_at timestamptz;
@@ -306,6 +311,7 @@ declare
   v_debited integer := 0;
   v_approved_at timestamptz;
   v_part_no text;
+  v_quote public.quotes%rowtype;
 begin
   if auth.uid() is null then
     raise exception 'Sign in required';
@@ -338,6 +344,17 @@ begin
 
   if v_inv.quote_id is not null then
     perform pg_advisory_xact_lock(hashtext('inmar-quote-sale:' || v_inv.quote_id::text));
+    select * into v_quote
+    from public.quotes
+    where id = v_inv.quote_id
+    for update;
+    if not found then
+      raise exception 'This invoice''s quote is missing. This invoice can''t be approved.';
+    end if;
+    if lower(btrim(coalesce(v_quote.status, ''))) = 'void' then
+      raise exception '% is void. This invoice can''t be approved.',
+        coalesce(nullif(btrim(v_quote.number), ''), 'This quote');
+    end if;
     if exists (
       select 1 from public.invoices i
       where i.quote_id = v_inv.quote_id
