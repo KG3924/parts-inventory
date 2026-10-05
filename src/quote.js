@@ -21,6 +21,7 @@ export function installQuote() {
   let quoteStatusFilter = "open";
   let editingQuoteId = null;
   let currentQuoteInvoices = [];
+  let approvedInvoiceByQuote = {};
   let invoiceSaveBusy = false;
 
   // Save, print, packing, and draft invoices do not change qty. Approve does, on the server.
@@ -29,6 +30,11 @@ export function installQuote() {
   function saveQuoteCart() {
     localStorage.setItem('inv_quote', JSON.stringify(quoteCart));
     renderQuotePanel();
+  }
+
+  function emptyWorkingCart() {
+    quoteCart = [];
+    saveQuoteCart();
   }
 
   function addToQuote(id) {
@@ -346,8 +352,64 @@ export function installQuote() {
       return;
     }
     quotesListCache = data || [];
+    await loadApprovedInvoiceNumbers(quotesListCache.map(q => q.id).filter(Boolean));
     await loadCustomerSuggestions();
     renderQuotesList();
+  }
+
+  async function loadApprovedInvoiceNumbers(ids) {
+    approvedInvoiceByQuote = {};
+    if (!ids.length || !shop().supabaseClient) return;
+    const { data, error } = await shop().supabaseClient.from('invoices')
+      .select('quote_id,number,status')
+      .eq('status', 'approved')
+      .in('quote_id', ids);
+    if (error) {
+      console.warn(error);
+      return;
+    }
+    (data || []).forEach(row => {
+      if (row && row.quote_id && row.status === 'approved' && !approvedInvoiceByQuote[row.quote_id]) {
+        approvedInvoiceByQuote[row.quote_id] = row.number || 'This invoice';
+      }
+    });
+    rememberApprovedFromCurrent();
+  }
+
+  function rememberApprovedFromCurrent() {
+    const id = currentQuoteId();
+    if (!id) return;
+    const row = currentQuoteInvoices.find(r => r && r.status === 'approved');
+    if (row) approvedInvoiceByQuote[id] = row.number || approvedInvoiceByQuote[id] || 'This invoice';
+  }
+
+  function voidBlockedMessage(number) {
+    const n = String(number || '').trim() || 'This invoice';
+    return `${n} is approved. Voiding this quote won't undo the sale.`;
+  }
+
+  function linesLockedMessage(number) {
+    const n = String(number || '').trim() || 'This invoice';
+    return `${n} is approved. This quote's lines can't change after the sale.`;
+  }
+
+  async function blockingApprovedNumber(quoteId) {
+    if (!quoteId) return '';
+    if (quoteId === currentQuoteId()) {
+      const row = currentQuoteInvoices.find(r => r && r.status === 'approved');
+      if (row) return row.number || approvedInvoiceByQuote[quoteId] || 'This invoice';
+    }
+    if (approvedInvoiceByQuote[quoteId]) return approvedInvoiceByQuote[quoteId];
+    if (!shop().supabaseClient) return '';
+    const { data, error } = await shop().supabaseClient.from('invoices')
+      .select('number,status')
+      .eq('quote_id', quoteId)
+      .eq('status', 'approved')
+      .limit(1);
+    if (error) return null;
+    const number = data && data[0] ? (data[0].number || 'This invoice') : '';
+    if (number) approvedInvoiceByQuote[quoteId] = number;
+    return number;
   }
 
   function renderQuotesList() {
@@ -373,7 +435,7 @@ export function installQuote() {
                 <button type="button" class="secondary" onclick="openQuote('${q.id}')">Open</button>
                 <button type="button" class="secondary" onclick="printQuoteById('${q.id}')">Print</button>
                 <button type="button" class="secondary" onclick="duplicateQuoteById('${q.id}')">Dup</button>
-                <button type="button" class="secondary" onclick="voidQuoteById('${q.id}')">Void quote</button>
+                <button type="button" class="secondary" ${approvedInvoiceByQuote[q.id] ? 'disabled style="opacity:0.45"' : ''} onclick="voidQuoteById('${q.id}')">Void quote</button>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -381,6 +443,7 @@ export function installQuote() {
   }
 
   async function startNewQuote() {
+    emptyWorkingCart();
     editingQuoteId = null;
     document.getElementById('quote-edit-id').value = '';
     resetQuoteInvoiceUi();
@@ -461,10 +524,24 @@ export function installQuote() {
       shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
       return false;
     }
+    const existingId = editingQuoteId || document.getElementById('quote-edit-id').value || '';
+    if (existingId) {
+      const blockedNum = await blockingApprovedNumber(existingId);
+      if (blockedNum === null) {
+        shop().showStatus("Couldn't check invoices — quote was not saved", 'error');
+        return false;
+      }
+      if (blockedNum) {
+        applySaleLocks();
+        shop().showStatus(linesLockedMessage(blockedNum), 'error');
+        return false;
+      }
+    }
     if (quoteCart.length === 0) {
       shop().showStatus('Add at least one line before saving', 'error');
       return false;
     }
+    const requestedStatus = document.getElementById('quote-status').value || 'draft';
     let number = (document.getElementById('quote-number').value || '').trim();
     if (!number) {
       number = await nextDocNumber('quote');
@@ -500,7 +577,7 @@ export function installQuote() {
       fob_point: fob || null,
       payment_terms: terms || null,
       lead_time: lead || null,
-      status: document.getElementById('quote-status').value || 'draft',
+      status: requestedStatus,
       quote_date: document.getElementById('quote-date').value || null,
       valid_until: document.getElementById('quote-valid').value || null,
       prepared_by: (document.getElementById('quote-by').value || '').trim() || shop().currentUser() || null,
@@ -569,6 +646,17 @@ export function installQuote() {
     if (!shop().requireUser('voiding quotes')) return;
     if (!id) {
       shop().showStatus('Open a saved quote to void it', 'error');
+      return;
+    }
+    const blockedNum = await blockingApprovedNumber(id);
+    if (blockedNum === null) {
+      shop().showStatus("Couldn't check invoices — quote was not voided", 'error');
+      return;
+    }
+    if (blockedNum) {
+      applySaleLocks();
+      renderQuotesList();
+      shop().showStatus(voidBlockedMessage(blockedNum), 'error');
       return;
     }
     const row = quotesListCache.find(q => q.id === id);
@@ -833,9 +921,24 @@ export function installQuote() {
     return drafts.length ? drafts[drafts.length - 1] : null;
   }
 
+  function applySaleLocks() {
+    const blocked = quoteSaleBlocked();
+    ['quote-void-btn', 'quote-save-btn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = blocked;
+      btn.style.opacity = blocked ? '0.45' : '';
+    });
+    const st = document.getElementById('quote-status');
+    if (!st) return;
+    [...st.options].forEach(opt => {
+      if (opt.value === 'void' || opt.value === 'expired') opt.disabled = blocked;
+    });
+  }
+
   function resetQuoteInvoiceUi() {
     currentQuoteInvoices = [];
-    renderQuoteInvoiceRows([]);
+    renderQuoteInvoiceRows([], { syncApproved: false });
   }
 
   async function ensureQuoteForInvoice() {
@@ -872,8 +975,19 @@ export function installQuote() {
 
   function renderQuoteInvoiceRows(rows, opts) {
     const linked = !opts || opts.linked !== false;
-    if (linked) currentQuoteInvoices = rows || [];
+    if (linked) {
+      currentQuoteInvoices = rows || [];
+      const syncApproved = !opts || opts.syncApproved !== false;
+      const id = currentQuoteId();
+      if (syncApproved && id) {
+        const row = currentQuoteInvoices.find(r => r && r.status === 'approved');
+        if (row) approvedInvoiceByQuote[id] = row.number || 'This invoice';
+        else delete approvedInvoiceByQuote[id];
+      }
+    }
     const blocked = quoteSaleBlocked();
+    applySaleLocks();
+    if (linked && (!opts || opts.syncApproved !== false)) renderQuotesList();
     const btn = document.getElementById('quote-invoice-btn');
     if (btn) {
       btn.disabled = blocked;
@@ -884,13 +998,18 @@ export function installQuote() {
     const list = document.getElementById('quote-invoices');
     if (note) {
       if (linked && blocked) {
+        const approved = currentQuoteInvoices.find(r => r && r.status === 'approved');
+        const num = approved && approved.number;
         note.style.display = 'block';
-        note.textContent = 'This quote already has an approved invoice.';
+        note.style.whiteSpace = 'pre-line';
+        note.textContent = `${voidBlockedMessage(num)}\n${linesLockedMessage(num)}`;
       } else if (display.length) {
         note.style.display = 'block';
+        note.style.whiteSpace = '';
         note.textContent = 'Drafts do not change stock. Approve does.';
       } else {
         note.style.display = 'none';
+        note.style.whiteSpace = '';
         note.textContent = '';
       }
     }
@@ -965,12 +1084,14 @@ export function installQuote() {
     const payload = data && typeof data === 'object' ? data : {};
     if (payload.already_approved) {
       shop().showStatus(`Already approved — ${payload.number || 'this invoice'}. Shelf unchanged.`, 'info');
+      emptyWorkingCart();
     } else if (payload.ok) {
       shop().showStatus(`Approved ${payload.number || 'invoice'}. Parts left the shelf.`, 'success');
       if (quoteId) {
         const st = document.getElementById('quote-status');
         if (st) st.value = 'accepted';
       }
+      emptyWorkingCart();
     } else {
       showApproveError(approveFailText(payload));
       if (quoteId) await refreshQuoteInvoices();

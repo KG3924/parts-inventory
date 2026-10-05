@@ -194,6 +194,8 @@ Status enum (app): draft | sent | accepted | expired | void.
 - A quote line that wants more than the live new-shelf qty shows `wants N / shelf M` before Save & print. That is a warning only. Save & print and Approve stay available. Nothing is reserved.
 - **Save & print** reuses the newest open draft invoice on this quote: it refreshes that header and its lines from the cart and reprints the same INV- number. A new INV- is minted only when the quote has no open draft. An approved invoice still blocks another invoice.
 - **Invoice…** on a cart that is not saved yet runs **Save quote** first. **Save & print** does the same if there is still no quote. If that save fails, the invoice box stays closed and no INV- is minted. Draft reuse still needs that quote id.
+- **New quote** clears the working cart (no confirm) and starts a blank header. **Approve** success does the same to the cart after the success message, and leaves the quote open. Approve failure, Save quote, and Save & print do not clear the cart.
+- If this quote has an approved invoice, **Void quote** is grey on the builder and on the list, and the note names that INV: `INV-… is approved. Voiding this quote won't undo the sale.` Void and Expired cannot be chosen or saved. **Save quote** is grey too, and the note also says `INV-… is approved. This quote's lines can't change after the sale.` Save quote does not replace those lines. A quote with only a draft, or no invoice, can still be voided and still saves. Void does not restock and does not change the invoice.
 - An Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows a red message fixed at the top of the screen and scrolls that banner into view. Approve stays tappable, including when a line is short. The shelf does not change and the draft stays a draft. The banner still clears after a few seconds.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
@@ -372,4 +374,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-01 — Docs match the app: Vite build, quote modules, Invoice… saves the quote first, Approve failures stay on screen. No new SQL.*
+*Last updated: 2026-10-05 — New quote and a successful Approve clear the working cart. An approved invoice blocks Void, Expired, and Save quote. No new SQL.*
