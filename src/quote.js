@@ -648,7 +648,13 @@ export function installQuote() {
     editingQuoteId = quoteId;
     document.getElementById('quote-edit-id').value = quoteId;
     shop().showStatus(`Quote ${number} saved (${shop().currentUser()})`, 'success');
-    await refreshQuoteInvoices();
+    const openId = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
+    if (requestedStatus === 'void' && openId && openId === String(quoteId)) {
+      emptyWorkingCart();
+      await refreshQuoteInvoices();
+    } else {
+      await refreshQuoteInvoices();
+    }
     await loadQuotesList();
     return !!currentQuoteId();
   }
