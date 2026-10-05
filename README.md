@@ -72,7 +72,7 @@ Stock changes and document numbers already go through `schema/a1_stock_doc_refer
 
 **A2.4** is `schema/a2_4_void_quote_approve_lock.sql`. Run it once, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → SQL → smoke. It makes Approve refuse a void quote, and a missing quote row, before any debit. The draft stays a draft. Re-running `schema/a2_approve_invoice.sql` keeps that same function. Do not run it before the phones show this build.
 
-**A2.4b** is `schema/a2_4b_void_quote_final.sql`. Run it once, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → SQL → smoke. A void quote stays void. Changing that row, or its lines, raises `Q-… is void. Start a new quote to bring this deal back.` It does not void invoices and does not change Approve. A grey Save button alone is not the lock.
+**A2.4b** is `schema/a2_4b_void_quote_final.sql`. Run it once, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → SQL → smoke. Re-run that same file to pick up the line-delete rule. A void quote stays void. Changing that row, or inserting or updating its lines, raises `Q-… is void. Start a new quote to bring this deal back.` Deleting a line is refused while the void quote is still there. Deleting the void quote removes its lines with it. It does not void invoices and does not change Approve. A grey Save button alone is not the lock.
 
 ---
 
@@ -192,4 +192,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-10-05 — Void is final. Save refuses a void quote with `Q-… is void. Start a new quote to bring this deal back.` Comeback is Save as new quote or Duplicate. Run schema/a2_4b_void_quote_final.sql once after Pages and a hard-refresh. A grey Save button alone is not the lock.*
+*Last updated: 2026-10-05 — Void is final. Save refuses a void quote with `Q-… is void. Start a new quote to bring this deal back.` Comeback is Save as new quote or Duplicate. A line delete on a still-void quote is refused. Deleting the void quote removes its lines. Run schema/a2_4b_void_quote_final.sql once after Pages and a hard-refresh. A grey Save button alone is not the lock.*

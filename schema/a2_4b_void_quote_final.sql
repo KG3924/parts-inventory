@@ -9,8 +9,8 @@
 --   4. Smoke. A grey Save button alone is not the lock. Pass is an UPDATE
 --      of that void quote, with the session jwt sub set to a profile,
 --      raising the sentence below.
---
--- Safe to re-run. Does not delete quotes, lines, or invoices.
+-- Re-run this file to pick up the line-delete rule below. Safe to re-run.
+-- Does not itself delete quotes, lines, or invoices.
 -- Does not void a draft invoice and does not change shop_approve_invoice.
 -- The Approve refuse from schema/a2_4_void_quote_approve_lock.sql stays.
 --
@@ -18,9 +18,15 @@
 --   "Q-… is void. Start a new quote to bring this deal back."
 -- The number is the quote number. A blank number uses "This quote".
 -- The UPDATE that first sets status to void still succeeds.
--- quote_lines INSERT, UPDATE, and DELETE raise the same sentence when the
--- parent quote is void, including an UPDATE that moves a line off a void quote.
--- A line whose parent row is missing is left alone.
+-- quote_lines INSERT and UPDATE raise the same sentence when the parent
+-- quote is void, including an UPDATE that moves a line off a void quote.
+-- quote_lines DELETE raises that sentence while the void quote row is still
+-- there, so a line-edit Save cannot wipe the lines.
+-- DELETE of the void quote is allowed. BEFORE DELETE on quotes sets a
+-- transaction-local flag for that quote id. The line delete that follows
+-- (quote_lines.quote_id is ON DELETE CASCADE) sees the flag, or sees that
+-- the parent row is already gone, and is allowed. A line whose quote row
+-- is already missing can be deleted (orphan cleanup).
 --
 -- The screen writes lines before it seals status = void, so this lock does
 -- not reject that first Void save.
@@ -32,6 +38,13 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  if tg_op = 'DELETE' then
+    -- Transaction-local. The quote_lines delete trigger allows a wipe only
+    -- when this flag is set for the same quote id, or the parent is gone.
+    perform set_config('inmar.wipe_' || replace(old.id::text, '-', ''), 'on', true);
+    return old;
+  end if;
+
   if tg_op = 'UPDATE' and old.status = 'void' then
     raise exception '% is void. Start a new quote to bring this deal back.',
       coalesce(nullif(btrim(old.number), ''), 'This quote');
@@ -43,7 +56,7 @@ $$;
 -- Reads public.quotes, so this is security definer: a row the caller's RLS
 -- cannot see must not slip past the lock. It only raises or returns the row.
 -- Execute is revoked below. It does not check auth.uid() because the sentence
--- above is the error for every update that reaches a void quote.
+-- above is the error for every edit that reaches a void quote.
 create or replace function public.quote_lines_guard_void_final()
 returns trigger
 language plpgsql
@@ -54,13 +67,32 @@ declare
   v_quote_id uuid;
   v_status text;
   v_number text;
+  v_wipe text;
 begin
   if tg_op = 'DELETE' then
     v_quote_id := old.quote_id;
-  else
-    v_quote_id := new.quote_id;
+    if v_quote_id is null then
+      return old;
+    end if;
+
+    select q.status, q.number into v_status, v_number
+    from public.quotes q
+    where q.id = v_quote_id;
+    if not found then
+      return old;
+    end if;
+
+    if v_status = 'void' then
+      v_wipe := current_setting('inmar.wipe_' || replace(v_quote_id::text, '-', ''), true);
+      if coalesce(v_wipe, '') is distinct from 'on' then
+        raise exception '% is void. Start a new quote to bring this deal back.',
+          coalesce(nullif(btrim(v_number), ''), 'This quote');
+      end if;
+    end if;
+    return old;
   end if;
 
+  v_quote_id := new.quote_id;
   if v_quote_id is not null then
     select q.status, q.number into v_status, v_number
     from public.quotes q
@@ -83,9 +115,6 @@ begin
     end if;
   end if;
 
-  if tg_op = 'DELETE' then
-    return old;
-  end if;
   return new;
 end;
 $$;
@@ -95,7 +124,7 @@ revoke all on function public.quote_lines_guard_void_final() from public, anon, 
 
 drop trigger if exists quotes_void_final on public.quotes;
 create trigger quotes_void_final
-  before update on public.quotes
+  before update or delete on public.quotes
   for each row
   execute function public.quotes_guard_void_final();
 

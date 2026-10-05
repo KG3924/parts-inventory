@@ -89,7 +89,7 @@ created_at (timestamptz)
 - `schema/a1_stock_doc_referee.sql` — qty and document-number referee (already applied)
 - `schema/a2_approve_invoice.sql` — Approve invoice debits stock (run only after this page is on the phones)
 - `schema/a2_4_void_quote_approve_lock.sql` — Approve refuses a void or missing quote (run once after the A2.4 page is on the phones)
-- `schema/a2_4b_void_quote_final.sql` — a void quote stays void and its lines cannot change (run once after the A2.4b page is on the phones)
+- `schema/a2_4b_void_quote_final.sql` — a void quote stays void. Line edits are refused. Deleting the quote removes its lines (run once after the A2.4b page is on the phones)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -199,7 +199,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **New quote** clears the working cart (no confirm) and starts a blank header. **Approve** success toasts `INV-… approved. Parts left the shelf.` and then starts that same blank quote, so the sold quote is only in Saved quotes. An already-approved tap does the same after its info toast. Approve failure leaves the quote open and leaves the cart. Save quote and Save & print do not clear the cart, except **Save** when the status just saved is Void and that quote is open. **Void quote** clears the cart when the voided quote is the one open in the builder, including Void from the list. Voiding a different quote leaves the cart.
 - If this quote has an approved invoice, **Void quote** is grey on the builder and on the list, and the note names that INV: `INV-… is approved. Voiding this quote won't undo the sale.` Void and Expired cannot be chosen or saved. **Save quote** is grey too, and the note also says `INV-… is approved. This quote's lines can't change after the sale.` Save quote does not replace those lines. **Save as new quote** keeps the lines, mints a new Q- number, writes those lines to that new quote immediately, and leaves customer, project, RFQ, FOB, terms, notes, and lead time blank. A quote with only a draft, or no invoice, can still be voided and still saves. Void does not restock and does not change the invoice.
 - **Save & print** refuses when the open quote is Void. The note names that Q-: `Q-… is void. This invoice can't be approved.` It does not create or refresh a draft. A draft invoice on a void quote stays a draft. The invoice list shows that same Q- note and **Approve** is grey. A tap still calls `shop_approve_invoice`, which refuses before any debit. Drafts are not auto-voided. There is no new invoice status.
-- Once a quote is Void, it stays Void. The status dropdown is locked and **Save quote** is grey. Save reads the stored status, so picking another status does not write. The refusal is `Q-… is void. Start a new quote to bring this deal back.` Bring the deal back with **Save as new quote** or **Duplicate**. Save as new quote mints a fresh Q-, writes the lines on screen now, and leaves the customer and header blank. It does not copy Void onto the new quote.
+- Once a quote is Void, it stays Void. The status dropdown is locked and **Save quote** is grey. Save reads the stored status, so picking another status does not write. The refusal is `Q-… is void. Start a new quote to bring this deal back.` Bring the deal back with **Save as new quote** or **Duplicate**. Save as new quote mints a fresh Q-, writes the lines on screen now, and leaves the customer and header blank. It does not copy Void onto the new quote. Deleting one line is refused while that void quote still exists. Deleting the void quote removes its lines with it.
 - An Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows a red message fixed at the top of the screen and scrolls that banner into view. Approve stays tappable, including when a line is short. The shelf does not change and the draft stays a draft. The banner still clears after a few seconds.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
@@ -322,9 +322,9 @@ Run `schema/a2_4_void_quote_approve_lock.sql` **once**, only after this build is
 
 ## Void is final (run SQL only after the A2.4b page is on the phones)
 
-Once `quotes.status` is void, that row is locked. Any later update raises `Q-… is void. Start a new quote to bring this deal back.` A blank number uses `This quote`. Insert, update, and delete on `quote_lines` for that quote raise the same sentence. The save that first sets Void still works: lines are written, then the status is sealed. This file does not void invoices and does not change `shop_approve_invoice`.
+Once `quotes.status` is void, that row is locked. Any later update raises `Q-… is void. Start a new quote to bring this deal back.` A blank number uses `This quote`. Insert and update on `quote_lines` for that quote raise the same sentence. Delete of a line is refused while the void quote row is still there, so a line-edit Save cannot wipe the lines. Delete of the void quote is allowed, and its lines go with it. A line whose quote row is already gone can be deleted. The save that first sets Void still works: lines are written, then the status is sealed. This file does not void invoices and does not change `shop_approve_invoice`.
 
-Run `schema/a2_4b_void_quote_final.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. A grey Save button alone is not the lock. The pass is an update of that void quote, under a signed-in profile, raising that sentence.
+Run `schema/a2_4b_void_quote_final.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Re-run the same file to pick up the line-delete rule. A grey Save button alone is not the lock. The pass is an update of that void quote, under a signed-in profile, raising that sentence. Optional prove: delete one line on that still-void quote and it raises the same sentence. Delete the void quote and its lines go with it.
 
 ## Quote screen (no new SQL)
 
@@ -372,7 +372,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/a1_stock_doc_referee.sql` | Live qty + document-number referee |
 | `schema/a2_approve_invoice.sql` | Approve invoice. Run after phones hard-refresh onto this page. Same function as A2.4, so a re-run keeps the void refuse |
 | `schema/a2_4_void_quote_approve_lock.sql` | Replaces `shop_approve_invoice` so a void or missing quote cannot be approved. Run once after A2.4 is on Pages and every phone has hard-refreshed |
-| `schema/a2_4b_void_quote_final.sql` | Locks a void quote and its lines. Run once after A2.4b is on Pages and every phone has hard-refreshed |
+| `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Deleting the quote removes its lines. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule |
 
 ## Local-only (this Mac, not in git)
 
@@ -392,4 +392,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-05 — Void is final. Save refuses a void quote with `Q-… is void. Start a new quote to bring this deal back.` Comeback is Save as new quote or Duplicate. Run schema/a2_4b_void_quote_final.sql once after Pages and a hard-refresh. A grey Save button alone is not the lock.*
+*Last updated: 2026-10-05 — Void is final. Save refuses a void quote with `Q-… is void. Start a new quote to bring this deal back.` Comeback is Save as new quote or Duplicate. A line delete on a still-void quote is refused. Deleting the void quote removes its lines. Run schema/a2_4b_void_quote_final.sql once after Pages and a hard-refresh. A grey Save button alone is not the lock.*
