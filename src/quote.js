@@ -20,6 +20,7 @@ export function installQuote() {
   let quotesListCache = [];
   let quoteStatusFilter = "open";
   let editingQuoteId = null;
+  let loadedQuoteStatus = '';
   let currentQuoteInvoices = [];
   let approvedInvoiceByQuote = {};
   let invoiceSaveBusy = false;
@@ -402,6 +403,85 @@ export function installQuote() {
     return (document.getElementById('quote-status')?.value || '') === 'void';
   }
 
+  function voidFinalMessage(number) {
+    const n = String(number || '').trim() || 'This quote';
+    return `${n} is void. Start a new quote to bring this deal back.`;
+  }
+
+  function quoteIsVoidFinal() {
+    return !!currentQuoteId() && loadedQuoteStatus === 'void';
+  }
+
+  function dbErrorRaw(error) {
+    return [error && error.message, error && error.details, error && error.hint]
+      .filter(v => v != null && String(v).trim())
+      .map(v => String(v))
+      .join('\n');
+  }
+
+  function isVoidLockError(error) {
+    return /is void/i.test(dbErrorRaw(error));
+  }
+
+  function showQuoteSaveError(error, kind) {
+    if (isVoidLockError(error)) {
+      loadedQuoteStatus = 'void';
+      const st = document.getElementById('quote-status');
+      if (st) st.value = 'void';
+      renderQuoteInvoiceRows(currentQuoteInvoices);
+      shop().showStatus(voidFinalMessage(document.getElementById('quote-number')?.value), 'error');
+      return;
+    }
+    const msg = error && error.message ? error.message : 'save failed';
+    if (kind === 'lines') {
+      shop().showStatus('Quote header saved but lines failed: ' + msg, 'error');
+      return;
+    }
+    shop().showStatus('Save failed: ' + msg + ' — run Phase 2 SQL on the More tab for new quote fields', 'error');
+  }
+
+  function quoteLineRows(quoteId) {
+    return quoteCart.map((c, i) => ({
+      quote_id: quoteId,
+      line_no: i + 1,
+      inventory_id: c.inventory_id || c.id || null,
+      part_number: c.part_number || null,
+      name: c.name || 'Item',
+      qty: c.qty || 1,
+      unit_price: c.unit_price || 0
+    }));
+  }
+
+  async function writeQuoteHeader(quoteId, payload) {
+    const run = (body) => {
+      if (quoteId) return shop().supabaseClient.from('quotes').update(body).eq('id', quoteId);
+      return shop().supabaseClient.from('quotes').insert(body).select('id').maybeSingle();
+    };
+    let res = await run(payload);
+    if (res.error && /project|rfq_number|fob_point|payment_terms|lead_time/i.test(res.error.message || '')) {
+      const slim = { ...payload };
+      delete slim.project;
+      delete slim.rfq_number;
+      delete slim.fob_point;
+      delete slim.payment_terms;
+      delete slim.lead_time;
+      res = await run(slim);
+    }
+    return { error: res.error || null, id: quoteId || (res.data && res.data.id) || null };
+  }
+
+  async function insertQuoteLines(quoteId) {
+    const { error } = await shop().supabaseClient.from('quote_lines').insert(quoteLineRows(quoteId));
+    return error || null;
+  }
+
+  // Lines are replaced while the parent is still not void. The seal update comes after.
+  async function replaceQuoteLines(quoteId) {
+    const removed = await shop().supabaseClient.from('quote_lines').delete().eq('quote_id', quoteId);
+    if (removed.error) return removed.error;
+    return insertQuoteLines(quoteId);
+  }
+
   async function blockingApprovedNumber(quoteId) {
     if (!quoteId) return '';
     if (quoteId === currentQuoteId()) {
@@ -454,6 +534,7 @@ export function installQuote() {
   async function startNewQuote(opts) {
     emptyWorkingCart();
     editingQuoteId = null;
+    loadedQuoteStatus = '';
     document.getElementById('quote-edit-id').value = '';
     resetQuoteInvoiceUi();
     document.getElementById('quote-status').value = 'draft';
@@ -498,6 +579,7 @@ export function installQuote() {
     const { data: lines } = await shop().supabaseClient.from('quote_lines')
       .select('*').eq('quote_id', id).order('line_no');
     editingQuoteId = q.id;
+    loadedQuoteStatus = q.status || '';
     document.getElementById('quote-edit-id').value = q.id;
     document.getElementById('quote-number').value = q.number || '';
     document.getElementById('quote-status').value = q.status || 'draft';
@@ -536,7 +618,27 @@ export function installQuote() {
       return false;
     }
     const existingId = editingQuoteId || document.getElementById('quote-edit-id').value || '';
+    let storedStatus = '';
     if (existingId) {
+      const { data: stored, error: storedErr } = await shop().supabaseClient.from('quotes')
+        .select('number,status')
+        .eq('id', existingId)
+        .maybeSingle();
+      if (storedErr) {
+        shop().showStatus("Couldn't check the quote — it was not saved", 'error');
+        return false;
+      }
+      if (stored && stored.status === 'void') {
+        loadedQuoteStatus = 'void';
+        const st = document.getElementById('quote-status');
+        if (st) st.value = 'void';
+        const numEl = document.getElementById('quote-number');
+        if (numEl && stored.number) numEl.value = stored.number;
+        renderQuoteInvoiceRows(currentQuoteInvoices);
+        shop().showStatus(voidFinalMessage(stored.number || numEl?.value), 'error');
+        return false;
+      }
+      storedStatus = stored && stored.status ? stored.status : '';
       const blockedNum = await blockingApprovedNumber(existingId);
       if (blockedNum === null) {
         shop().showStatus("Couldn't check invoices — quote was not saved", 'error');
@@ -596,50 +698,64 @@ export function installQuote() {
       created_by: shop().currentUser(),
       updated_at: new Date().toISOString()
     };
-    let quoteId = editingQuoteId || document.getElementById('quote-edit-id').value || null;
-    let error;
-    if (quoteId) {
-      ({ error } = await shop().supabaseClient.from('quotes').update(payload).eq('id', quoteId));
-      if (!error) {
-        await shop().supabaseClient.from('quote_lines').delete().eq('quote_id', quoteId);
+    let quoteId = existingId || null;
+    const sealingVoid = requestedStatus === 'void' && storedStatus !== 'void';
+    if (quoteId && sealingVoid) {
+      const lineErr = await replaceQuoteLines(quoteId);
+      if (lineErr) {
+        showQuoteSaveError(lineErr, 'before-header');
+        return false;
+      }
+      const written = await writeQuoteHeader(quoteId, payload);
+      if (written.error) {
+        showQuoteSaveError(written.error, 'header');
+        return false;
+      }
+    } else if (quoteId) {
+      const written = await writeQuoteHeader(quoteId, payload);
+      if (written.error) {
+        showQuoteSaveError(written.error, 'header');
+        return false;
+      }
+      const lineErr = await replaceQuoteLines(quoteId);
+      if (lineErr) {
+        showQuoteSaveError(lineErr, 'lines');
+        return false;
+      }
+    } else if (sealingVoid) {
+      const written = await writeQuoteHeader(null, { ...payload, status: 'draft' });
+      if (written.error || !written.id) {
+        showQuoteSaveError(written.error || { message: "Couldn't save the quote" }, 'header');
+        return false;
+      }
+      quoteId = written.id;
+      editingQuoteId = quoteId;
+      document.getElementById('quote-edit-id').value = quoteId;
+      loadedQuoteStatus = 'draft';
+      const lineErr = await insertQuoteLines(quoteId);
+      if (lineErr) {
+        showQuoteSaveError(lineErr, 'lines');
+        return false;
+      }
+      const sealed = await shop().supabaseClient.from('quotes')
+        .update({ status: 'void', updated_at: new Date().toISOString() })
+        .eq('id', quoteId);
+      if (sealed.error) {
+        showQuoteSaveError(sealed.error, 'header');
+        return false;
       }
     } else {
-      const res = await shop().supabaseClient.from('quotes').insert(payload).select('id').maybeSingle();
-      error = res.error;
-      quoteId = res.data?.id;
-    }
-    if (error && /project|rfq_number|fob_point|payment_terms|lead_time/i.test(error.message || '')) {
-      delete payload.project;
-      delete payload.rfq_number;
-      delete payload.fob_point;
-      delete payload.payment_terms;
-      delete payload.lead_time;
-      if (quoteId) {
-        ({ error } = await shop().supabaseClient.from('quotes').update(payload).eq('id', quoteId));
-        if (!error) await shop().supabaseClient.from('quote_lines').delete().eq('quote_id', quoteId);
-      } else {
-        const retry = await shop().supabaseClient.from('quotes').insert(payload).select('id').maybeSingle();
-        error = retry.error;
-        quoteId = retry.data?.id;
+      const written = await writeQuoteHeader(null, payload);
+      if (written.error || !written.id) {
+        showQuoteSaveError(written.error || { message: "Couldn't save the quote" }, 'header');
+        return false;
       }
-    }
-    if (error) {
-      shop().showStatus('Save failed: ' + error.message + ' — run Phase 2 SQL on the More tab for new quote fields', 'error');
-      return false;
-    }
-    const lineRows = quoteCart.map((c, i) => ({
-      quote_id: quoteId,
-      line_no: i + 1,
-      inventory_id: c.inventory_id || c.id || null,
-      part_number: c.part_number || null,
-      name: c.name || 'Item',
-      qty: c.qty || 1,
-      unit_price: c.unit_price || 0
-    }));
-    const { error: lErr } = await shop().supabaseClient.from('quote_lines').insert(lineRows);
-    if (lErr) {
-      shop().showStatus('Quote header saved but lines failed: ' + lErr.message, 'error');
-      return false;
+      quoteId = written.id;
+      const lineErr = await insertQuoteLines(quoteId);
+      if (lineErr) {
+        showQuoteSaveError(lineErr, 'lines');
+        return false;
+      }
     }
     if (!quoteId) {
       shop().showStatus("Couldn't save the quote — invoice was not created", 'error');
@@ -647,14 +763,10 @@ export function installQuote() {
     }
     editingQuoteId = quoteId;
     document.getElementById('quote-edit-id').value = quoteId;
+    loadedQuoteStatus = requestedStatus;
     shop().showStatus(`Quote ${number} saved (${shop().currentUser()})`, 'success');
-    const openId = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
-    if (requestedStatus === 'void' && openId && openId === String(quoteId)) {
-      emptyWorkingCart();
-      await refreshQuoteInvoices();
-    } else {
-      await refreshQuoteInvoices();
-    }
+    if (requestedStatus === 'void') emptyWorkingCart();
+    await refreshQuoteInvoices();
     await loadQuotesList();
     return !!currentQuoteId();
   }
@@ -671,6 +783,7 @@ export function installQuote() {
     }
     const lines = quoteCart.map(c => ({ ...c }));
     editingQuoteId = null;
+    loadedQuoteStatus = '';
     const edit = document.getElementById('quote-edit-id');
     if (edit) edit.value = '';
     resetQuoteInvoiceUi();
@@ -724,11 +837,23 @@ export function installQuote() {
       .update({ status: 'void', updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) {
+      if (isVoidLockError(error)) {
+        const openNow = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
+        if (openNow && openNow === String(id)) {
+          loadedQuoteStatus = 'void';
+          const st = document.getElementById('quote-status');
+          if (st) st.value = 'void';
+          await refreshQuoteInvoices();
+        }
+        shop().showStatus(voidFinalMessage(row?.number || document.getElementById('quote-number')?.value), 'error');
+        return;
+      }
       shop().showStatus(error.message, 'error');
       return;
     }
     const openId = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
     if (openId && openId === String(id)) {
+      loadedQuoteStatus = 'void';
       const st = document.getElementById('quote-status');
       if (st) st.value = 'void';
       emptyWorkingCart();
@@ -753,6 +878,7 @@ export function installQuote() {
       return;
     }
     editingQuoteId = null;
+    loadedQuoteStatus = '';
     document.getElementById('quote-edit-id').value = '';
     document.getElementById('quote-status').value = 'draft';
     resetQuoteInvoiceUi();
@@ -983,14 +1109,19 @@ export function installQuote() {
 
   function applySaleLocks() {
     const blocked = quoteSaleBlocked();
-    ['quote-void-btn', 'quote-save-btn'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (!btn) return;
-      btn.disabled = blocked;
-      btn.style.opacity = blocked ? '0.45' : '';
-    });
+    const voidFinal = quoteIsVoidFinal();
+    const voidBtn = document.getElementById('quote-void-btn');
+    if (voidBtn) {
+      voidBtn.disabled = blocked;
+      voidBtn.style.opacity = blocked ? '0.45' : '';
+    }
+    const saveBtn = document.getElementById('quote-save-btn');
+    if (saveBtn) {
+      saveBtn.disabled = blocked;
+      saveBtn.style.opacity = (blocked || voidFinal) ? '0.45' : '';
+    }
     const saveNew = document.getElementById('quote-save-new-btn');
-    if (saveNew) saveNew.hidden = !blocked;
+    if (saveNew) saveNew.hidden = !(blocked || voidFinal);
     const printBtn = document.getElementById('quote-save-print-btn');
     const voided = openQuoteIsVoid();
     if (printBtn) {
@@ -999,6 +1130,8 @@ export function installQuote() {
     }
     const st = document.getElementById('quote-status');
     if (!st) return;
+    st.disabled = voidFinal;
+    st.style.opacity = voidFinal ? '0.45' : '';
     [...st.options].forEach(opt => {
       if (opt.value === 'void' || opt.value === 'expired') opt.disabled = blocked;
     });
@@ -1071,6 +1204,10 @@ export function installQuote() {
         note.style.display = 'block';
         note.style.whiteSpace = 'pre-line';
         note.textContent = `${voidBlockedMessage(num)}\n${linesLockedMessage(num)}`;
+      } else if (linked && quoteIsVoidFinal()) {
+        note.style.display = 'block';
+        note.style.whiteSpace = '';
+        note.textContent = voidFinalMessage(document.getElementById('quote-number')?.value);
       } else if (linked && openQuoteIsVoid() && display.some(r => r && r.status !== 'approved')) {
         note.style.display = 'block';
         note.style.whiteSpace = '';
