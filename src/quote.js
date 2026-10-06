@@ -22,6 +22,7 @@ export function installQuote() {
   let editingQuoteId = null;
   let loadedQuoteStatus = '';
   let currentQuoteInvoices = [];
+  let printedDraftLines = null;
   let approvedInvoiceByQuote = {};
   let invoiceSaveBusy = false;
 
@@ -31,6 +32,9 @@ export function installQuote() {
   function saveQuoteCart() {
     localStorage.setItem('inv_quote', JSON.stringify(quoteCart));
     renderQuotePanel();
+    if (document.getElementById('quote-invoices')) {
+      renderQuoteInvoiceRows(currentQuoteInvoices, { syncApproved: false });
+    }
   }
 
   function emptyWorkingCart() {
@@ -1107,6 +1111,50 @@ export function installQuote() {
     return drafts.length ? drafts[drafts.length - 1] : null;
   }
 
+  function normLineId(value) {
+    if (value == null) return '';
+    return String(value).trim();
+  }
+
+  function normLineText(value) {
+    return String(value ?? '').trim();
+  }
+
+  function normLineNum(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function lineFingerprint(line) {
+    return [
+      normLineId(line && line.inventory_id),
+      normLineText(line && line.part_number),
+      normLineText(line && line.name),
+      String(normLineNum(line && line.qty)),
+      String(normLineNum(line && line.unit_price))
+    ].join('\u001f');
+  }
+
+  function draftMismatchMessage(number) {
+    const n = String(number || '').trim() || 'this invoice';
+    return `Quote changed since ${n} was printed. Save & print before Approve`;
+  }
+
+  // Approve still sells invoice_lines. This only compares the cart to that draft.
+  function quoteDraftMismatch() {
+    const draft = newestOpenDraft();
+    if (!draft) return '';
+    if (!printedDraftLines || printedDraftLines.id !== draft.id) return '';
+    if (printedDraftLines.failed) return draftMismatchMessage(draft.number);
+    const cartFp = quoteCart.map(lineFingerprint);
+    const draftFp = (printedDraftLines.lines || []).map(lineFingerprint);
+    if (cartFp.length !== draftFp.length) return draftMismatchMessage(draft.number);
+    for (let i = 0; i < cartFp.length; i++) {
+      if (cartFp[i] !== draftFp[i]) return draftMismatchMessage(draft.number);
+    }
+    return '';
+  }
+
   function applySaleLocks() {
     const blocked = quoteSaleBlocked();
     const voidFinal = quoteIsVoidFinal();
@@ -1139,6 +1187,7 @@ export function installQuote() {
 
   function resetQuoteInvoiceUi() {
     currentQuoteInvoices = [];
+    printedDraftLines = null;
     renderQuoteInvoiceRows([], { syncApproved: false });
   }
 
@@ -1195,6 +1244,7 @@ export function installQuote() {
       btn.style.opacity = blocked ? '0.45' : '';
     }
     const display = linked ? currentQuoteInvoices : (rows || []);
+    const mismatchMsg = linked ? quoteDraftMismatch() : '';
     const note = document.getElementById('quote-sale-note');
     const list = document.getElementById('quote-invoices');
     if (note) {
@@ -1212,6 +1262,10 @@ export function installQuote() {
         note.style.display = 'block';
         note.style.whiteSpace = '';
         note.textContent = quoteVoidedMessage(document.getElementById('quote-number')?.value);
+      } else if (linked && mismatchMsg) {
+        note.style.display = 'block';
+        note.style.whiteSpace = '';
+        note.textContent = mismatchMsg;
       } else if (display.length) {
         note.style.display = 'block';
         note.style.whiteSpace = '';
@@ -1232,11 +1286,12 @@ export function installQuote() {
     list.innerHTML = display.map(r => {
       const isApproved = r.status === 'approved';
       const zombie = quoteVoided && !isApproved;
+      const holdApprove = !isApproved && (zombie || !!mismatchMsg);
       return `<div class="btn-group" style="align-items:center;">
         <code>${shop().escapeHtml(r.number || '')}</code>
         <span class="badge ${isApproved ? 'open-order' : 'source-tag'}">${isApproved ? 'Approved' : 'Draft'}</span>
         ${zombie ? `<span>${shop().escapeHtml(quoteVoidedMessage(quoteNum))}</span>` : ''}
-        <button type="button" ${zombie ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
+        <button type="button" ${holdApprove ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
       </div>`;
     }).join('');
   }
@@ -1245,6 +1300,7 @@ export function installQuote() {
     const quoteId = currentQuoteId();
     if (!quoteId || !shop().supabaseClient) {
       currentQuoteInvoices = [];
+      printedDraftLines = null;
       renderQuoteInvoiceRows([]);
       return;
     }
@@ -1257,7 +1313,26 @@ export function installQuote() {
       console.warn(error);
       return;
     }
-    renderQuoteInvoiceRows(data || []);
+    currentQuoteInvoices = data || [];
+    const draft = newestOpenDraft();
+    if (!draft) {
+      printedDraftLines = null;
+    } else {
+      const { data: lineData, error: lineErr } = await shop().supabaseClient.from('invoice_lines')
+        .select('line_no,inventory_id,part_number,name,qty,unit_price')
+        .eq('invoice_id', draft.id)
+        .order('line_no', { ascending: true });
+      if (currentQuoteId() !== quoteId) return;
+      if (!newestOpenDraft() || newestOpenDraft().id !== draft.id) return;
+      if (lineErr) {
+        printedDraftLines = { id: draft.id, lines: [], failed: true };
+      } else {
+        const lines = (lineData || []).slice().sort((a, b) => (Number(a.line_no) || 0) - (Number(b.line_no) || 0));
+        printedDraftLines = { id: draft.id, lines, failed: false };
+      }
+    }
+    if (currentQuoteId() !== quoteId) return;
+    renderQuoteInvoiceRows(currentQuoteInvoices);
   }
 
   function showApproveError(msg) {
@@ -1285,6 +1360,12 @@ export function installQuote() {
     if (!shop().requireUser('approving invoices')) return;
     if (!id || !shop().supabaseClient) {
       showApproveError("Couldn't approve — try again");
+      return;
+    }
+    const row = currentQuoteInvoices.find(r => r && String(r.id) === String(id));
+    const mismatchMsg = quoteDraftMismatch();
+    if (mismatchMsg && (!row || row.status !== 'approved')) {
+      showApproveError(mismatchMsg);
       return;
     }
     const { data, error } = await shop().supabaseClient.rpc('shop_approve_invoice', { p_invoice_id: id });
