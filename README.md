@@ -22,7 +22,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | Area | What it does |
 |------|----------------|
 | **Front row** | **Home · Scan · Inventory · Labels**. **Quote** is a second row by itself. Tabs, Quote, Scan start, Commit, Save, and Approve are large thumb targets. |
-| **Home** | Tiles: Parts, Low, Open Orders, Needs Delivery Date, **Find quotes & invoices**. A parts tile opens that list on Inventory. **Find** is the same size as Parts and Low, not a tab and not under More. **More** is a link here, not a front-row tab. |
+| **Home** | Stats row: Parts, Units, Low, Open Orders. A parts tile opens that list on Inventory. Units is a count only. **Find quotes & invoices** is a full-width tile under that row and above the value cards (cost, sell, margin, Needs Delivery Date). Find is not a tab and not under More. **More** is a link here, not a front-row tab. |
 | **Inventory** | Parts list, search, source + category chips, **+/−** on new qty, **Adjust**, Quote / Edit / Del. **+ Add part** is at the top. |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
 | **Add / Edit** | Opened from Inventory. Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
@@ -32,7 +32,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **More** | Link on Home. Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; Passwords; Reports; clear all |
 | **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
-**Sign-in:** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, and Ricky Whitfield each have their own login. Unlock once on that phone for a 12-hour shift. The phone’s saved password (Face ID, Touch ID, or fingerprint) fills the next unlock. There is no name dropdown. Prepared By and the adjustment log use only the signed-in person. **Sign out** is in the header. **More → Passwords** sets a new password for any of the five. They save it again on their phone.
+**Sign-in:** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, and Ricky Whitfield each have their own login. Unlock once on that phone for a 12-hour shift. The phone’s saved password (Face ID, Touch ID, or fingerprint) fills the next unlock. The unlock screen asks you to select your name. There is no header name dropdown. Prepared By and the adjustment log use only the signed-in person. **Sign out** is in the header. **More → Passwords** sets a new password for any of the five. They save it again on their phone.
 
 The public anon key is in `public-config.js`. Never commit a service-role key.
 
@@ -154,7 +154,7 @@ Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart 
 
 A database error keeps a known sale sentence exactly (`Q-… is void…`, `INV-… is approved…`, a short shelf, `Quote changed since INV-… was printed. Save & print before Approve`, `Couldn't approve — try again`). Other database text is not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`.
 
-**Find quotes & invoices** is a Home tile. Search by a Q- number, an INV- number, or a customer name. A piece of the number or name is enough. An empty search lists nothing. Opening a match stays on Find. It does not open the Quote builder and it does not show Approve. **Reprint** uses the same invoice as **Save & print** and does not write a row. An approved invoice reprints the stored header and lines. A draft invoice, or an open quote, reprints the current rows and the page says `Draft — current rows`. A void quote hides Reprint and shows `Q-… is void. Start a new quote to bring this deal back.` A draft invoice on that void quote hides Reprint and shows `Q-… is void. This invoice can't be approved.` An approved invoice can still be reprinted after its quote is void. Nothing here stores a PDF.
+**Find quotes & invoices** is a full-width Home tile under the stats row. Search by a Q- number, an INV- number, or a customer name. A piece of the number or name is enough. An empty search lists nothing. Opening a match stays on Find. It does not open the Quote builder and it does not show Approve. **Reprint** uses the same invoice as **Save & print** and does not write a row. An approved invoice reprints the stored header and lines. A draft invoice, or an open quote, reprints the current rows and the page says `Draft — current rows`. A void quote hides Reprint and shows `Q-… is void. Start a new quote to bring this deal back.` A draft invoice on that void quote hides Reprint and shows `Q-… is void. This invoice can't be approved.` An approved invoice can still be reprinted after its quote is void. Nothing here stores a PDF.
 
 ---
 
@@ -200,4 +200,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Home has Find quotes & invoices. Reprint uses the Save & print invoice. Approved reprint is the sold invoice. Draft and open quotes say Draft — current rows. A void quote hides Reprint. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
+*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Stats row is Parts, Units, Low, Open Orders. Find quotes & invoices is a full-width tile under that row. Reprint uses the Save & print invoice. Approved reprint is the sold invoice. Draft and open quotes say Draft — current rows. A void quote hides Reprint. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
