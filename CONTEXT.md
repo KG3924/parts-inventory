@@ -151,12 +151,20 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Quote** is a second bottom row by itself, always visible. It is not inside More and not only a button on Inventory.
 - **+ Add part** is at the top of Inventory. Add is not a tab.
 - **More** is a link on Home, not the front row. Schema/SQL, sell factors, exchange rates, export/import, costing, Passwords, and **Reports** are there.
-- When **R1a** ships, Home gains a tile named **Find quotes & invoices**. That tile is not under More and not on the Quote row. This build does not show the tile.
 
 ### Home
-- Tiles and the value summary: **Parts**, **Low**, **Open Orders**, **Needs Delivery Date**
-- Tap a tile to open Inventory on that list. Parts opens the full list.
+- Tiles and the value summary: **Parts**, **Low**, **Open Orders**, **Needs Delivery Date**, **Find quotes & invoices**
+- Tap a parts tile to open Inventory on that list. Parts opens the full list.
+- **Find quotes & invoices** is the same size as Parts and Low. It is not on the front row, not in More, and not on the Quote row.
 - **More** sits under the tiles
+
+### Find & reprint
+- Search needs a number fragment or a customer name. Partial match is enough. An empty search does not list the book.
+- A match opens Find only. It does not open the Quote builder, and it has no Approve and no stock control.
+- **Reprint** uses the same invoice builder as **Save & print**. It does not save a PDF and does not write a row.
+- An **approved** invoice reprints the stored header and `invoice_lines` (the sold paper). Opening its quote does the same reprint.
+- A **draft** invoice, or an open quote with no approved invoice, reprints the current rows and the PDF says `Draft — current rows`.
+- A **void** quote hides Reprint and shows `Q-… is void. Start a new quote to bring this deal back.` A draft invoice under that void quote hides Reprint and shows `Q-… is void. This invoice can't be approved.` An approved invoice under a void quote can still be reprinted as sold.
 
 ### Inventory
 - Search includes barcode (label ID is not shown)
@@ -416,4 +424,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
+*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Home has Find quotes & invoices. Reprint uses the Save & print invoice. Approved reprint is the sold invoice. Draft and open quotes say Draft — current rows. A void quote hides Reprint. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*

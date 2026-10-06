@@ -134,8 +134,16 @@
     .stat.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
     .stat.clickable:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
     .stat.clickable.active-filter { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+    .stat.find-tile {
+      min-height: 4.0625rem; display: flex; align-items: center; justify-content: center;
+    }
+    .stat.find-tile .stat-label {
+      font-size: 0.78rem; font-weight: 600; color: var(--text); line-height: 1.25;
+    }
     .stat-value { font-size: 1.15rem; font-weight: 700; }
     .stat-label { font-size: 0.68rem; color: var(--muted); }
+    #find-go, .find-hit { width: 100%; }
+    .find-hit { text-align: left; margin-bottom: 0.45rem; }
     .value-cards {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;
     }
@@ -336,8 +344,23 @@
     <div id="dashboard" class="panel active">
       <div class="stats" id="stats"></div>
       <div class="value-cards" id="value-summary"></div>
-      <p class="hint">Tap a tile to open that list.</p>
+      <p class="hint">Tap a tile to open it.</p>
       <button type="button" class="secondary tap" id="home-more-btn" onclick="showPanel('data')">More</button>
+    </div>
+
+    <!-- FIND quotes and invoices. Not a tab. -->
+    <div id="find" class="panel">
+      <div class="card">
+        <h2>Find quotes & invoices</h2>
+        <form id="find-form" action="#">
+          <label for="find-q">Number or customer</label>
+          <input id="find-q" type="search" autocomplete="off" enterkeyhint="search">
+          <button type="submit" class="tap" id="find-go">Find</button>
+        </form>
+        <p class="hint" id="find-hint">Type a quote number, invoice number, or customer. An empty search does not list everything.</p>
+        <div id="find-results"></div>
+        <div id="find-detail" hidden></div>
+      </div>
     </div>
 
     <!-- INVENTORY -->
@@ -998,7 +1021,7 @@ notify pgrst, 'reload schema';</pre>
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       const panel = document.getElementById(name);
       if (panel) panel.classList.add('active');
-      const tabName = (name === 'data' || name === 'reports') ? 'dashboard'
+      const tabName = (name === 'data' || name === 'reports' || name === 'find') ? 'dashboard'
         : (name === 'add' ? 'inventory' : name);
       const tab = document.querySelector('.tab[data-tab="' + tabName + '"]');
       if (tab) tab.classList.add('active');
@@ -1981,6 +2004,9 @@ notify pgrst, 'reload schema';</pre>
         </div>
         <div class="stat clickable ${homeAttentionFilter === 'open_order' ? 'active-filter' : ''}" onclick="setHomeFilter('open_order')" title="Filter open orders">
           <div class="stat-value" style="color:var(--open-order)">${open}</div><div class="stat-label">Open Orders</div>
+        </div>
+        <div class="stat clickable find-tile" onclick="showPanel('find')" title="Find quotes and invoices">
+          <div class="stat-label">Find quotes & invoices</div>
         </div>
       `;
       // keep out count available for needs date card; unused in stats grid intentionally
