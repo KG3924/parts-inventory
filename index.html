@@ -134,12 +134,13 @@
     .stat.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
     .stat.clickable:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
     .stat.clickable.active-filter { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
-    .stat.find-tile {
-      min-height: 4.0625rem; display: flex; align-items: center; justify-content: center;
+    .find-home-tile {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; margin: 0 0 0.85rem;
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); font-weight: 600; line-height: 1.2; cursor: pointer;
     }
-    .stat.find-tile .stat-label {
-      font-size: 0.78rem; font-weight: 600; color: var(--text); line-height: 1.25;
-    }
+    .find-home-tile:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
     .stat-value { font-size: 1.15rem; font-weight: 700; }
     .stat-label { font-size: 0.68rem; color: var(--muted); }
     #find-go, .find-hit { width: 100%; }
@@ -343,6 +344,7 @@
     <!-- HOME -->
     <div id="dashboard" class="panel active">
       <div class="stats" id="stats"></div>
+      <button type="button" class="find-home-tile tap" onclick="showPanel('find')">Find quotes & invoices</button>
       <div class="value-cards" id="value-summary"></div>
       <p class="hint">Tap a tile to open it.</p>
       <button type="button" class="secondary tap" id="home-more-btn" onclick="showPanel('data')">More</button>
@@ -2004,9 +2006,6 @@ notify pgrst, 'reload schema';</pre>
         </div>
         <div class="stat clickable ${homeAttentionFilter === 'open_order' ? 'active-filter' : ''}" onclick="setHomeFilter('open_order')" title="Filter open orders">
           <div class="stat-value" style="color:var(--open-order)">${open}</div><div class="stat-label">Open Orders</div>
-        </div>
-        <div class="stat clickable find-tile" onclick="showPanel('find')" title="Find quotes and invoices">
-          <div class="stat-label">Find quotes & invoices</div>
         </div>
       `;
       // keep out count available for needs date card; unused in stats grid intentionally
