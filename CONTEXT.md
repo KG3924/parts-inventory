@@ -153,9 +153,9 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **More** is a link on Home, not the front row. Schema/SQL, sell factors, exchange rates, export/import, costing, Passwords, and **Reports** are there.
 
 ### Home
-- Tiles and the value summary: **Parts**, **Low**, **Open Orders**, **Needs Delivery Date**, **Find quotes & invoices**
-- Tap a parts tile to open Inventory on that list. Parts opens the full list.
-- **Find quotes & invoices** is the same size as Parts and Low. It is not on the front row, not in More, and not on the Quote row.
+- Stats row: **Parts**, **Units**, **Low**, **Open Orders**. Parts, Low, and Open Orders open Inventory on that list. Parts opens the full list. Units is a count only.
+- **Find quotes & invoices** is its own full-width tile under that row and above the value cards. It is not inside the stats grid, not on the front row, not in More, and not on the Quote row.
+- Value cards: **Inventory at Cost**, **At Sell Price**, **Potential Margin**, **Needs Delivery Date**. Needs Delivery Date opens Inventory on that list.
 - **More** sits under the tiles
 
 ### Find & reprint
@@ -286,7 +286,7 @@ Conventions: empty category → **Unclassified**; missing PN → `{SOURCE}-PLACE
 - Optional `barcode` in JSON; otherwise app generates on insert
 - Optional `qty_used`, `list_price`, `list_currency`, `sell_factor`, `exclude_from_valuation`
 - Existing part numbers skipped
-- Sign in before import. The stamp is the signed-in person. There is no name dropdown.
+- Sign in before import. The stamp is the signed-in person. There is no header name dropdown.
 - Reorder default on import is **0** if omitted
 
 ---
@@ -424,4 +424,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Home has Find quotes & invoices. Reprint uses the Save & print invoice. Approved reprint is the sold invoice. Draft and open quotes say Draft — current rows. A void quote hides Reprint. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
+*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Stats row is Parts, Units, Low, Open Orders. Find quotes & invoices is a full-width tile under that row. Reprint uses the Save & print invoice. Approved reprint is the sold invoice. Draft and open quotes say Draft — current rows. A void quote hides Reprint. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
