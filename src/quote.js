@@ -353,7 +353,7 @@ export function installQuote() {
       .order('updated_at', { ascending: false })
       .limit(200);
     if (error) {
-      if (listEl) listEl.innerHTML = `<p class="empty">Could not load quotes: ${shop().escapeHtml(error.message)}</p>`;
+      if (listEl) listEl.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(error, 'load'))}</p>`;
       return;
     }
     quotesListCache = data || [];
@@ -436,12 +436,17 @@ export function installQuote() {
       shop().showStatus(voidFinalMessage(document.getElementById('quote-number')?.value), 'error');
       return;
     }
-    const msg = error && error.message ? error.message : 'save failed';
-    if (kind === 'lines') {
-      shop().showStatus('Quote header saved but lines failed: ' + msg, 'error');
+    const raw = dbErrorRaw(error);
+    const locked = shop().lockedShopSentence(raw);
+    if (locked) {
+      shop().showStatus(locked, 'error');
       return;
     }
-    shop().showStatus('Save failed: ' + msg + ' — run Phase 2 SQL on the More tab for new quote fields', 'error');
+    if (/project|rfq_number|fob_point|payment_terms|lead_time/i.test(error && error.message || '')) {
+      shop().showStatus('Save failed — run Phase 2 SQL on More for the new quote fields', 'error');
+      return;
+    }
+    shop().showStatus(shop().plainDbError(error, 'save'), 'error');
   }
 
   function quoteLineRows(quoteId) {
@@ -576,7 +581,7 @@ export function installQuote() {
     }
     const { data: q, error } = await shop().supabaseClient.from('quotes').select('*').eq('id', id).maybeSingle();
     if (error || !q) {
-      shop().showStatus(error?.message || 'Quote not found', 'error');
+      shop().showStatus(error ? shop().plainDbError(error, 'load') : 'Quote not found', 'error');
       await refreshQuoteInvoices();
       return;
     }
@@ -852,7 +857,7 @@ export function installQuote() {
         shop().showStatus(voidFinalMessage(row?.number || document.getElementById('quote-number')?.value), 'error');
         return;
       }
-      shop().showStatus(error.message, 'error');
+      shop().showStatus(shop().plainDbError(error, 'save'), 'error');
       return;
     }
     const openId = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
@@ -1291,7 +1296,7 @@ export function installQuote() {
         <code>${shop().escapeHtml(r.number || '')}</code>
         <span class="badge ${isApproved ? 'open-order' : 'source-tag'}">${isApproved ? 'Approved' : 'Draft'}</span>
         ${zombie ? `<span>${shop().escapeHtml(quoteVoidedMessage(quoteNum))}</span>` : ''}
-        <button type="button" ${holdApprove ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
+        <button type="button" class="tap" ${holdApprove ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
       </div>`;
     }).join('');
   }
@@ -1351,9 +1356,9 @@ export function installQuote() {
     if (/shop_approve_invoice/i.test(raw) && /schema cache|could not find the function|does not exist/i.test(raw)) {
       return "Couldn't approve — run the invoice SQL after every phone has been refreshed.";
     }
-    const lines = raw.split('\n').map(s => s.replace(/^ERROR:\s*/i, '').trim()).filter(Boolean);
-    const useful = lines.find(s => /not enough|shelf part|approved invoice|stayed a draft|missing part|whole number|is void|quote is missing/i.test(s));
-    return useful || lines[0] || "Couldn't approve — try again";
+    const locked = shop().lockedShopSentence(raw);
+    if (locked) return locked;
+    return shop().plainDbError(error, 'approve');
   }
 
   async function approveInvoice(id) {
@@ -1426,15 +1431,6 @@ export function installQuote() {
     }));
   }
 
-  function invoiceSaveErrorText(error) {
-    const raw = [error && error.message, error && error.details, error && error.hint]
-      .filter(v => v != null && String(v).trim())
-      .map(v => String(v))
-      .join('\n');
-    const clean = raw.split('\n').map(s => s.replace(/^ERROR:\s*/i, '').trim()).filter(Boolean)[0] || '';
-    return { raw, clean };
-  }
-
   async function saveAndPrintInvoice() {
     if (invoiceSaveBusy) return;
     if (!shop().requireUser('creating invoices')) return;
@@ -1476,12 +1472,12 @@ export function installQuote() {
         const { error } = await shop().supabaseClient.from('invoices').update(header).eq('id', draft.id);
         if (error) {
           console.warn(error);
-          const { raw, clean } = invoiceSaveErrorText(error);
+          const raw = dbErrorRaw(error);
           if (/already has an approved invoice/i.test(raw)) {
             await refreshQuoteInvoices();
             shop().showStatus('This quote already has an approved invoice.', 'error');
           } else {
-            shop().showStatus(clean || "Couldn't save the invoice — try again", 'error');
+            shop().showStatus(shop().plainDbError(error, 'save'), 'error');
           }
           return;
         }
@@ -1508,12 +1504,12 @@ export function installQuote() {
         }).select('id').maybeSingle();
         if (error || !inv?.id) {
           console.warn(error);
-          const { raw, clean } = invoiceSaveErrorText(error);
+          const raw = dbErrorRaw(error);
           if (/already has an approved invoice/i.test(raw)) {
             await refreshQuoteInvoices();
             shop().showStatus('This quote already has an approved invoice.', 'error');
           } else {
-            shop().showStatus(clean || "Couldn't save the invoice — try again", 'error');
+            shop().showStatus(shop().plainDbError(error, 'save'), 'error');
           }
           return;
         }
