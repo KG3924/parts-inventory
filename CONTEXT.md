@@ -90,6 +90,7 @@ created_at (timestamptz)
 - `schema/a2_approve_invoice.sql` — Approve invoice debits stock (run only after this page is on the phones)
 - `schema/a2_4_void_quote_approve_lock.sql` — Approve refuses a void or missing quote (run once after the A2.4 page is on the phones)
 - `schema/a2_4b_void_quote_final.sql` — a void quote stays void. Line edits are refused. Deleting the quote removes its lines (run once after the A2.4b page is on the phones)
+- `schema/a2_6_freeze_approved_invoice.sql` — an approved invoice and its lines stay as sold (run once after this build is on the phones)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -201,6 +202,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Save & print** refuses when the open quote is Void. The note names that Q-: `Q-… is void. This invoice can't be approved.` It does not create or refresh a draft. A draft invoice on a void quote stays a draft. The invoice list shows that same Q- note and **Approve** is grey. A tap still calls `shop_approve_invoice`, which refuses before any debit. Drafts are not auto-voided. There is no new invoice status.
 - Once a quote is Void, it stays Void. The status dropdown is locked and **Save quote** is grey. Save reads the stored status, so picking another status does not write. The refusal is `Q-… is void. Start a new quote to bring this deal back.` Bring the deal back with **Save as new quote** or **Duplicate**. Save as new quote mints a fresh Q-, writes the lines on screen now, and leaves the customer and header blank. It does not copy Void onto the new quote. Deleting one line is refused while that void quote still exists. Deleting the void quote removes its lines with it.
 - **Approve** sells the draft invoice's lines, not the cart on screen. When those differ, the note says `Quote changed since INV-… was printed. Save & print before Approve` and **Approve** stays grey until **Save & print**. No new SQL.
+- Once an invoice is approved, that invoice and its lines stay as sold. A later change raises `INV-… is approved. This invoice can't change.` Save & print still rewrites a draft. Run `schema/a2_6_freeze_approved_invoice.sql` once after this build is on live Pages and every phone has hard-refreshed. A grey button alone is not the lock.
 - An Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows a red message fixed at the top of the screen and scrolls that banner into view. Approve stays tappable, including when a line is short. The shelf does not change and the draft stays a draft. The banner still clears after a few seconds.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
@@ -327,6 +329,12 @@ Once `quotes.status` is void, that row is locked. Any later update raises `Q-…
 
 Run `schema/a2_4b_void_quote_final.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Re-run the same file to pick up the line-delete rule. A grey Save button alone is not the lock. The pass is an update of that void quote, under a signed-in profile, raising that sentence. Optional prove: delete one line on that still-void quote and it raises the same sentence. Delete the void quote and its lines go with it.
 
+## Approved invoice stays as sold (run SQL only after this page is on the phones)
+
+Once an invoice is approved (`status` is approved, or `approved_at` is set), that row cannot change. Any later update raises `INV-… is approved. This invoice can't change.` A blank number uses `This invoice`. Insert, update, and delete of its `invoice_lines` raise the same sentence. The check uses the row that is already approved, so the update that first stamps a draft approved still works. A second Approve does not debit again. Save & print still rewrites a draft invoice and its lines. Deleting an approved invoice still raises `Approved invoices stay on the books`. This file does not change `shop_approve_invoice`, does not void drafts, does not restock, and does not touch the void-quote triggers.
+
+Run `schema/a2_6_freeze_approved_invoice.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. A grey button alone is not the lock. The pass is an update of that approved invoice, under a signed-in profile, raising that sentence. The same sentence refuses a change to one of its lines.
+
 ## Quote screen (no new SQL)
 
 Invoice… follows the quote on screen and saves the cart first when that cart is not a saved quote yet. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Approve failures stay on screen at the top and leave the shelf and the draft alone. The quote action is labeled **Void quote**. None of that changes `shop_approve_invoice` or `schema/a2_approve_invoice.sql`. Smoke after the page is on Pages and every phone has hard-refreshed. Do not run SQL for these screen fixes.
@@ -374,6 +382,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/a2_approve_invoice.sql` | Approve invoice. Run after phones hard-refresh onto this page. Same function as A2.4, so a re-run keeps the void refuse |
 | `schema/a2_4_void_quote_approve_lock.sql` | Replaces `shop_approve_invoice` so a void or missing quote cannot be approved. Run once after A2.4 is on Pages and every phone has hard-refreshed |
 | `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Deleting the quote removes its lines. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule |
+| `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
 
 ## Local-only (this Mac, not in git)
 
@@ -393,4 +402,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-05 — Approve stays grey until Save & print when the cart differs from the draft invoice. No new SQL. Void is final: run schema/a2_4b_void_quote_final.sql once after Pages and a hard-refresh. A grey Save button alone is not the lock.*
+*Last updated: 2026-10-06 — An approved invoice and its lines stay as sold. Run schema/a2_6_freeze_approved_invoice.sql once after Pages and a hard-refresh. A grey button alone is not the lock. Approve stays grey until Save & print when the cart differs from the draft. Void is final remains a separate run of schema/a2_4b_void_quote_final.sql.*
