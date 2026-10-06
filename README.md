@@ -21,7 +21,7 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 
 | Area | What it does |
 |------|----------------|
-| **Front row** | **Scan · Inventory · Labels · Home**. **Quote** is a second row by itself. Tabs, Quote, Scan start, Commit, Save, and Approve are large thumb targets. |
+| **Front row** | **Home · Scan · Inventory · Labels**. **Quote** is a second row by itself. Tabs, Quote, Scan start, Commit, Save, and Approve are large thumb targets. |
 | **Home** | Tiles: Parts, Low, Open Orders, Needs Delivery Date. A tap opens that list on Inventory. **More** is a link here, not a front-row tab. |
 | **Inventory** | Parts list, search, source + category chips, **+/−** on new qty, **Adjust**, Quote / Edit / Del. **+ Add part** is at the top. |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
@@ -200,4 +200,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-10-06 — Front row is Scan, Inventory, Labels, Home. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
+*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*

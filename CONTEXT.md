@@ -147,7 +147,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Do not paste “allow all” or anon policies. More → Copy SQL does not create them.
 
 ### Shop navigation
-- Front row, left to right: **Scan · Inventory · Labels · Home**. Each target is at least 44×44px.
+- Front row, left to right: **Home · Scan · Inventory · Labels**. Each target is at least 44×44px.
 - **Quote** is a second bottom row by itself, always visible. It is not inside More and not only a button on Inventory.
 - **+ Add part** is at the top of Inventory. Add is not a tab.
 - **More** is a link on Home, not the front row. Schema/SQL, sell factors, exchange rates, export/import, costing, Passwords, and **Reports** are there.
@@ -416,4 +416,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-06 — Front row is Scan, Inventory, Labels, Home. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
+*Last updated: 2026-10-06 — Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
