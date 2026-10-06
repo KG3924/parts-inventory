@@ -21,13 +21,15 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 
 | Area | What it does |
 |------|----------------|
-| **Home** | Live list; search; source + category chips; tiles; **+/−** on new qty; **Adjust** (Scan, New vs Used); Quote / Edit / Del |
+| **Front row** | **Scan · Inventory · Labels · Home**. **Quote** is a second row by itself. Tabs, Quote, Scan start, Commit, Save, and Approve are large thumb targets. |
+| **Home** | Tiles: Parts, Low, Open Orders, Needs Delivery Date. A tap opens that list on Inventory. **More** is a link here, not a front-row tab. |
+| **Inventory** | Parts list, search, source + category chips, **+/−** on new qty, **Adjust**, Quote / Edit / Del. **+ Add part** is at the top. |
 | **Scan** | Camera or type part # → review → pick **New or Used** → **Commit** stock in/out/set; **Quote** and **Edit part** |
-| **Add / Edit** | Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
-| **Quote** | Cart + saved quotes in `src/quote.js`: customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person. Save, print, packing list, and draft invoice do not change stock. **Invoice…** saves the cart first if it is not a saved quote yet. **Approve** on a draft invoice is the sale. A short line shows `wants N / shelf M` and does not block. **Save & print** reuses the newest open draft. Approve failures stay at the top of the screen. **Void quote** does not restock. |
-| **Reports** | Valuation (new qty only); adjustment log; **price history**; **LIFO/FIFO ending inventory**; needs-attention |
+| **Add / Edit** | Opened from Inventory. Name, part #, qty new + used, reorder (default 0), buy/sell, source/category/location dropdowns, notes, open order |
+| **Quote** | Its own bottom row. Cart + saved quotes in `src/quote.js`: customer vs project, RFQ, FOB, terms, lead time, 90-day validity, prepared-by = signed-in person. Save, print, packing list, and draft invoice do not change stock. **Invoice…** saves the cart first if it is not a saved quote yet. **Approve** on a draft invoice is the sale. A short line shows `wants N / shelf M` and does not block. **Save & print** reuses the newest open draft. Approve failures stay at the top of the screen. **Void quote** does not restock. |
+| **Reports** | Inside **More**: valuation (new qty only); adjustment log; **price history**; **LIFO/FIFO ending inventory**; needs-attention |
 | **Labels** | **QR deep-link** labels (stable ID in URL) → phone Camera opens app to that part; Brother DK-1201 or letter paper (8/sheet) |
-| **More** | Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; clear all |
+| **More** | Link on Home. Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; Passwords; Reports; clear all |
 | **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
 **Sign-in:** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, and Ricky Whitfield each have their own login. Unlock once on that phone for a 12-hour shift. The phone’s saved password (Face ID, Touch ID, or fingerprint) fills the next unlock. There is no name dropdown. Prepared By and the adjustment log use only the signed-in person. **Sign out** is in the header. **More → Passwords** sets a new password for any of the five. They save it again on their phone.
@@ -138,8 +140,8 @@ These are three related documents that share the same cart and look similar, but
 | **Packing list** | What was physically shipped (warehouse / receiver). | **No.** No prices, payment terms, lead time, or CC note. |
 | **Invoice** | Request for payment after the sale. | Yes — merchandise, shipping, duty, tariffs, optional 3.5% CC fee, amount due. |
 
-1. Add lines from Home or Scan with **Quote**.
-2. On the **Quote** tab fill: **Customer** (separate from **Project**), RFQ #, dates (valid until defaults to **+90 days**), FOB (Origin / Destination / type-and-save), payment terms (can be stored on the customer), lead time, prepared by (defaults to whoever is logged in).
+1. Add lines from Inventory or Scan with **Quote**.
+2. On the **Quote** row fill: **Customer** (separate from **Project**), RFQ #, dates (valid until defaults to **+90 days**), FOB (Origin / Destination / type-and-save), payment terms (can be stored on the customer), lead time, prepared by (defaults to whoever is logged in).
 3. **Save quote** stores it in Supabase (after Phase 1 SQL). New header fields need **Phase 2 SQL**.
 4. **Print quote** — branded offer. **Packing list** — items + qty only (`PL-YYYY-###`). **Invoice…** — adds PO, ship-to, due date (from quote valid-until), shipping/duty/tariffs, optional CC fee (`INV-YYYY-###`). If the cart is not a saved quote yet, Invoice… saves it first. **Save & print invoice** stores a draft on that quote and does not change stock. If this quote already has an open draft, Save & print updates that draft and reprints the same INV- number. If the open quote is Void, Save & print refuses, names that Q-, and does not create or refresh a draft.
 5. A line that wants more than the shelf shows `wants N / shelf M` on the quote before Save & print. Save & print and Approve are still allowed.
@@ -149,6 +151,10 @@ These are three related documents that share the same cart and look similar, but
 9. Optional: check **Also save this customer**.
 
 Document numbers: `Q-2026-001`, `PL-2026-001`, `INV-2026-001`. The working cart stays in the browser until **Save quote** or **Invoice…** (Invoice… saves the quote first). **New quote** and a successful **Approve** empty that cart. Quote, packing list, and draft invoice do not change inventory qty. **Approve** does. If that save fails, no invoice number is created.
+
+A database error keeps a known sale sentence exactly (`Q-… is void…`, `INV-… is approved…`, a short shelf, `Quote changed since INV-… was printed. Save & print before Approve`, `Couldn't approve — try again`). Other database text is not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`.
+
+When **R1a** ships, Home gains a tile named **Find quotes & invoices**. It is not under More and not on the Quote row. This build does not show that tile.
 
 ---
 
@@ -194,4 +200,4 @@ Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-10-06 — An approved invoice and its lines stay as sold. Run schema/a2_6_freeze_approved_invoice.sql once after Pages and a hard-refresh. A grey button alone is not the lock. Approve stays grey until Save & print when the cart differs from the draft. Void is final remains a separate run of schema/a2_4b_void_quote_final.sql.*
+*Last updated: 2026-10-06 — Front row is Scan, Inventory, Labels, Home. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*

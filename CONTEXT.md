@@ -31,7 +31,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 6. **Do not alter** original supplier spreadsheets under `inmarinventory/`.
 7. **Sign-in is the only identity.** There is no header name dropdown. `currentUser()` / quote Prepared By / adjustment `changed_by` are the signed-in person’s full name. Do not restore `localStorage.inv_user`. A shift lasts 12 hours on that phone only.
 8. **Keep on-screen hints to one short line.** Explain the field; do not fill the screen with tooltips. Printed quote / packing list / invoice legal lines stay short too.
-9. **Do not show the stable label ID (barcode)** on Home, Scan, or Add/Edit. It is internal to QR labels only.
+9. **Do not show the stable label ID (barcode)** on Home, Inventory, Scan, or Add/Edit. It is internal to QR labels only.
 
 ---
 
@@ -146,13 +146,27 @@ Status enum (app): draft | sent | accepted | expired | void.
 - `schema/auth_lock_after_merge.sql` has been run. Unsigned (anon) cannot read or change stock. Signed-in shop accounts can.
 - Do not paste “allow all” or anon policies. More → Copy SQL does not create them.
 
+### Shop navigation
+- Front row, left to right: **Scan · Inventory · Labels · Home**. Each target is at least 44×44px.
+- **Quote** is a second bottom row by itself, always visible. It is not inside More and not only a button on Inventory.
+- **+ Add part** is at the top of Inventory. Add is not a tab.
+- **More** is a link on Home, not the front row. Schema/SQL, sell factors, exchange rates, export/import, costing, Passwords, and **Reports** are there.
+- When **R1a** ships, Home gains a tile named **Find quotes & invoices**. That tile is not under More and not on the Quote row. This build does not show the tile.
+
 ### Home
-- Search includes barcode
+- Tiles and the value summary: **Parts**, **Low**, **Open Orders**, **Needs Delivery Date**
+- Tap a tile to open Inventory on that list. Parts opens the full list.
+- **More** sits under the tiles
+
+### Inventory
+- Search includes barcode (label ID is not shown)
 - Source + Category filter chips
-- Source/category badges (label ID is not shown)
-- **Clickable tiles:** Open Orders, Low, Needs Delivery Date (value card), Parts (clears filter)
-- Home filter bar with Clear filter
+- **+ Add part** at the top
+- Filter bar with Clear filter when a Home tile is on
 - +/− qty logs adjustments on **new** stock only; Quote / Edit / Del / Adjust (Scan, New vs Used)
+
+### Plain errors
+Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Quote changed since INV-… was printed. Save & print before Approve`, and `Couldn't approve — try again`. Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
 
 ### Scan
 - Lookup by **barcode or part number** (label ID not displayed)
@@ -220,7 +234,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Print via **popup** (Brother one-per-page; letter paper 8-up with larger QR)
 - Deep link on load: read `?part=` / `?pn=`, open Scan found card, `history.replaceState` cleans URL
 
-### Reports (tab order)
+### Reports (inside More)
 1. **Inventory Valuation** (new qty × buy; used excluded)
 2. **Inventory Adjustment Report**
 3. **Price history**
@@ -402,4 +416,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-06 — An approved invoice and its lines stay as sold. Run schema/a2_6_freeze_approved_invoice.sql once after Pages and a hard-refresh. A grey button alone is not the lock. Approve stays grey until Save & print when the cart differs from the draft. Void is final remains a separate run of schema/a2_4b_void_quote_final.sql.*
+*Last updated: 2026-10-06 — Front row is Scan, Inventory, Labels, Home. Quote is its own row. More, including Reports, is a link on Home. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. R1a will add a Home tile, Find quotes & invoices. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
