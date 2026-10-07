@@ -33,6 +33,179 @@ export function findVoidNoteText(kind, quoteNumber, quoteStatus, invoiceStatus, 
   return '';
 }
 
+export const SHOP_TZ = 'America/Chicago';
+export const FIND_LIST_CAP = 50;
+
+// Date-only values stay on that calendar day. Timestamps use America/Chicago, not UTC midnight.
+export function shopCalendarDate(value) {
+  if (value == null || value === '') return '';
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return formatChicagoYmd(value);
+  }
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return '';
+  return formatChicagoYmd(new Date(ms));
+}
+
+export function shopToday(now) {
+  return shopCalendarDate(now || new Date());
+}
+
+export function addCivilDays(ymd, delta) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return '';
+  const utc = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + delta));
+  return utc.toISOString().slice(0, 10);
+}
+
+export function shopDayStartIso(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return '';
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  let guess = Date.UTC(y, mo - 1, d, 6, 0, 0);
+  for (let i = 0; i < 6; i++) {
+    const got = chicagoClock(new Date(guess));
+    if (!got) return '';
+    const want = Date.UTC(y, mo - 1, d, 0, 0, 0);
+    const have = Date.UTC(got.y, got.m - 1, got.d, got.h, got.min, got.s);
+    const diff = want - have;
+    if (diff === 0) return new Date(guess).toISOString();
+    guess += diff;
+  }
+  return '';
+}
+
+export function findDateWindow(fromRaw, toRaw) {
+  let from = ymdOnly(fromRaw);
+  let to = ymdOnly(toRaw);
+  if (!from && !to) return null;
+  if (!from) from = to;
+  if (!to) to = from;
+  if (from > to) {
+    const swap = from;
+    from = to;
+    to = swap;
+  }
+  return { from, to };
+}
+
+export function quoteFindDate(row) {
+  if (!row) return '';
+  if (row.created_at) {
+    const created = shopCalendarDate(row.created_at);
+    if (created) return created;
+  }
+  if (row.quote_date) {
+    const quoted = shopCalendarDate(row.quote_date);
+    if (quoted) return quoted;
+  }
+  return shopCalendarDate(row.updated_at);
+}
+
+// Approved sale day is approved_at in Chicago when that stamp exists. Otherwise invoice_date.
+export function invoiceFindDate(row) {
+  if (!row) return '';
+  if (row.status === 'approved' && row.approved_at) {
+    const sold = shopCalendarDate(row.approved_at);
+    if (sold) return sold;
+  }
+  return shopCalendarDate(row.invoice_date);
+}
+
+export function findNarrowCopy(hasWindow) {
+  return hasWindow ? 'Narrow the dates.' : 'Narrow the search.';
+}
+
+export function assembleFindHits(items, window, cap) {
+  const limit = cap > 0 ? cap : FIND_LIST_CAP;
+  const seen = new Set();
+  const rows = [];
+  let truncated = false;
+  (items || []).forEach(item => {
+    if (!item) return;
+    if (item.truncated) truncated = true;
+    if (!item.row || item.row.id == null || item.row.id === '') return;
+    const kind = item.kind === 'invoice' ? 'invoice' : 'quote';
+    const key = kind + ':' + item.row.id;
+    if (seen.has(key)) return;
+    const when = kind === 'invoice' ? invoiceFindDate(item.row) : quoteFindDate(item.row);
+    if (window && (!when || when < window.from || when > window.to)) return;
+    seen.add(key);
+    rows.push({
+      kind,
+      row: item.row,
+      when,
+      stamp: Number.isFinite(item.stamp) ? item.stamp : 0
+    });
+  });
+  rows.sort((a, b) => {
+    if (a.when !== b.when) return a.when < b.when ? 1 : -1;
+    if (a.stamp !== b.stamp) return b.stamp - a.stamp;
+    return String(b.row.number || '').localeCompare(String(a.row.number || ''), undefined, { numeric: true });
+  });
+  return { rows: rows.slice(0, limit), capped: truncated || rows.length > limit };
+}
+
+function ymdOnly(raw) {
+  const s = String(raw || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
+function formatChicagoYmd(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHOP_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const pick = (type) => {
+    const part = parts.find(p => p.type === type);
+    return part ? part.value : '';
+  };
+  const y = pick('year');
+  const m = pick('month').padStart(2, '0');
+  const d = pick('day').padStart(2, '0');
+  if (!/^\d{4}$/.test(y) || !/^\d{2}$/.test(m) || !/^\d{2}$/.test(d)) return '';
+  return `${y}-${m}-${d}`;
+}
+
+function chicagoClock(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SHOP_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const num = (type) => {
+    const part = parts.find(p => p.type === type);
+    return part ? Number(part.value) : NaN;
+  };
+  let y = num('year');
+  let mo = num('month');
+  let d = num('day');
+  let h = num('hour');
+  let min = num('minute');
+  let s = num('second');
+  if (![y, mo, d, h, min, s].every(Number.isFinite)) return null;
+  if (h === 24) {
+    h = 0;
+    const next = new Date(Date.UTC(y, mo - 1, d + 1));
+    y = next.getUTCFullYear();
+    mo = next.getUTCMonth() + 1;
+    d = next.getUTCDate();
+  }
+  return { y, m: mo, d, h, min, s };
+}
+
 let installed = false;
 
 export function installQuote() {
@@ -45,7 +218,6 @@ export function installQuote() {
   }
 
   let quotesListCache = [];
-  let quoteStatusFilter = "open";
   let editingQuoteId = null;
   let loadedQuoteStatus = '';
   let currentQuoteInvoices = [];
@@ -333,20 +505,8 @@ export function installQuote() {
     list.innerHTML = [...names].sort().map(n => `<option value="${shop().escapeHtml(n)}">`).join('');
   }
 
-  function renderQuoteStatusFilters() {
-    const el = document.getElementById('quote-status-filters');
-    if (!el) return;
-    const chips = [
-      { id: 'open', label: 'Open' },
-      { id: 'archive', label: 'Archive' }
-    ];
-    el.innerHTML = chips.map(c =>
-      `<button type="button" class="filter-chip ${quoteStatusFilter === c.id ? 'active' : ''}" onclick="setQuoteStatusFilter('${c.id}')">${c.label}</button>`
-    ).join('');
-  }
-
-  function quoteIsArchived(status) {
-    return status === 'void' || status === 'expired';
+  function quoteIsLiveStatus(status) {
+    return status === 'draft' || status === 'sent' || status === 'accepted';
   }
 
   function quoteStatusLabel(status) {
@@ -358,16 +518,9 @@ export function installQuote() {
     return status;
   }
 
-  function setQuoteStatusFilter(id) {
-    quoteStatusFilter = id;
-    renderQuoteStatusFilters();
-    renderQuotesList();
-  }
-
   async function loadQuotesList() {
     const hint = document.getElementById('quotes-schema-hint');
     const listEl = document.getElementById('quotes-list');
-    renderQuoteStatusFilters();
     if (!shop().supabaseClient) return;
     const ok = await ensureQuotesTables();
     if (!ok) {
@@ -375,38 +528,56 @@ export function installQuote() {
       if (listEl) listEl.innerHTML = '<p class="empty">Install quotes SQL to save and list quotes.</p>';
       return;
     }
-    if (hint) hint.textContent = 'Open hides voided and expired.';
+    if (hint) hint.textContent = 'Live unsold only.';
     const { data, error } = await shop().supabaseClient.from('quotes')
       .select('id,number,customer_name,status,quote_date,valid_until,prepared_by,updated_at')
-      .order('updated_at', { ascending: false })
-      .limit(200);
+      .in('status', ['draft', 'sent', 'accepted'])
+      .order('updated_at', { ascending: false });
     if (error) {
+      quotesListCache = [];
       if (listEl) listEl.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(error, 'load'))}</p>`;
       return;
     }
-    quotesListCache = data || [];
-    await loadApprovedInvoiceNumbers(quotesListCache.map(q => q.id).filter(Boolean));
+    const rows = data || [];
+    const approved = await loadApprovedInvoiceNumbers(rows.map(q => q.id).filter(Boolean));
+    if (approved.error) {
+      // A failed approved-invoice check must not leave sold quotes on this list.
+      quotesListCache = [];
+      console.warn(approved.error);
+      if (listEl) listEl.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(approved.error, 'load'))}</p>`;
+      return;
+    }
+    quotesListCache = rows.filter(q => quoteIsLiveStatus(q.status) && !approvedInvoiceByQuote[q.id]);
     await loadCustomerSuggestions();
     renderQuotesList();
   }
 
   async function loadApprovedInvoiceNumbers(ids) {
     approvedInvoiceByQuote = {};
-    if (!ids.length || !shop().supabaseClient) return;
-    const { data, error } = await shop().supabaseClient.from('invoices')
-      .select('quote_id,number,status')
-      .eq('status', 'approved')
-      .in('quote_id', ids);
-    if (error) {
-      console.warn(error);
-      return;
+    const clean = (ids || []).filter(Boolean);
+    if (!clean.length || !shop().supabaseClient) {
+      rememberApprovedFromCurrent();
+      return { error: null };
     }
-    (data || []).forEach(row => {
-      if (row && row.quote_id && row.status === 'approved' && !approvedInvoiceByQuote[row.quote_id]) {
-        approvedInvoiceByQuote[row.quote_id] = row.number || 'This invoice';
+    const chunkSize = 80;
+    for (let i = 0; i < clean.length; i += chunkSize) {
+      const slice = clean.slice(i, i + chunkSize);
+      const { data, error } = await shop().supabaseClient.from('invoices')
+        .select('quote_id,number,status')
+        .eq('status', 'approved')
+        .in('quote_id', slice);
+      if (error) {
+        rememberApprovedFromCurrent();
+        return { error };
       }
-    });
+      (data || []).forEach(row => {
+        if (row && row.quote_id && row.status === 'approved' && !approvedInvoiceByQuote[row.quote_id]) {
+          approvedInvoiceByQuote[row.quote_id] = row.number || 'This invoice';
+        }
+      });
+    }
     rememberApprovedFromCurrent();
+    return { error: null };
   }
 
   function rememberApprovedFromCurrent() {
@@ -541,10 +712,9 @@ export function installQuote() {
   function renderQuotesList() {
     const listEl = document.getElementById('quotes-list');
     if (!listEl) return;
-    const archived = quoteStatusFilter === 'archive';
-    const rows = quotesListCache.filter(q => archived ? quoteIsArchived(q.status) : !quoteIsArchived(q.status));
+    const rows = quotesListCache.filter(q => quoteIsLiveStatus(q.status) && !approvedInvoiceByQuote[q.id]);
     if (!rows.length) {
-      listEl.innerHTML = `<p class="empty">${archived ? 'No archived quotes.' : 'No open quotes.'}</p>`;
+      listEl.innerHTML = '<p class="empty">No live quotes.</p>';
       return;
     }
     listEl.innerHTML = `
@@ -555,7 +725,7 @@ export function installQuote() {
             <tr>
               <td><code>${shop().escapeHtml(q.number)}</code></td>
               <td>${shop().escapeHtml(q.customer_name || '—')}</td>
-              <td><span class="badge ${quoteIsArchived(q.status) ? 'needs-date' : q.status === 'accepted' ? 'open-order' : 'source-tag'}">${shop().escapeHtml(quoteStatusLabel(q.status))}</span></td>
+              <td><span class="badge ${q.status === 'accepted' ? 'open-order' : 'source-tag'}">${shop().escapeHtml(quoteStatusLabel(q.status))}</span></td>
               <td style="font-size:0.8rem;color:var(--muted)">${shop().escapeHtml(q.quote_date || '')}</td>
               <td class="actions">
                 <button type="button" class="secondary" onclick="openQuote('${q.id}')">Open</button>
@@ -1656,9 +1826,134 @@ export function installQuote() {
     return quoteStatusLabel(status);
   }
 
-  async function findIlike(table, columns, column, pattern) {
-    const { data, error } = await shop().supabaseClient.from(table).select(columns).ilike(column, pattern).limit(40);
-    return { data: data || [], error };
+  const FIND_QUOTE_LIST_COLS = 'id,number,customer_name,status,quote_date,created_at,updated_at';
+  const FIND_INVOICE_LIST_COLS = 'id,number,quote_id,customer_name,status,invoice_date,approved_at,total';
+
+  function findRowStamp(raw) {
+    const s = String(raw || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return 0;
+    const ms = Date.parse(s);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function quoteListStamp(row) {
+    return findRowStamp(row.created_at || row.quote_date || row.updated_at);
+  }
+
+  function invoiceListStamp(row) {
+    const raw = row.status === 'approved' && row.approved_at ? row.approved_at : row.invoice_date;
+    return findRowStamp(raw);
+  }
+
+  function readFindWindow() {
+    const fromEl = document.getElementById('find-from');
+    const toEl = document.getElementById('find-to');
+    const dateWindow = findDateWindow(fromEl && fromEl.value, toEl && toEl.value);
+    if (dateWindow && fromEl && toEl && fromEl.value && toEl.value && fromEl.value > toEl.value) {
+      fromEl.value = dateWindow.from;
+      toEl.value = dateWindow.to;
+    }
+    return dateWindow;
+  }
+
+  function findWindowBounds(dateWindow) {
+    if (!dateWindow) return { startIso: '', endIso: '', from: '', to: '' };
+    const endDay = addCivilDays(dateWindow.to, 1);
+    return {
+      startIso: shopDayStartIso(dateWindow.from),
+      endIso: shopDayStartIso(endDay),
+      from: dateWindow.from,
+      to: dateWindow.to
+    };
+  }
+
+  function quoteFindSpecs(bounds) {
+    return [
+      (q) => {
+        let next = q.not('created_at', 'is', null);
+        if (bounds.startIso) next = next.gte('created_at', bounds.startIso);
+        if (bounds.endIso) next = next.lt('created_at', bounds.endIso);
+        return next.order('created_at', { ascending: false });
+      },
+      (q) => {
+        let next = q.is('created_at', null).not('quote_date', 'is', null);
+        if (bounds.from) next = next.gte('quote_date', bounds.from);
+        if (bounds.to) next = next.lte('quote_date', bounds.to);
+        return next.order('quote_date', { ascending: false });
+      },
+      (q) => {
+        let next = q.is('created_at', null).is('quote_date', null).not('updated_at', 'is', null);
+        if (bounds.startIso) next = next.gte('updated_at', bounds.startIso);
+        if (bounds.endIso) next = next.lt('updated_at', bounds.endIso);
+        return next.order('updated_at', { ascending: false });
+      }
+    ];
+  }
+
+  function invoiceFindSpecs(bounds) {
+    const specs = [
+      (q) => {
+        let next = q.eq('status', 'approved').not('approved_at', 'is', null);
+        if (bounds.startIso) next = next.gte('approved_at', bounds.startIso);
+        if (bounds.endIso) next = next.lt('approved_at', bounds.endIso);
+        return next.order('approved_at', { ascending: false });
+      },
+      (q) => {
+        let next = q.eq('status', 'approved').is('approved_at', null).not('invoice_date', 'is', null);
+        if (bounds.from) next = next.gte('invoice_date', bounds.from);
+        if (bounds.to) next = next.lte('invoice_date', bounds.to);
+        return next.order('invoice_date', { ascending: false });
+      },
+      (q) => {
+        let next = q.or('status.is.null,status.neq.approved').not('invoice_date', 'is', null);
+        if (bounds.from) next = next.gte('invoice_date', bounds.from);
+        if (bounds.to) next = next.lte('invoice_date', bounds.to);
+        return next.order('invoice_date', { ascending: false });
+      }
+    ];
+    if (!bounds.from && !bounds.to) {
+      specs.push((q) => q.is('invoice_date', null).or('status.neq.approved,approved_at.is.null').order('created_at', { ascending: false }));
+    }
+    return specs;
+  }
+
+  async function runFindBuckets(table, columns, specs, pattern) {
+    const columnsToSearch = pattern ? ['number', 'customer_name'] : [null];
+    const rows = [];
+    let truncated = false;
+    for (const spec of specs) {
+      for (const column of columnsToSearch) {
+        let q = shop().supabaseClient.from(table).select(columns);
+        q = spec(q);
+        if (column) q = q.ilike(column, pattern);
+        const { data, error } = await q.limit(FIND_LIST_CAP + 1);
+        if (error) return { error, rows: [], truncated: false };
+        const batch = data || [];
+        if (batch.length > FIND_LIST_CAP) truncated = true;
+        rows.push(...batch);
+      }
+    }
+    return { error: null, rows, truncated };
+  }
+
+  function fillFindLast7() {
+    const today = shopToday(new Date());
+    const from = addCivilDays(today, -6);
+    const fromEl = document.getElementById('find-from');
+    const toEl = document.getElementById('find-to');
+    if (fromEl) fromEl.value = from;
+    if (toEl) toEl.value = today;
+  }
+
+  async function runFindLast7() {
+    fillFindLast7();
+    await runFindSearch();
+  }
+
+  function openFindFromQuotes() {
+    if (typeof window.showPanel === 'function') window.showPanel('find');
+    const box = document.getElementById('find-q');
+    if (box) box.focus();
   }
 
   async function runFindSearch() {
@@ -1671,8 +1966,9 @@ export function installQuote() {
     }
     if (results) results.hidden = false;
     const q = findSearchText(document.getElementById('find-q')?.value);
-    if (!q) {
-      if (results) results.innerHTML = '<p class="empty">Type a number or customer. Empty search does not list the book.</p>';
+    const dateWindow = readFindWindow();
+    if (!q && !dateWindow) {
+      if (results) results.innerHTML = '<p class="empty">Type a number or customer, or pick dates. An empty search with no dates does not list the book.</p>';
       return;
     }
     if (!shop().supabaseClient) {
@@ -1683,43 +1979,55 @@ export function installQuote() {
       if (results) results.innerHTML = '<p class="empty">Run Phase 1 SQL on More to find quotes.</p>';
       return;
     }
-    const pattern = `%${q}%`;
-    const quoteNum = await findIlike('quotes', 'id,number,customer_name,status,quote_date', 'number', pattern);
-    const quoteCust = await findIlike('quotes', 'id,number,customer_name,status,quote_date', 'customer_name', pattern);
-    const invNum = await findIlike('invoices', 'id,number,quote_id,customer_name,status,invoice_date,total', 'number', pattern);
-    const invCust = await findIlike('invoices', 'id,number,quote_id,customer_name,status,invoice_date,total', 'customer_name', pattern);
-    const failed = [quoteNum, quoteCust, invNum, invCust].find(r => r.error);
-    if (failed) {
-      console.warn(failed.error);
-      if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(failed.error, 'load'))}</p>`;
+    const bounds = findWindowBounds(dateWindow);
+    if (dateWindow && (!bounds.startIso || !bounds.endIso)) {
+      if (results) results.innerHTML = '<p class="empty">Couldn\'t load — try again</p>';
       return;
     }
-    const quotes = new Map();
-    [...quoteNum.data, ...quoteCust.data].forEach(row => { if (row && row.id) quotes.set(row.id, row); });
-    const invoices = new Map();
-    [...invNum.data, ...invCust.data].forEach(row => { if (row && row.id) invoices.set(row.id, row); });
-    const quoteRows = [...quotes.values()].sort((a, b) => String(a.number || '').localeCompare(String(b.number || '')));
-    const invoiceRows = [...invoices.values()].sort((a, b) => String(a.number || '').localeCompare(String(b.number || '')));
-    const capped = [quoteNum, quoteCust, invNum, invCust].some(r => r.data.length >= 40);
-    if (!quoteRows.length && !invoiceRows.length) {
-      if (results) results.innerHTML = '<p class="empty">No quotes or invoices match.</p>';
+    const pattern = q ? `%${q}%` : '';
+    const quoteRes = await runFindBuckets('quotes', FIND_QUOTE_LIST_COLS, quoteFindSpecs(bounds), pattern);
+    if (quoteRes.error) {
+      console.warn(quoteRes.error);
+      if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(quoteRes.error, 'load'))}</p>`;
       return;
     }
-    const hit = (kind, row, extra) => {
+    const invoiceRes = await runFindBuckets('invoices', FIND_INVOICE_LIST_COLS, invoiceFindSpecs(bounds), pattern);
+    if (invoiceRes.error) {
+      console.warn(invoiceRes.error);
+      if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(invoiceRes.error, 'load'))}</p>`;
+      return;
+    }
+    const items = [];
+    quoteRes.rows.forEach(row => items.push({ kind: 'quote', row, stamp: quoteListStamp(row) }));
+    invoiceRes.rows.forEach(row => items.push({ kind: 'invoice', row, stamp: invoiceListStamp(row) }));
+    if (quoteRes.truncated || invoiceRes.truncated) items.push({ truncated: true });
+    const picked = assembleFindHits(items, dateWindow, FIND_LIST_CAP);
+    const narrow = picked.capped ? `<p class="hint">${findNarrowCopy(!!dateWindow)}</p>` : '';
+    if (!picked.rows.length) {
+      if (results) results.innerHTML = `<p class="empty">No quotes or invoices match.</p>${narrow}`;
+      return;
+    }
+    const hit = (entry) => {
+      const row = entry.row;
       const id = findDocId(row.id);
       if (!id) return '';
-      return `<button type="button" class="secondary tap find-hit" onclick="openFindDoc('${kind}','${id}')">
+      const extra = entry.kind === 'invoice'
+        ? `${entry.when || ''} · ${shop().money(Number(row.total) || 0)}`
+        : (entry.when || '');
+      return `<button type="button" class="secondary tap find-hit" onclick="openFindDoc('${entry.kind}','${id}')">
         <code>${shop().escapeHtml(row.number || '')}</code>
         ${shop().escapeHtml(row.customer_name || '—')}
-        · ${shop().escapeHtml(findStatusLabel(kind, row.status))}
-        ${extra ? `<div style="font-size:0.8rem;color:var(--muted);">${extra}</div>` : ''}
+        · ${shop().escapeHtml(findStatusLabel(entry.kind, row.status))}
+        ${extra ? `<div style="font-size:0.8rem;color:var(--muted);">${shop().escapeHtml(extra)}</div>` : ''}
       </button>`;
     };
+    const quoteRows = picked.rows.filter(entry => entry.kind === 'quote');
+    const invoiceRows = picked.rows.filter(entry => entry.kind === 'invoice');
     if (results) {
       results.innerHTML = `
-        ${quoteRows.length ? `<h2>Quotes</h2>${quoteRows.map(row => hit('quote', row, shop().escapeHtml(row.quote_date || ''))).join('')}` : ''}
-        ${invoiceRows.length ? `<h2>Invoices</h2>${invoiceRows.map(row => hit('invoice', row, shop().money(Number(row.total) || 0))).join('')}` : ''}
-        ${capped ? '<p class="hint">More may match. Type more of the number or name.</p>' : ''}`;
+        ${quoteRows.length ? `<h2>Quotes</h2>${quoteRows.map(hit).join('')}` : ''}
+        ${invoiceRows.length ? `<h2>Invoices</h2>${invoiceRows.map(hit).join('')}` : ''}
+        ${narrow}`;
     }
   }
 
@@ -1817,6 +2125,9 @@ export function installQuote() {
     const parentNumber = loaded.parent && loaded.parent.number;
     const note = findVoidNoteText(kind, quoteNumber, state.quoteStatus, state.invoiceStatus, parentNumber, state.parentStatus);
     const allowed = findReprintAllowed(kind, state.quoteStatus, state.invoiceStatus, state.parentStatus);
+    const dupId = kind === 'invoice'
+      ? findDocId(loaded.invoice && loaded.invoice.quote_id)
+      : findDocId(loaded.quote && loaded.quote.id);
     const reprintingSold = kind === 'quote' && loaded.sold && loaded.sold.invoice && loaded.sold.invoice.status === 'approved';
     const headerBits = [];
     const addBit = (label, value) => {
@@ -1861,9 +2172,29 @@ export function installQuote() {
       ${kind === 'quote' && (loaded.invoices || []).length ? `<p class="hint">On this quote: ${shop().escapeHtml((loaded.invoices || []).map(row => `${row.number || ''} ${findStatusLabel('invoice', row.status)}`).join(', '))}</p>` : ''}
       ${note ? `<p class="hint">${shop().escapeHtml(note)}</p>` : ''}
       ${readOnlyNote ? `<p class="hint">${shop().escapeHtml(readOnlyNote)}</p>` : ''}
-      ${allowed ? '<button type="button" class="tap" id="find-reprint">Reprint</button>' : ''}`;
+      ${findDetailActions(allowed, dupId)}`;
     const btn = document.getElementById('find-reprint');
     if (btn) btn.addEventListener('click', () => { reprintFindDoc(); });
+    const dupBtn = document.getElementById('find-dup');
+    if (dupBtn) dupBtn.addEventListener('click', () => { duplicateFindDoc(); });
+  }
+
+  function findDetailActions(allowed, dupId) {
+    const buttons = [
+      allowed ? '<button type="button" class="tap" id="find-reprint">Reprint</button>' : '',
+      dupId ? '<button type="button" class="secondary tap" id="find-dup">Dup</button>' : ''
+    ].filter(Boolean);
+    return buttons.length ? `<div class="btn-group">${buttons.join('')}</div>` : '';
+  }
+
+  async function duplicateFindDoc() {
+    if (!findView || !findView.loaded) return;
+    const id = findView.kind === 'invoice'
+      ? findDocId(findView.loaded.invoice && findView.loaded.invoice.quote_id)
+      : findDocId(findView.loaded.quote && findView.loaded.quote.id);
+    if (!id) return;
+    await duplicateQuoteById(id);
+    if (typeof window.showPanel === 'function') window.showPanel('quote');
   }
 
   async function openFindDoc(kind, id) {
@@ -2009,9 +2340,8 @@ export function installQuote() {
     nextDocNumber,
     ensureQuotesTables,
     loadCustomerSuggestions,
-    renderQuoteStatusFilters,
-    setQuoteStatusFilter,
     loadQuotesList,
+    openFindFromQuotes,
     renderQuotesList,
     startNewQuote,
     openQuote,
@@ -2061,6 +2391,8 @@ export function installQuote() {
       e.preventDefault();
       runFindSearch();
     });
+    const findLast7 = document.getElementById('find-last7');
+    if (findLast7) findLast7.addEventListener('click', () => { runFindLast7(); });
     const statusSel = document.getElementById('quote-status');
     if (statusSel) statusSel.addEventListener('change', () => applySaleLocks());
   })();
