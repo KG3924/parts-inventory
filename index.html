@@ -143,7 +143,8 @@
     .find-home-tile:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
     .stat-value { font-size: 1.15rem; font-weight: 700; }
     .stat-label { font-size: 0.68rem; color: var(--muted); }
-    #find-go, .find-hit { width: 100%; }
+    #find-go, #find-last7, .find-hit { width: 100%; }
+    #find-last7 { margin-top: 0.5rem; }
     .find-hit { text-align: left; margin-bottom: 0.45rem; }
     .value-cards {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;
@@ -357,9 +358,20 @@
         <form id="find-form" action="#">
           <label for="find-q">Number or customer</label>
           <input id="find-q" type="search" autocomplete="off" enterkeyhint="search">
+          <div class="row">
+            <div>
+              <label for="find-from">From</label>
+              <input id="find-from" type="date">
+            </div>
+            <div>
+              <label for="find-to">To</label>
+              <input id="find-to" type="date">
+            </div>
+          </div>
           <button type="submit" class="tap" id="find-go">Find</button>
+          <button type="button" class="secondary tap" id="find-last7">Last 7 days</button>
         </form>
-        <p class="hint" id="find-hint">Type a quote number, invoice number, or customer. An empty search does not list everything.</p>
+        <p class="hint" id="find-hint">Type a quote number, invoice number, or customer. Last 7 days and From–To use Chicago time. An empty search with no dates does not list everything.</p>
         <div id="find-results"></div>
         <div id="find-detail" hidden></div>
       </div>
