@@ -178,6 +178,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **+ Add part** at the top
 - Filter bar with Clear filter when a Home tile is on
 - +/− qty logs adjustments on **new** stock only; Quote / Edit / Del / Adjust (Scan, New vs Used)
+- On a phone (640px wide or less) each part is a card: name, part # and tags on top, then Qty / Value / Status, then the buttons on their own row (at least 44px tall, wrapping instead of scrolling sideways). Del sits at the right end, away from + / −, and still asks before deleting. Computer layout unchanged.
 
 ### Plain errors
 Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Only N on hand…`, `Enter how many to remove — 1 or more.`, `Enter how many to add — 1 or more.`, `This invoice has no customer…`, `Quote changed since INV-… was printed. Save & print before Approve`, and `Couldn't approve — try again`. Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
