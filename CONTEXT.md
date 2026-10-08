@@ -182,7 +182,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - On a phone (640px wide or less) each part is a card: name, part # and tags on top, then Qty / Value / Status, then the buttons on their own row (at least 44px tall, wrapping instead of scrolling sideways). The five buttons (Adjust + − Quote Edit) fit on one line on an iPhone. Computer layout unchanged.
 
 ### Plain errors
-Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Only N on hand…`, `Enter how many to remove — 1 or more.`, `Enter how many to add — 1 or more.`, `This invoice has no customer…`, `Quote changed since INV-… was printed. Save & print before Approve`, and `Couldn't approve — try again`. Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
+Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Only N on hand…`, `Enter how many to remove — 1 or more.`, `Enter how many to add — 1 or more.`, `This invoice has no customer…`, `Quote changed since INV-… was printed. Save & print before Approve`, `Couldn't approve — try again`, and `Not deleted. This part is on open quote Q-…. Remove it from that quote first.` Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
 
 ### Scan
 - Lookup by **barcode or part number** (label ID not displayed)
@@ -267,7 +267,7 @@ Known sale sentences stay exact, including `Q-… is void…`, `INV-… is appro
 - **Exchange rates** GBP / EUR / NOK + fetch + apply buy $
 - **Costing method** FIFO or LIFO
 - Schema status line (quotes, docs/factors, used-qty, price-history, cost-layers)
-- Full setup SQL (inventory extras + Phase 1 + Phase 2 + Phase 3) + clear all inventory
+- Full setup SQL (inventory extras + Phase 1 + Phase 2 + Phase 3) + clear all inventory. Once schema/b038_part_delete_guard.sql has been run, Clear all is refused as a whole while any part is on an open quote.
 
 ---
 
@@ -447,4 +447,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-08 — Round 1: Commit refuses a short remove and points at Set. It does not floor at zero. Add 0 and Remove 0 are refused. Set 0 still works. Quote qty is a whole number, 1 or more. Prices can't be negative and round to cents. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. Draft prints show DRAFT. Approved reprints do not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
+*Last updated: 2026-10-08 — BUG-038: Delete part is on the Edit screen, not the Inventory rows; a part on an open quote can't be deleted (run schema/b038_part_delete_guard.sql once after Pages + hard-refresh). BUG-037: phone Inventory rows are cards with the buttons on their own row, no sideways scrolling. BUG-035: invoice box loads the draft's values and clears between quotes. Round 1: Commit refuses a short remove and points at Set. It does not floor at zero. Add 0 and Remove 0 are refused. Set 0 still works. Quote qty is a whole number, 1 or more. Prices can't be negative and round to cents. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. Draft prints show DRAFT. Approved reprints do not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
