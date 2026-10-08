@@ -1,41 +1,98 @@
--- Superseded in part by schema/r1_round1_guards.sql. If you re-run this file, run r1_round1_guards.sql again right after.
 -- =============================================================================
--- Approve invoice — the only time a sale takes parts off the shelf.
+-- Round 1 — bug-fix guards (BUG-007, 010, 012, 013, 014, 015, 022 and the
+-- no-customer Approve block).
 --
--- DO NOT RUN until the app that shows Approve is on the phones
--- (hard-refresh after the Pages deploy). Same order as A1:
+-- DO NOT RUN until this app build is on live Pages and every phone has
+-- hard-refreshed. Order:
 --   1. Merge, and wait until GitHub Pages is serving this build.
 --   2. Hard-refresh every phone.
 --   3. Then run this file once in the Supabase SQL editor.
---   4. Smoke on throwaway part numbers only after both are live.
+--   4. Smoke. A grey button alone is not the lock. Pass is the database
+--      refusing with the sentences below.
+-- Safe to re-run.
 --
--- Additive. Safe to re-run. Does not delete inventory, quotes, or invoices.
--- Quotes, packing lists, and draft invoices stay paperwork.
--- One approved invoice per quote. Already-approved is a no-op (no second debit).
--- A short line fails the whole invoice; nothing on that invoice is debited.
+-- Every CHECK below is added NOT VALID. Postgres does not scan old rows, so
+-- approved (frozen) invoices and old practice rows are never touched. Only
+-- rows inserted or updated after this runs are checked.
+-- NEVER run ALTER TABLE ... VALIDATE CONSTRAINT on these: old practice rows
+-- (including approved invoices) would fail it.
 --
--- Re-running schema/a1_stock_doc_referee.sql after this file is safe only
--- because that file now has the same strict-remove check. Floor Commit does
--- not set the flag, so it still floors at zero.
+-- Does not loosen anything. Does not change RLS, invoices_guard_approve, the
+-- A2.6 freeze triggers, the void-quote triggers, shop_next_doc_number, or when
+-- quote numbers are issued. The A2.4 void-quote refuse inside
+-- shop_approve_invoice is kept word for word.
 --
--- A2.4 also refuses a void quote, and a missing quote row when quote_id is
--- set, before any debit. schema/a2_4_void_quote_approve_lock.sql is that same
--- function for databases that already ran this file. Re-running either file
--- keeps the refuse. Neither file voids a draft invoice.
+-- This file replaces shop_commit_qty and shop_approve_invoice. Re-running
+-- schema/a1_stock_doc_referee.sql, schema/a2_approve_invoice.sql, or
+-- schema/a2_4_void_quote_approve_lock.sql AFTER this file would put the old
+-- versions back. If one of those is ever re-run, run this file again after it.
 -- =============================================================================
 
-alter table public.invoices add column if not exists approved_at timestamptz;
-alter table public.invoices add column if not exists approved_by text;
+-- 1. No negatives / bad quantities on new or changed rows (BUG-013/014/015/012).
+alter table public.quote_lines drop constraint if exists quote_lines_qty_whole_positive;
+alter table public.quote_lines add constraint quote_lines_qty_whole_positive
+  check (qty > 0 and qty = trunc(qty)) not valid;
 
--- One approved sale per quote. Drafts are not in this index.
-create unique index if not exists invoices_one_approved_per_quote
-  on public.invoices (quote_id)
-  where quote_id is not null
-    and (status = 'approved' or approved_at is not null);
+alter table public.quote_lines drop constraint if exists quote_lines_unit_price_not_negative;
+alter table public.quote_lines add constraint quote_lines_unit_price_not_negative
+  check (unit_price >= 0) not valid;
 
--- Same qty referee as A1, plus a transaction-local strict remove.
--- Signature stays (uuid, text, numeric, text, text) so PostgREST does not
--- gain a second overload. Approve sets inmar.strict_remove; Commit does not.
+alter table public.invoice_lines drop constraint if exists invoice_lines_qty_whole_positive;
+alter table public.invoice_lines add constraint invoice_lines_qty_whole_positive
+  check (qty > 0 and qty = trunc(qty)) not valid;
+
+alter table public.invoice_lines drop constraint if exists invoice_lines_unit_price_not_negative;
+alter table public.invoice_lines add constraint invoice_lines_unit_price_not_negative
+  check (unit_price >= 0) not valid;
+
+alter table public.invoices drop constraint if exists invoices_fees_not_negative;
+alter table public.invoices add constraint invoices_fees_not_negative
+  check (shipping_fee >= 0 and duty >= 0 and tariffs >= 0 and cc_fee_amount >= 0) not valid;
+
+alter table public.invoices drop constraint if exists invoices_totals_not_negative;
+alter table public.invoices add constraint invoices_totals_not_negative
+  check (subtotal >= 0 and total >= 0) not valid;
+
+alter table public.inventory drop constraint if exists inventory_prices_not_negative;
+alter table public.inventory add constraint inventory_prices_not_negative
+  check (sell_price >= 0 and buy_price >= 0) not valid;
+
+alter table public.inventory drop constraint if exists inventory_qty_not_negative;
+alter table public.inventory add constraint inventory_qty_not_negative
+  check (qty >= 0 and qty_used >= 0) not valid;
+
+alter table public.quotes drop constraint if exists quotes_valid_until_not_before_date;
+alter table public.quotes add constraint quotes_valid_until_not_before_date
+  check (valid_until >= quote_date) not valid;
+
+-- 2. SALE RULE — the one place Approve checks the customer.
+--    shop_approve_invoice calls this before it locks or debits any shelf row.
+--    A blank or spaces-only customer is refused. $0.00 invoices and $0.00
+--    lines are allowed (a giveaway is a price edited to $0 plus a note).
+--    Execute is revoked: only shop_approve_invoice (owner context) calls it.
+create or replace function public.shop_invoice_sale_rules(p_invoice_id uuid)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_inv public.invoices%rowtype;
+begin
+  select * into v_inv from public.invoices where id = p_invoice_id;
+  if not found then
+    raise exception 'Invoice not found';
+  end if;
+
+  -- RULE: A SALE NEEDS A CUSTOMER. Blank or spaces-only is blank.
+  if coalesce(v_inv.customer_name, '') ~ '^[[:space:]]*$' then
+    raise exception 'This invoice has no customer. Add a customer or tap Cash sale, then Save & print before Approve.';
+  end if;
+end;
+$$;
+
+revoke all on function public.shop_invoice_sale_rules(uuid) from public, anon, authenticated;
+
+-- 3. Stock change: refuse Remove 0 and Remove more than on hand (BUG-010, BUG-022).
 create or replace function public.shop_commit_qty(
   p_inventory_id uuid,
   p_action text,
@@ -82,6 +139,13 @@ begin
   if v_amount < 0 or v_amount <> trunc(v_amount) then
     raise exception 'Quantity must be a whole number, zero or more';
   end if;
+  -- Round 1 (BUG-022): Remove 0 is refused. Nothing is written.
+  if v_action = 'add' and v_amount = 0 then
+    raise exception 'Enter how many to add — 1 or more.';
+  end if;
+  if v_action = 'remove' and v_amount = 0 then
+    raise exception 'Enter how many to remove — 1 or more.';
+  end if;
 
   begin
     select full_name into v_who from public.profiles where id = auth.uid();
@@ -107,14 +171,20 @@ begin
     v_after := v_before + v_amount;
     v_log_action := 'stock_in';
   elsif v_action = 'remove' then
-    -- Floor Commit stays soft (floors at zero). Invoice Approve sets inmar.strict_remove
-    -- so a short invoice fails instead of taking more than is on the shelf.
-    if coalesce(current_setting('inmar.strict_remove', true), '') = 'on'
-       and v_before < v_amount then
-      raise exception 'Not enough on hand for % (have %, need %)',
-        coalesce(v_row.part_number, 'part'), v_before, v_amount;
+    -- Round 1 (BUG-010): removing more than is on hand is refused everywhere.
+    -- Approve keeps its own sentence (it sets inmar.strict_remove). Floor
+    -- Commit no longer floors at zero; it refuses and points at Set.
+    if v_before < v_amount then
+      if coalesce(current_setting('inmar.strict_remove', true), '') = 'on' then
+        raise exception 'Not enough on hand for % (have %, need %)',
+          coalesce(v_row.part_number, 'part'), v_before, v_amount;
+      end if;
+      if v_cond = 'used' then
+        raise exception 'Only % used on hand. If the shelf has more, use Set to correct the count first.', v_before;
+      end if;
+      raise exception 'Only % on hand. If the shelf has more, use Set to correct the count first.', v_before;
     end if;
-    v_after := greatest(0, v_before - v_amount);
+    v_after := v_before - v_amount;
     v_log_action := 'stock_out';
   else
     v_after := v_amount;
@@ -230,68 +300,7 @@ begin
 end;
 $$;
 
--- Blocks a second invoice on a quote that already has an approved sale,
--- blocks client-side "status = approved" (only shop_approve_invoice may stamp),
--- and keeps an approved row from being un-approved or deleted.
-create or replace function public.invoices_guard_approve()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  if tg_op = 'DELETE' then
-    if old.status = 'approved' or old.approved_at is not null then
-      raise exception 'Approved invoices stay on the books';
-    end if;
-    return old;
-  end if;
-
-  if tg_op = 'UPDATE' then
-    if old.approved_at is not null and new.approved_at is distinct from old.approved_at then
-      raise exception 'Approved invoices stay approved';
-    end if;
-    if old.status = 'approved' and new.status is distinct from 'approved' then
-      raise exception 'Approved invoices stay approved';
-    end if;
-    if ((new.status = 'approved' and old.status is distinct from 'approved')
-        or (new.approved_at is not null and old.approved_at is null))
-       and coalesce(current_setting('inmar.invoice_approve', true), '') <> 'on' then
-      raise exception 'Approve an invoice only with shop_approve_invoice';
-    end if;
-    if new.quote_id is not null and new.quote_id is distinct from old.quote_id then
-      perform pg_advisory_xact_lock(hashtext('inmar-quote-sale:' || new.quote_id::text));
-      if exists (
-        select 1 from public.invoices i
-        where i.quote_id = new.quote_id
-          and i.id <> new.id
-          and (i.status = 'approved' or i.approved_at is not null)
-      ) then
-        raise exception 'This quote already has an approved invoice';
-      end if;
-    end if;
-    return new;
-  end if;
-
-  if new.quote_id is not null then
-    perform pg_advisory_xact_lock(hashtext('inmar-quote-sale:' || new.quote_id::text));
-    if exists (
-      select 1 from public.invoices i
-      where i.quote_id = new.quote_id
-        and (i.status = 'approved' or i.approved_at is not null)
-    ) then
-      raise exception 'This quote already has an approved invoice';
-    end if;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists invoices_approve_referee on public.invoices;
-create trigger invoices_approve_referee
-  before insert or update or delete on public.invoices
-  for each row
-  execute function public.invoices_guard_approve();
-
+-- 4. Approve: call the sale rules before any debit; report when the quote was marked Accepted.
 create or replace function public.shop_approve_invoice(p_invoice_id uuid)
 returns jsonb
 language plpgsql
@@ -313,6 +322,7 @@ declare
   v_approved_at timestamptz;
   v_part_no text;
   v_quote public.quotes%rowtype;
+  v_marked_accepted boolean := false;
 begin
   if auth.uid() is null then
     raise exception 'Sign in required';
@@ -371,6 +381,9 @@ begin
   ) then
     raise exception 'This invoice has no lines. It stayed a draft.';
   end if;
+
+  -- Round 1: the no-customer rule lives in one function, before any debit.
+  perform public.shop_invoice_sale_rules(p_invoice_id);
 
   for v_line in
     select *
@@ -476,6 +489,8 @@ begin
     returning approved_at into v_approved_at;
 
   if v_inv.quote_id is not null then
+    -- BUG-007: Approve still accepts the quote. The screen now says so.
+    v_marked_accepted := lower(btrim(coalesce(v_quote.status, ''))) <> 'accepted';
     update public.quotes
       set status = 'accepted',
           updated_at = now()
@@ -490,17 +505,16 @@ begin
     'status', 'approved',
     'approved_at', v_approved_at,
     'approved_by', v_who,
-    'lines_debited', v_debited
+    'lines_debited', v_debited,
+    'quote_marked_accepted', v_marked_accepted
   );
 end;
 $$;
 
+-- Same grants as schema/a2_approve_invoice.sql. Nothing is widened.
 revoke all on function public.shop_commit_qty(uuid, text, numeric, text, text) from public, anon;
-revoke all on function public.invoices_guard_approve() from public, anon;
 revoke all on function public.shop_approve_invoice(uuid) from public, anon;
-
 grant execute on function public.shop_commit_qty(uuid, text, numeric, text, text) to authenticated;
-grant execute on function public.invoices_guard_approve() to authenticated;
 grant execute on function public.shop_approve_invoice(uuid) to authenticated;
 
 notify pgrst, 'reload schema';

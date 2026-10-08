@@ -91,6 +91,7 @@ created_at (timestamptz)
 - `schema/a2_4_void_quote_approve_lock.sql` — Approve refuses a void or missing quote (run once after the A2.4 page is on the phones)
 - `schema/a2_4b_void_quote_final.sql` — a void quote stays void. Line edits are refused. Deleting the quote removes its lines (run once after the A2.4b page is on the phones)
 - `schema/a2_6_freeze_approved_invoice.sql` — an approved invoice and its lines stay as sold (run once after this build is on the phones)
+- `schema/r1_round1_guards.sql` — Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Re-run it if A1, A2, or A2.4 is re-run after it. Do not VALIDATE the new checks.
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -164,9 +165,10 @@ Status enum (app): draft | sent | accepted | expired | void.
 - A quote's date is `created_at` in Chicago, then `quote_date`, then `updated_at`. An invoice uses `invoice_date`. An approved invoice uses the Chicago date of `approved_at` when that stamp is set.
 - Typed search and date browse both show about 50, newest first by that date. More than that shows the newest 50 and `Narrow the dates.` A typed search with no dates says `Narrow the search.`
 - A match opens Find only. It does not open the Quote builder. It has Reprint and Dup. It has no Approve, no Void, and no stock control.
+- Find says `Searching…` on the list as soon as search starts, and `Opening…` on the detail as soon as a row is tapped. A newer search, or Back, wins. A slow older request does not paint over that.
 - **Reprint** uses the same invoice builder as **Save & print**. It does not save a PDF and does not write a row.
-- An **approved** invoice reprints the stored header and `invoice_lines` (the sold paper). Opening its quote does the same reprint.
-- A **draft** invoice, or an open quote with no approved invoice, reprints the current rows and the PDF says `Draft — current rows`.
+- An **approved** invoice reprints the stored header and `invoice_lines` (the sold paper), with no DRAFT stamp. Opening its quote does the same reprint.
+- A **draft** invoice, or an open quote with no approved invoice, reprints the current rows, the PDF says `Draft — current rows`, and the page shows a DRAFT stamp.
 - A **void** quote hides Reprint and shows `Q-… is void. Start a new quote to bring this deal back.` A draft invoice under that void quote hides Reprint and shows `Q-… is void. This invoice can't be approved.` An approved invoice under a void quote can still be reprinted as sold.
 - **Dup** starts a new draft only. It uses the quote, or the invoice's parent quote. It does not void and does not approve.
 
@@ -178,17 +180,20 @@ Status enum (app): draft | sent | accepted | expired | void.
 - +/− qty logs adjustments on **new** stock only; Quote / Edit / Del / Adjust (Scan, New vs Used)
 
 ### Plain errors
-Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Quote changed since INV-… was printed. Save & print before Approve`, and `Couldn't approve — try again`. Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
+Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Only N on hand…`, `Enter how many to remove — 1 or more.`, `Enter how many to add — 1 or more.`, `This invoice has no customer…`, `Quote changed since INV-… was printed. Save & print before Approve`, and `Couldn't approve — try again`. Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
 
 ### Scan
 - Lookup by **barcode or part number** (label ID not displayed)
 - Found card: New vs Used, action, qty; **Quote**, **Edit part**, Commit / Save notes / Scan again
 - Commit logs stock_in / stock_out / set_qty against the chosen condition
+- Remove of more than is on hand is refused. The screen names the current count and points at Set. It does not floor at zero and it does not write a history row. Used stock uses the used count. Remove 0 and Add 0 are refused. Set 0 still sets the count. A blank, negative, or decimal quantity is refused before any write. Home − on a part already at 0 shows the same on-hand sentence once `schema/r1_round1_guards.sql` has been run.
 
 ### Add / Edit
 - Same form; **barcode never shown** on the form (still generated on create for QR labels)
 - Source, category, location: **dropdown + typeahead**. Matching existing values snap to the stored spelling; new values can still be kept
-- Qty (new) and Qty (used) on the same SKU
+- Qty (new) and Qty (used) on the same SKU. Each must be a whole number, 0 or more. A blank box means 0. A negative or a decimal is refused and is not turned into 0.
+- Sell price and buy price can't be negative. A blank price stays empty. A typed price is saved rounded to cents. The error sits above Save, in the card, and does not cover Part Name.
+- A part number with spaces asks first. Cancel saves nothing. OK saves it with the spaces removed.
 - Reorder default **0**. Edit must load the saved value (`0` is valid — never treat as missing)
 - Create / update / qty change on form → adjustment log + cost layers + price history
 
@@ -218,16 +223,16 @@ Known sale sentences stay exact, including `Q-… is void…`, `INV-… is appro
 - Printed quote includes a **3.5% credit-card fee** notice
 - **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / **Void quote** do **not** change stock. Void quote does not restock and does not clear `approved_at`, so a second invoice for that quote is still refused. The **Void quote** button sits outside the Invoice… buttons. The status dropdown says **Void quote** and still saves `void`. There is no draft-invoice void.
 - Packing list (`PL-YYYY-###`): items + qty only. No prices, CC note, lead time, or payment terms. Packed-by / received-by lines. Doc only.
-- Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (from quote valid-until), optional 3.5% CC fee, shipping, duty, tariffs. **Save & print** stores a **draft** and does not change stock. **Approve** calls `shop_approve_invoice` and is the only sale.
+- Invoice (`INV-YYYY-###`): adds PO, ship-to, due date (it follows Valid Until until someone types a due date), optional 3.5% CC fee, shipping, duty, tariffs. Those three fees can't be negative. **Save & print** stores a **draft**, prints a DRAFT stamp, and does not change stock. **Approve** calls `shop_approve_invoice` and is the only sale. A blank or spaces-only customer on that invoice is refused. **Cash sale** fills the customer box with `Cash sale` and does not write `customers`. $0.00 lines and $0.00 invoices still save and approve. A giveaway is a $0 price plus a note.
 - **Invoice…** follows the quote on screen. It is available when no quote is open, and when the open quote has no approved invoice. **New**, **Duplicate**, **Clear cart**, and opening another quote unlock it immediately. Reopening a quote that already has an approved invoice leaves it grey. The lock is not remembered separately from that quote’s invoices.
 - A quote line that wants more than the live new-shelf qty shows `wants N / shelf M` before Save & print. That is a warning only. Save & print and Approve stay available. Nothing is reserved.
 - **Save & print** reuses the newest open draft invoice on this quote: it refreshes that header and its lines from the cart and reprints the same INV- number. A new INV- is minted only when the quote has no open draft. An approved invoice still blocks another invoice.
 - **Invoice…** on a cart that is not saved yet runs **Save quote** first. **Save & print** does the same if there is still no quote. If that save fails, the invoice box stays closed and no INV- is minted. Draft reuse still needs that quote id.
-- **New quote** clears the working cart (no confirm) and starts a blank header. **Approve** success toasts `INV-… approved. Parts left the shelf.` and then starts that same blank quote. The sold quote leaves Saved quotes. Find can still open it. An already-approved tap does the same after its info toast. Approve failure leaves the quote open and leaves the cart. Save quote and Save & print do not clear the cart, except **Save** when the status just saved is Void and that quote is open. **Void quote** clears the cart when the voided quote is the one open in the builder, including Void from the list. Voiding a different quote leaves the cart.
+- **New quote** clears the working cart (no confirm) and starts a blank header. When Approve marks a quote Accepted that was not already Accepted, success toasts `INV-… approved. Parts left the shelf. Quote marked Accepted.` If the quote was already Accepted, the toast stays `INV-… approved. Parts left the shelf.` Either way it then starts that same blank quote. The sold quote leaves Saved quotes. Find can still open it. An already-approved tap does the same after its info toast. Approve failure leaves the quote open and leaves the cart. Save quote and Save & print do not clear the cart, except **Save** when the status just saved is Void and that quote is open. **Void quote** clears the cart when the voided quote is the one open in the builder, including Void from the list. Voiding a different quote leaves the cart. Valid Until can't be before the quote Date. Save quote checks that before it asks for a new quote number, so a refused save does not use one up.
 - If this quote has an approved invoice, it is not listed in Saved quotes. On the builder, **Void quote** is grey, and the note names that INV: `INV-… is approved. Voiding this quote won't undo the sale.` Void and Expired cannot be chosen or saved. **Save quote** is grey too, and the note also says `INV-… is approved. This quote's lines can't change after the sale.` Save quote does not replace those lines. **Save as new quote** keeps the lines, mints a new Q- number, writes those lines to that new quote immediately, and leaves customer, project, RFQ, FOB, terms, notes, and lead time blank. A quote with only a draft, or no invoice, can still be voided and still saves. Void does not restock and does not change the invoice.
 - **Save & print** refuses when the open quote is Void. The note names that Q-: `Q-… is void. This invoice can't be approved.` It does not create or refresh a draft. A draft invoice on a void quote stays a draft. The invoice list shows that same Q- note and **Approve** is grey. A tap still calls `shop_approve_invoice`, which refuses before any debit. Drafts are not auto-voided. There is no new invoice status.
 - Once a quote is Void, it stays Void. The status dropdown is locked and **Save quote** is grey. Save reads the stored status, so picking another status does not write. The refusal is `Q-… is void. Start a new quote to bring this deal back.` Bring the deal back with **Save as new quote** or **Duplicate**. Save as new quote mints a fresh Q-, writes the lines on screen now, and leaves the customer and header blank. It does not copy Void onto the new quote. Deleting one line is refused while that void quote still exists. Deleting the void quote removes its lines with it.
-- **Approve** sells the draft invoice's lines, not the cart on screen. When those differ, the note says `Quote changed since INV-… was printed. Save & print before Approve` and **Approve** stays grey until **Save & print**. No new SQL.
+- **Approve** sells the draft invoice's lines, not the cart on screen. When the lines differ, or the Notes box differs from the notes stored on that draft at Save & print, the note says `Quote changed since INV-… was printed. Save & print before Approve` and **Approve** stays grey until **Save & print**. Nothing else in that hold changes.
 - Once an invoice is approved, that invoice and its lines stay as sold. A later change raises `INV-… is approved. This invoice can't change.` Save & print still rewrites a draft. Run `schema/a2_6_freeze_approved_invoice.sql` once after this build is on live Pages and every phone has hard-refreshed. A grey button alone is not the lock.
 - An Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows a red message fixed at the top of the screen and scrolls that banner into view. Approve stays tappable, including when a line is short. The shelf does not change and the draft stays a draft. The banner still clears after a few seconds.
 - Customer free-text + optional “Also save this customer” (stores name + payment terms)
@@ -335,7 +340,7 @@ Default Wynn sell factor: **2.585**. FFS factor: enter when known.
 
 ## A1 stock and document numbers (live)
 
-`schema/a1_stock_doc_referee.sql` is already applied. Commit and new Q- / INV- / PL- numbers go through `shop_commit_qty` and `shop_next_doc_number`. Floor Commit still floors a short remove at zero. Do not re-run A1 after Approve SQL unless you run `schema/a2_approve_invoice.sql` again afterward (A1 now includes the same strict-remove check, so a re-run stays safe).
+`schema/a1_stock_doc_referee.sql` is already applied. Commit and new Q- / INV- / PL- numbers go through `shop_commit_qty` and `shop_next_doc_number`. Round 1 replaces `shop_commit_qty`: a short remove is refused and points at Set. It does not floor at zero. Do not re-run A1 after `schema/r1_round1_guards.sql` unless you run that Round 1 file again right after.
 
 ## Approve invoice (run SQL only after this page is on the phones)
 
@@ -347,7 +352,7 @@ Run `schema/a2_approve_invoice.sql` **once**, and only after the Approve page is
 
 `shop_approve_invoice` refuses when the invoice's quote is void, and when `quote_id` is set but the quote row is missing. The error names the quote: `Q-… is void. This invoice can't be approved.` The invoice stays a draft. The shelf does not change. Already-approved, one approved invoice per quote, and a short shelf stay as they are. The function does not void draft invoices.
 
-Run `schema/a2_4_void_quote_approve_lock.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. `schema/a2_approve_invoice.sql` now has the same function, so re-running it does not drop the refuse. Do not run this before the phones are on this build. A grey Approve button alone is not the lock.
+Run `schema/a2_4_void_quote_approve_lock.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Do not run this before the phones are on this build. A grey Approve button alone is not the lock. After Round 1, re-running this file or `schema/a2_approve_invoice.sql` puts the older Approve function back. Run `schema/r1_round1_guards.sql` again right after. The void refuse itself stays in that Round 1 function.
 
 ## Void is final (run SQL only after the A2.4b page is on the phones)
 
@@ -360,6 +365,16 @@ Run `schema/a2_4b_void_quote_final.sql` **once**, only after this build is on li
 Once an invoice is approved (`status` is approved, or `approved_at` is set), that row cannot change. Any later update raises `INV-… is approved. This invoice can't change.` A blank number uses `This invoice`. Insert, update, and delete of its `invoice_lines` raise the same sentence. The check uses the row that is already approved, so the update that first stamps a draft approved still works. A second Approve does not debit again. Save & print still rewrites a draft invoice and its lines. Deleting an approved invoice still raises `Approved invoices stay on the books`. This file does not change `shop_approve_invoice`, does not void drafts, does not restock, and does not touch the void-quote triggers.
 
 Run `schema/a2_6_freeze_approved_invoice.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. A grey button alone is not the lock. The pass is an update of that approved invoice, under a signed-in profile, raising that sentence. The same sentence refuses a change to one of its lines.
+
+## Round 1 guards (run SQL only after this page is on the phones)
+
+Commit no longer floors a short remove at zero. Remove of more than is on hand raises `Only N on hand. If the shelf has more, use Set to correct the count first.` Used stock says `Only N used on hand…`. Add 0 raises `Enter how many to add — 1 or more.` Remove 0 raises `Enter how many to remove — 1 or more.` Set 0 still works. Approve still uses its own short-shelf sentence, because it sets `inmar.strict_remove`. Home − on a part at 0 shows the on-hand sentence after this SQL runs.
+
+A quote line qty must be a whole number, 1 or more. A bad qty keeps the old qty. A negative price keeps the old price. Prices round to cents. Shipping, duty, and tariffs can't be negative. Valid Until can't be before the quote Date, and Save checks that before a new quote number is issued. $0.00 lines and $0.00 invoices still save and approve.
+
+Approve on a Draft or Sent quote still sets it to Accepted. The toast adds `Quote marked Accepted.` when the quote was not already Accepted. Find says `Searching…` and `Opening…`, and a later search or Back wins. A blank customer on the invoice is refused before any debit: `This invoice has no customer. Add a customer or tap Cash sale, then Save & print before Approve.` **Cash sale** fills the box with exactly `Cash sale` and does not write `customers`. The mismatch hold also compares Notes. Nothing else in that hold changes.
+
+`schema/r1_round1_guards.sql` replaces `shop_commit_qty` and `shop_approve_invoice` and adds `NOT VALID` checks. Run it once, only after GitHub Pages is serving this build and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Safe to re-run. Never run `VALIDATE CONSTRAINT` on these checks. Re-running `schema/a1_stock_doc_referee.sql`, `schema/a2_approve_invoice.sql`, or `schema/a2_4_void_quote_approve_lock.sql` after this file puts the older functions back. Run `schema/r1_round1_guards.sql` again right after. A grey button alone is not the lock. The merge does not apply this SQL. Quote numbering is unchanged. RLS, the freeze, and the void locks are unchanged.
 
 ## Quote screen (no new SQL)
 
@@ -404,9 +419,10 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
 | `schema/inventory_costing.sql` | Used qty, price history, cost layers |
-| `schema/a1_stock_doc_referee.sql` | Live qty + document-number referee |
-| `schema/a2_approve_invoice.sql` | Approve invoice. Run after phones hard-refresh onto this page. Same function as A2.4, so a re-run keeps the void refuse |
-| `schema/a2_4_void_quote_approve_lock.sql` | Replaces `shop_approve_invoice` so a void or missing quote cannot be approved. Run once after A2.4 is on Pages and every phone has hard-refreshed |
+| `schema/a1_stock_doc_referee.sql` | Live qty + document-number referee. Superseded in part by Round 1. Re-run Round 1 right after if this file is re-run |
+| `schema/a2_approve_invoice.sql` | Older Approve function. Superseded in part by Round 1. Re-run Round 1 right after if this file is re-run |
+| `schema/a2_4_void_quote_approve_lock.sql` | Older void-quote Approve lock. Superseded in part by Round 1. Re-run Round 1 right after if this file is re-run |
+| `schema/r1_round1_guards.sql` | Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Do not VALIDATE the new checks. A grey button alone is not the lock |
 | `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Deleting the quote removes its lines. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule |
 | `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
 
@@ -428,4 +444,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-07 — Saved quotes are live unsold only (Draft, Sent, Accepted, and no approved invoice). Find still searches a number or customer. Last 7 days and From–To use America/Chicago. Typed search and date browse show about 50 newest and say Narrow the dates or Narrow the search. Find detail is Reprint and Dup. Front row is Home, Scan, Inventory, Labels. Quote is its own row. More, including Reports, is a link on Home. Stats row is Parts, Units, Low, Open Orders. Find quotes & invoices is a full-width tile under that row. Reprint uses the Save & print invoice. Approved reprint is the sold invoice. Draft and open quotes say Draft — current rows. A void quote hides Reprint. Unknown database text becomes Couldn't save — try again or Couldn't load — try again. Locked sale sentences stay exact. Freeze, void-quote, and void-final SQL remain separate one-time runs after a hard-refresh.*
+*Last updated: 2026-10-08 — Round 1: Commit refuses a short remove and points at Set. It does not floor at zero. Add 0 and Remove 0 are refused. Set 0 still works. Quote qty is a whole number, 1 or more. Prices can't be negative and round to cents. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. Draft prints show DRAFT. Approved reprints do not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*

@@ -1,3 +1,4 @@
+-- Superseded in part by schema/r1_round1_guards.sql. If you re-run this file, run r1_round1_guards.sql again right after.
 -- =============================================================================
 -- A1 stock + document-number referee
 --

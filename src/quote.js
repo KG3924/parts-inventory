@@ -224,7 +224,9 @@ export function installQuote() {
   let printedDraftLines = null;
   let approvedInvoiceByQuote = {};
   let invoiceSaveBusy = false;
+  let dueEditedByHand = false;
   let findView = null;
+  let findSeq = 0;
 
   // Save, print, packing, and draft invoices do not change qty. Approve does, on the server.
   let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
@@ -255,7 +257,7 @@ export function installQuote() {
         part_number: item.part_number,
         name: item.name,
         qty: 1,
-        unit_price: item.sell_price != null ? Number(item.sell_price) : 0
+        unit_price: item.sell_price != null ? shop().toCents(item.sell_price) : 0
       });
     }
     const by = document.getElementById('quote-by');
@@ -266,8 +268,24 @@ export function installQuote() {
 
   function updateQuoteLine(idx, field, value) {
     if (!quoteCart[idx]) return;
-    if (field === 'qty') quoteCart[idx].qty = Math.max(1, parseInt(value) || 1);
-    if (field === 'unit_price') quoteCart[idx].unit_price = parseFloat(value) || 0;
+    if (field === 'qty') {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 1) {
+        shop().showStatus('Qty must be a whole number, 1 or more.', 'error');
+        renderQuotePanel();
+        return;
+      }
+      quoteCart[idx].qty = n;
+    }
+    if (field === 'unit_price') {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) {
+        shop().showStatus("Price can't be negative.", 'error');
+        renderQuotePanel();
+        return;
+      }
+      quoteCart[idx].unit_price = shop().toCents(n);
+    }
     saveQuoteCart();
   }
 
@@ -325,7 +343,7 @@ export function installQuote() {
             return `<tr>
               <td><strong>${shop().escapeHtml(c.name)}</strong><br><code style="font-size:0.75rem;color:var(--muted)">${shop().escapeHtml(c.part_number)}</code></td>
               <td><input type="number" min="1" value="${c.qty}" style="width:70px;margin:0" onchange="updateQuoteLine(${idx},'qty',this.value)">${shortNote}</td>
-              <td><input type="number" min="0" step="0.01" value="${c.unit_price}" style="width:90px;margin:0" onchange="updateQuoteLine(${idx},'unit_price',this.value)"></td>
+              <td><input type="number" min="0" step="0.01" value="${priceBox(c.unit_price)}" style="width:90px;margin:0" onchange="updateQuoteLine(${idx},'unit_price',this.value)"></td>
               <td>${shop().money(line)}</td>
               <td><button class="danger" onclick="removeQuoteLine(${idx})">×</button></td>
             </tr>`;
@@ -334,6 +352,13 @@ export function installQuote() {
       </table>
       <div style="text-align:right;font-weight:700;margin-top:0.75rem;font-size:1.1rem;">Total: ${shop().money(total)}</div>
     `;
+  }
+
+  function priceBox(n) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return '';
+    if (shop().toCents(x) === x) return x.toFixed(2);
+    return String(x);
   }
 
   function quoteCartTotal() {
@@ -468,6 +493,12 @@ export function installQuote() {
     if (!name) return;
     const row = await findCustomerByName(name);
     if (row && row.payment_terms) setComboValue('terms', row.payment_terms);
+  }
+
+  function setCashSale() {
+    const el = document.getElementById('quote-customer');
+    if (el) el.value = 'Cash sale';
+    onQuoteCustomerChange();
   }
 
   async function nextDocNumber(docType) {
@@ -861,6 +892,11 @@ export function installQuote() {
       shop().showStatus('Add at least one line before saving', 'error');
       return false;
     }
+    const dateProblem = quoteDateProblem();
+    if (dateProblem) {
+      shop().showStatus(dateProblem, 'error');
+      return false;
+    }
     const requestedStatus = document.getElementById('quote-status').value || 'draft';
     let number = (document.getElementById('quote-number').value || '').trim();
     if (!number) {
@@ -1146,6 +1182,7 @@ export function installQuote() {
     .totals .grand { font-size: 16px; font-weight: 700; border-top: 2px solid #1e3a5f; margin-top: 6px; padding-top: 6px; }
     .notes { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 16px; white-space: pre-wrap; }
     .legal { font-size: 11px; color: #475569; margin-top: 12px; }
+    .draft-stamp { position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 120px; font-weight: 800; color: rgba(220, 38, 38, 0.18); border: 8px solid rgba(220, 38, 38, 0.18); padding: 0 24px; pointer-events: none; z-index: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b; }
     @media print { body { padding: 12px; } @page { margin: 0.6in; size: letter; } }
   </style></head><body>
@@ -1288,13 +1325,44 @@ export function installQuote() {
     const tariffs = parseFloat(document.getElementById('inv-tariffs')?.value) || 0;
     const goods = subtotal + shipping + duty + tariffs;
     const cc = document.getElementById('inv-cc')?.checked;
-    const ccFee = cc ? Math.round(goods * 0.035 * 100) / 100 : 0;
+    const ccFee = cc ? shop().toCents(goods * 0.035) : 0;
     return { subtotal, shipping, duty, tariffs, ccFee, cc, total: goods + ccFee };
+  }
+
+  function readInvoiceFee(id) {
+    const raw = document.getElementById(id)?.value;
+    if (raw == null || String(raw).trim() === '') return 0;
+    return Number(raw);
+  }
+
+  function invoiceFeeProblem() {
+    const fees = [readInvoiceFee('inv-shipfee'), readInvoiceFee('inv-duty'), readInvoiceFee('inv-tariffs')];
+    if (fees.some(n => !Number.isFinite(n) || n < 0)) return "Shipping, duty and tariffs can't be negative.";
+    return '';
+  }
+
+  function quoteDateProblem() {
+    const date = document.getElementById('quote-date')?.value || '';
+    const valid = document.getElementById('quote-valid')?.value || '';
+    if (date && valid && valid < date) return "Valid Until can't be before the quote Date.";
+    return '';
+  }
+
+  function syncDueFromValid() {
+    if (dueEditedByHand) return;
+    const due = document.getElementById('inv-due');
+    const valid = document.getElementById('quote-valid');
+    if (due && valid) due.value = valid.value || '';
   }
 
   function updateInvoicePreview() {
     const el = document.getElementById('inv-preview');
     if (!el) return;
+    const problem = invoiceFeeProblem();
+    if (problem) {
+      el.textContent = problem;
+      return;
+    }
     const m = invoiceMath();
     el.innerHTML = `Merchandise ${shop().money(m.subtotal)} + shipping ${shop().money(m.shipping)} + duty ${shop().money(m.duty)} + tariffs ${shop().money(m.tariffs)}${m.cc ? ' + CC 3.5% ' + shop().money(m.ccFee) : ''} = <strong>${shop().money(m.total)}</strong> due`;
   }
@@ -1343,7 +1411,11 @@ export function installQuote() {
     return `Quote changed since ${n} was printed. Save & print before Approve`;
   }
 
-  // Approve still sells invoice_lines. This only compares the cart to that draft.
+  function draftNotesText(value) {
+    return String(value ?? '').trim();
+  }
+
+  // Approve still sells invoice_lines. This compares the cart and the notes to that draft.
   function quoteDraftMismatch() {
     const draft = newestOpenDraft();
     if (!draft) return '';
@@ -1355,6 +1427,9 @@ export function installQuote() {
     for (let i = 0; i < cartFp.length; i++) {
       if (cartFp[i] !== draftFp[i]) return draftMismatchMessage(draft.number);
     }
+    const screenNotes = draftNotesText(document.getElementById('quote-notes')?.value);
+    const savedNotes = draftNotesText(printedDraftLines.notes);
+    if (screenNotes !== savedNotes) return draftMismatchMessage(draft.number);
     return '';
   }
 
@@ -1379,6 +1454,12 @@ export function installQuote() {
       printBtn.disabled = voided;
       printBtn.style.opacity = voided ? '0.45' : '';
     }
+    const cashBtn = document.getElementById('quote-cash-sale-btn');
+    if (cashBtn) {
+      const cashOff = blocked || voidFinal;
+      cashBtn.disabled = cashOff;
+      cashBtn.style.opacity = cashOff ? '0.45' : '';
+    }
     const st = document.getElementById('quote-status');
     if (!st) return;
     st.disabled = voidFinal;
@@ -1391,6 +1472,7 @@ export function installQuote() {
   function resetQuoteInvoiceUi() {
     currentQuoteInvoices = [];
     printedDraftLines = null;
+    dueEditedByHand = false;
     renderQuoteInvoiceRows([], { syncApproved: false });
   }
 
@@ -1420,7 +1502,7 @@ export function installQuote() {
     if (!box) return;
     const valid = document.getElementById('quote-valid')?.value;
     const due = document.getElementById('inv-due');
-    if (due && !due.value) due.value = valid || '';
+    if (due && !dueEditedByHand) due.value = valid || '';
     box.style.display = 'block';
     updateInvoicePreview();
     box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1508,7 +1590,7 @@ export function installQuote() {
       return;
     }
     const { data, error } = await shop().supabaseClient.from('invoices')
-      .select('id,number,status,total,created_at')
+      .select('id,number,status,total,created_at,notes')
       .eq('quote_id', quoteId)
       .order('created_at', { ascending: true });
     if (currentQuoteId() !== quoteId) return;
@@ -1528,10 +1610,10 @@ export function installQuote() {
       if (currentQuoteId() !== quoteId) return;
       if (!newestOpenDraft() || newestOpenDraft().id !== draft.id) return;
       if (lineErr) {
-        printedDraftLines = { id: draft.id, lines: [], failed: true };
+        printedDraftLines = { id: draft.id, lines: [], notes: draft.notes, failed: true };
       } else {
         const lines = (lineData || []).slice().sort((a, b) => (Number(a.line_no) || 0) - (Number(b.line_no) || 0));
-        printedDraftLines = { id: draft.id, lines, failed: false };
+        printedDraftLines = { id: draft.id, lines, notes: draft.notes, failed: false };
       }
     }
     if (currentQuoteId() !== quoteId) return;
@@ -1571,6 +1653,11 @@ export function installQuote() {
       showApproveError(mismatchMsg);
       return;
     }
+    const customerNow = (document.getElementById('quote-customer')?.value || '').trim();
+    if (!customerNow) {
+      showApproveError('This invoice has no customer. Add a customer or tap Cash sale, then Save & print before Approve.');
+      return;
+    }
     const { data, error } = await shop().supabaseClient.rpc('shop_approve_invoice', { p_invoice_id: id });
     const quoteId = currentQuoteId();
     if (error) {
@@ -1583,7 +1670,11 @@ export function installQuote() {
       shop().showStatus(`Already approved — ${payload.number || 'this invoice'}. Shelf unchanged.`, 'info');
       await startNewQuote({ keepStatus: true });
     } else if (payload.ok) {
-      shop().showStatus(`${payload.number || 'Invoice'} approved. Parts left the shelf.`, 'success');
+      const approvedNumber = payload.number || 'Invoice';
+      const marked = payload.quote_marked_accepted
+        ? `${approvedNumber} approved. Parts left the shelf. Quote marked Accepted.`
+        : `${approvedNumber} approved. Parts left the shelf.`;
+      shop().showStatus(marked, 'success');
       await startNewQuote({ keepStatus: true });
     } else {
       showApproveError(approveFailText(payload));
@@ -1645,7 +1736,8 @@ export function installQuote() {
       : '';
     const po = doc.po;
     const rfq = doc.rfq;
-    return `
+    const stamp = doc.draft ? '<div class="draft-stamp">DRAFT</div>' : '';
+    return `${stamp}
     <div class="header">
   <div>${companyBlock()}</div>
   <div class="meta">
@@ -1698,6 +1790,16 @@ export function installQuote() {
       shop().showStatus('Add quote lines first', 'error');
       return;
     }
+    const dateProblem = quoteDateProblem();
+    if (dateProblem) {
+      shop().showStatus(dateProblem, 'error');
+      return;
+    }
+    const feeProblem = invoiceFeeProblem();
+    if (feeProblem) {
+      shop().showStatus(feeProblem, 'error');
+      return;
+    }
     invoiceSaveBusy = true;
     try {
       if (!currentQuoteId()) {
@@ -1744,7 +1846,8 @@ export function installQuote() {
         }
         const { error: lErr } = await shop().supabaseClient.from('invoice_lines').insert(invoiceLinePayload(draft.id));
         if (lErr) {
-          shop().showStatus("Couldn't update the draft invoice lines.", 'error');
+          const plain = shop().plainDbError(lErr, 'save');
+          shop().showStatus(plain === "Couldn't save — try again" ? "Couldn't update the draft invoice lines." : plain, 'error');
           return;
         }
         invNumber = draft.number || '';
@@ -1772,7 +1875,8 @@ export function installQuote() {
         const { error: lErr } = await shop().supabaseClient.from('invoice_lines').insert(invoiceLinePayload(inv.id));
         if (lErr) {
           await shop().supabaseClient.from('invoices').delete().eq('id', inv.id);
-          shop().showStatus("Couldn't save the invoice lines. Draft was not kept.", 'error');
+          const plain = shop().plainDbError(lErr, 'save');
+          shop().showStatus(plain === "Couldn't save — try again" ? "Couldn't save the invoice lines. Draft was not kept." : plain, 'error');
           return;
         }
         if (quoteId) await refreshQuoteInvoices();
@@ -1794,6 +1898,7 @@ export function installQuote() {
         terms: data.terms,
         notes: data.notes,
         lines: quoteCart,
+        draft: true,
         subtotal: m.subtotal,
         shipping: m.shipping,
         duty: m.duty,
@@ -1957,41 +2062,53 @@ export function installQuote() {
   }
 
   async function runFindSearch() {
+    const seq = ++findSeq;
     const results = document.getElementById('find-results');
     const detail = document.getElementById('find-detail');
     findView = null;
     if (detail) {
       detail.hidden = true;
       detail.innerHTML = '';
+      detail.removeAttribute('aria-busy');
     }
-    if (results) results.hidden = false;
+    if (results) {
+      results.hidden = false;
+      results.innerHTML = '<p class="empty">Searching…</p>';
+    }
     const q = findSearchText(document.getElementById('find-q')?.value);
     const dateWindow = readFindWindow();
     if (!q && !dateWindow) {
+      if (seq !== findSeq) return;
       if (results) results.innerHTML = '<p class="empty">Type a number or customer, or pick dates. An empty search with no dates does not list the book.</p>';
       return;
     }
     if (!shop().supabaseClient) {
+      if (seq !== findSeq) return;
       if (results) results.innerHTML = '<p class="empty">Couldn\'t load — try again</p>';
       return;
     }
     if (!(await ensureQuotesTables())) {
+      if (seq !== findSeq) return;
       if (results) results.innerHTML = '<p class="empty">Run Phase 1 SQL on More to find quotes.</p>';
       return;
     }
+    if (seq !== findSeq) return;
     const bounds = findWindowBounds(dateWindow);
     if (dateWindow && (!bounds.startIso || !bounds.endIso)) {
+      if (seq !== findSeq) return;
       if (results) results.innerHTML = '<p class="empty">Couldn\'t load — try again</p>';
       return;
     }
     const pattern = q ? `%${q}%` : '';
     const quoteRes = await runFindBuckets('quotes', FIND_QUOTE_LIST_COLS, quoteFindSpecs(bounds), pattern);
+    if (seq !== findSeq) return;
     if (quoteRes.error) {
       console.warn(quoteRes.error);
       if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(quoteRes.error, 'load'))}</p>`;
       return;
     }
     const invoiceRes = await runFindBuckets('invoices', FIND_INVOICE_LIST_COLS, invoiceFindSpecs(bounds), pattern);
+    if (seq !== findSeq) return;
     if (invoiceRes.error) {
       console.warn(invoiceRes.error);
       if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(invoiceRes.error, 'load'))}</p>`;
@@ -2032,12 +2149,14 @@ export function installQuote() {
   }
 
   function showFindResults() {
+    findSeq += 1;
     findView = null;
     const detail = document.getElementById('find-detail');
     const results = document.getElementById('find-results');
     if (detail) {
       detail.hidden = true;
       detail.innerHTML = '';
+      detail.removeAttribute('aria-busy');
     }
     if (results) results.hidden = false;
   }
@@ -2116,6 +2235,7 @@ export function installQuote() {
     const detail = document.getElementById('find-detail');
     const results = document.getElementById('find-results');
     if (!detail) return;
+    detail.removeAttribute('aria-busy');
     if (results) results.hidden = true;
     detail.hidden = false;
     const state = findLoadedState(kind, loaded);
@@ -2201,12 +2321,24 @@ export function installQuote() {
     const safeKind = kind === 'invoice' ? 'invoice' : 'quote';
     const safe = findDocId(id);
     if (!safe) return;
+    const seq = ++findSeq;
+    const results = document.getElementById('find-results');
+    const detail = document.getElementById('find-detail');
+    if (results) results.hidden = true;
+    if (detail) {
+      detail.hidden = false;
+      detail.setAttribute('aria-busy', 'true');
+      detail.innerHTML = '<button type="button" class="secondary tap" onclick="showFindResults()">Back</button><p class="empty">Opening…</p>';
+    }
     const loaded = await loadFindDoc(safeKind, safe);
+    if (seq !== findSeq) return;
     if (!loaded || loaded.error) {
+      showFindResults();
       shop().showStatus(shop().plainDbError(loaded && loaded.error, 'load'), 'error');
       return;
     }
     if (loaded.missing) {
+      showFindResults();
       shop().showStatus(safeKind === 'invoice' ? 'Invoice not found' : 'Quote not found', 'error');
       return;
     }
@@ -2241,7 +2373,8 @@ export function installQuote() {
       cc: !!inv.cc_used,
       ccFee: Number(inv.cc_fee_amount) || 0,
       total: Number(inv.total) || 0,
-      banner: banner || ''
+      banner: banner || '',
+      draft: false
     };
   }
 
@@ -2269,13 +2402,16 @@ export function installQuote() {
       cc: false,
       ccFee: 0,
       total: subtotal,
-      banner: FIND_DRAFT_BANNER
+      banner: FIND_DRAFT_BANNER,
+      draft: true
     };
   }
 
   async function reprintFindDoc() {
     if (!findView) return;
-    const loaded = await loadFindDoc(findView.kind, findView.id);
+    const viewAtStart = findView;
+    const loaded = await loadFindDoc(viewAtStart.kind, viewAtStart.id);
+    if (findView !== viewAtStart) return;
     if (!loaded || loaded.error) {
       shop().showStatus(shop().plainDbError(loaded && loaded.error, 'load'), 'error');
       return;
@@ -2304,8 +2440,10 @@ export function installQuote() {
     if (findView.kind === 'invoice' && loaded.invoice) {
       const banner = loaded.invoice.status === 'approved' ? '' : FIND_DRAFT_BANNER;
       doc = printDocFromInvoice(loaded.invoice, loaded.lines, loaded.parent, banner);
+      doc.draft = loaded.invoice.status !== 'approved';
     } else if (loaded.sold && loaded.sold.invoice && loaded.sold.invoice.status === 'approved') {
       doc = printDocFromInvoice(loaded.sold.invoice, loaded.sold.lines, loaded.sold.parent || loaded.quote, '');
+      doc.draft = false;
     } else if (loaded.quote) {
       if (!(loaded.lines || []).length) {
         shop().showStatus('Nothing to reprint', 'error');
@@ -2337,6 +2475,7 @@ export function installQuote() {
     refreshQuoteLookups,
     findCustomerByName,
     onQuoteCustomerChange,
+    setCashSale,
     nextDocNumber,
     ensureQuotesTables,
     loadCustomerSuggestions,
@@ -2380,6 +2519,19 @@ export function installQuote() {
     if (d) d.addEventListener('change', () => {
       const valid = document.getElementById('quote-valid');
       if (valid) valid.value = addDaysIso(d.value, 90);
+      syncDueFromValid();
+    });
+    const validInput = document.getElementById('quote-valid');
+    if (validInput) validInput.addEventListener('change', () => {
+      const problem = quoteDateProblem();
+      if (problem) shop().showStatus(problem, 'error');
+      syncDueFromValid();
+    });
+    const dueInput = document.getElementById('inv-due');
+    if (dueInput) dueInput.addEventListener('input', () => { dueEditedByHand = true; });
+    const notesInput = document.getElementById('quote-notes');
+    if (notesInput) notesInput.addEventListener('input', () => {
+      if (document.getElementById('quote-invoices')) renderQuoteInvoiceRows(currentQuoteInvoices);
     });
     ['inv-shipfee', 'inv-duty', 'inv-tariffs'].forEach(id => {
       const el = document.getElementById(id);

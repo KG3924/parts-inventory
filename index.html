@@ -118,6 +118,17 @@
     .status.success { background: #f0fdf4; color: var(--success); border: 1px solid var(--success); }
     .status.error { background: #fef2f2; color: var(--danger); border: 1px solid var(--danger); }
     .status.info { background: #eff6ff; color: var(--accent); border: 1px solid var(--accent); }
+    /* Part-form errors stay in the card. .status.show is the fixed top banner. */
+    #item-form-error:not([hidden]) {
+      display: block;
+      position: static;
+      width: auto;
+      left: auto;
+      top: auto;
+      transform: none;
+      z-index: auto;
+      box-shadow: none;
+    }
     .actions {
       display: flex; gap: 0.2rem; flex-wrap: nowrap; align-items: center; justify-content: flex-end;
       white-space: nowrap;
@@ -540,6 +551,7 @@
           </div>
         </div>
 
+        <p id="item-form-error" class="status error" role="alert" hidden></p>
         <div class="btn-group">
           <button class="tap" onclick="saveItem()">Save</button>
           <button class="secondary tap" onclick="clearForm()">Clear</button>
@@ -990,7 +1002,12 @@ notify pgrst, 'reload schema';</pre>
         /(A stock line points at a missing part\. Invoice stayed a draft\.)/,
         /(Quote changed since .+? was printed\. Save & print before Approve)/,
         /(Couldn't approve — try again)/,
-        /(Couldn't approve — run the invoice SQL after every phone has been refreshed\.)/
+        /(Couldn't approve — run the invoice SQL after every phone has been refreshed\.)/,
+        /(Only \d+ (?:used )?on hand\. If the shelf has more, use Set to correct the count first\.)/,
+        /(Enter how many to remove — 1 or more\.)/,
+        /(Enter how many to add — 1 or more\.)/,
+        /(Quantity must be a whole number, zero or more)/,
+        /(This invoice has no customer\. Add a customer or tap Cash sale, then Save & print before Approve\.)/
       ];
       for (const re of patterns) {
         const hit = text.match(re);
@@ -1009,6 +1026,25 @@ notify pgrst, 'reload schema';</pre>
       return line;
     }
 
+    function checkConstraintSentence(raw) {
+      const hit = String(raw || '').match(/violates check constraint "([^"]+)"/);
+      if (!hit) return '';
+      const name = hit[1];
+      if (name === 'quote_lines_qty_whole_positive' || name === 'invoice_lines_qty_whole_positive') {
+        return 'Qty must be a whole number, 1 or more.';
+      }
+      if (name === 'quote_lines_unit_price_not_negative' || name === 'invoice_lines_unit_price_not_negative') {
+        return "Price can't be negative.";
+      }
+      if (name === 'invoices_fees_not_negative' || name === 'invoices_totals_not_negative') {
+        return "Shipping, duty and tariffs can't be negative.";
+      }
+      if (name === 'inventory_prices_not_negative') return "Prices can't be negative.";
+      if (name === 'inventory_qty_not_negative') return "Qty can't be negative.";
+      if (name === 'quotes_valid_until_not_before_date') return "Valid Until can't be before the quote Date.";
+      return '';
+    }
+
     function plainDbError(error, kind) {
       const raw = [
         error && error.message,
@@ -1018,6 +1054,8 @@ notify pgrst, 'reload schema';</pre>
       ].filter(v => v != null && String(v).trim()).map(v => String(v)).join('\n');
       const locked = lockedShopSentence(raw);
       if (locked) return locked;
+      const constraint = checkConstraintSentence(raw);
+      if (constraint) return constraint;
       const fallback = kind === 'load'
         ? "Couldn't load — try again"
         : kind === 'approve'
@@ -1026,6 +1064,8 @@ notify pgrst, 'reload schema';</pre>
       const line = stripDbNoise(raw);
       const lockedLine = lockedShopSentence(line);
       if (lockedLine) return lockedLine;
+      const constraintLine = checkConstraintSentence(line);
+      if (constraintLine) return constraintLine;
       if (!line || isDbDump(line)) return fallback;
       return line;
     }
@@ -1054,6 +1094,10 @@ notify pgrst, 'reload schema';</pre>
     function money(n) {
       if (n == null || isNaN(n)) return '—';
       return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function toCents(n) {
+      return Math.round(Number(n + 'e2')) / 100;
     }
 
     /** List-currency profiles. Wynn = GBP, FFS = EUR, Alu = NOK, else USD. */
@@ -1708,7 +1752,7 @@ notify pgrst, 'reload schema';</pre>
       });
       if (error || !data || data.ok === false) {
         console.warn('shop_commit_qty', error || data);
-        showStatus("Couldn't commit — try again", 'error');
+        showStatus(plainDbError(error || data, 'save'), 'error');
         return null;
       }
       return data;
@@ -2460,16 +2504,76 @@ notify pgrst, 'reload schema';</pre>
       w.document.close();
     }
 
+    function showItemFormError(msg) {
+      const el = document.getElementById('item-form-error');
+      if (!el) {
+        showStatus(msg, 'error');
+        return;
+      }
+      el.textContent = msg;
+      el.hidden = false;
+      try { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+      catch (e) { try { el.scrollIntoView(true); } catch (e2) {} }
+    }
+
+    function hideItemFormError() {
+      const el = document.getElementById('item-form-error');
+      if (!el) return;
+      el.hidden = true;
+      el.textContent = '';
+    }
+
+    function readFormPrice(raw) {
+      if (raw == null || String(raw).trim() === '') return { blank: true, value: null };
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return { blank: true, value: null };
+      return { blank: false, value: n };
+    }
+
+    function readFormQty(raw) {
+      if (raw == null || String(raw).trim() === '') return 0;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) return null;
+      return n;
+    }
+
     async function saveItem() {
       if (!supabaseClient) { showStatus('Configure Supabase first', 'error'); return; }
       if (!requireUser('saving parts')) return;
+      hideItemFormError();
       const name = document.getElementById('item-name').value.trim();
-      const part_number = document.getElementById('item-barcode').value.trim().replace(/\s+/g, '');
-      if (!name || !part_number) { showStatus('Name and Part Number are required', 'error'); return; }
+      const partRaw = document.getElementById('item-barcode').value;
+      const part_number = partRaw.trim().replace(/\s+/g, '');
+      const sell = readFormPrice(document.getElementById('item-sell-price').value);
+      const buy = readFormPrice(document.getElementById('item-buy-price').value);
+      if (!sell.blank && sell.value < 0) {
+        showItemFormError("Sell price can't be negative.");
+        return;
+      }
+      if (!buy.blank && buy.value < 0) {
+        showItemFormError("Buy price can't be negative.");
+        return;
+      }
+      const newQty = readFormQty(document.getElementById('item-qty').value);
+      const newUsed = readFormQty(document.getElementById('item-qty-used')?.value);
+      if (newQty == null) {
+        showItemFormError('Qty (new) must be a whole number, 0 or more.');
+        return;
+      }
+      if (newUsed == null) {
+        showItemFormError('Qty (used) must be a whole number, 0 or more.');
+        return;
+      }
+      if (/\s/.test(partRaw)) {
+        if (!confirm('Part # can\'t have spaces. Save it as "' + part_number + '"?')) return;
+        document.getElementById('item-barcode').value = part_number;
+      }
+      if (!name || !part_number) {
+        showItemFormError('Name and Part Number are required');
+        return;
+      }
       const id = document.getElementById('edit-id').value;
       const openOrder = document.getElementById('item-open-order').checked;
-      const newQty = parseInt(document.getElementById('item-qty').value) || 0;
-      const newUsed = parseInt(document.getElementById('item-qty-used')?.value) || 0;
       const existingItem = id ? inventory.find(i => i.id === id) : null;
       const stockQty = newQty;
       const stockUsed = newUsed;
@@ -2478,8 +2582,8 @@ notify pgrst, 'reload schema';</pre>
         qty: id ? undefined : 0,
         qty_used: id ? undefined : 0,
         reorder_level: parseInt(document.getElementById('item-reorder').value) || 0,
-        buy_price: parseFloat(document.getElementById('item-buy-price').value) || null,
-        sell_price: parseFloat(document.getElementById('item-sell-price').value) || null,
+        buy_price: buy.blank ? null : toCents(buy.value),
+        sell_price: sell.blank ? null : toCents(sell.value),
         source: canonicalComboValue('source', document.getElementById('item-source').value) || null,
         category: canonicalComboValue('category', document.getElementById('item-category').value) || null,
         exclude_from_valuation: !!document.getElementById('item-exclude-value')?.checked,
@@ -2628,6 +2732,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     function clearForm() {
+      hideItemFormError();
       document.getElementById('edit-id').value = '';
       document.getElementById('form-title').textContent = 'Add Part';
       ['item-name','item-barcode','item-list-price','item-sell-factor','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
@@ -2651,6 +2756,7 @@ notify pgrst, 'reload schema';</pre>
     function editItem(id) {
       const item = inventory.find(i => i.id === id);
       if (!item) return;
+      hideItemFormError();
       document.getElementById('edit-id').value = item.id;
       document.getElementById('form-title').textContent = 'Edit Part';
       document.getElementById('item-name').value = item.name || '';
@@ -2874,12 +2980,31 @@ notify pgrst, 'reload schema';</pre>
       if (!requireUser('committing scan changes')) return;
       const item = pendingScanItem;
       const action = document.getElementById('scan-action')?.value || 'out';
-      const qty = parseInt(document.getElementById('scan-qty')?.value, 10);
-      if (isNaN(qty) || qty < 0) {
-        showStatus('Enter a valid quantity', 'error');
+      const cond = (hasQtyUsedColumn && document.getElementById('scan-condition')?.value === 'used') ? 'used' : 'new';
+      const qtyText = String(document.getElementById('scan-qty')?.value ?? '').trim();
+      const qty = Number(qtyText);
+      if (qtyText === '' || !Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) {
+        showStatus('Quantity must be a whole number, 0 or more.', 'error');
         return;
       }
-      const cond = (hasQtyUsedColumn && document.getElementById('scan-condition')?.value === 'used') ? 'used' : 'new';
+      if (action === 'out' && qty === 0) {
+        showStatus('Enter how many to remove — 1 or more.', 'error');
+        return;
+      }
+      if (action === 'in' && qty === 0) {
+        showStatus('Enter how many to add — 1 or more.', 'error');
+        return;
+      }
+      if (action === 'out') {
+        const onHand = cond === 'used' ? qtyUsedOf(item) : (Number(item.qty) || 0);
+        if (qty > onHand) {
+          const sentence = cond === 'used'
+            ? `Only ${onHand} used on hand. If the shelf has more, use Set to correct the count first.`
+            : `Only ${onHand} on hand. If the shelf has more, use Set to correct the count first.`;
+          showStatus(sentence, 'error');
+          return;
+        }
+      }
       const notesRaw = document.getElementById('scan-notes')?.value;
       const notes = notesRaw != null ? (notesRaw.trim() || null) : (item.notes || null);
       const resultEl = document.getElementById('scan-result');
@@ -3812,6 +3937,7 @@ ${bodyHtml}
       lockedShopSentence,
       escapeHtml,
       money,
+      toCents,
       currentUser,
       requireUser,
       updateUserUI
