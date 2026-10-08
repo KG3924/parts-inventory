@@ -315,6 +315,31 @@
       .tab-row { gap: 0.2rem; }
       .tab { font-size: 0.92rem; padding: 0.45rem 0.1rem; }
     }
+    /* BUG-037: on a phone each Inventory part is a card (name on top, Qty / Value / Status, then the buttons). Computer layout unchanged. */
+    @media (max-width: 640px) {
+      .inv-table thead { display: none; }
+      .inv-table, .inv-table tbody { display: block; width: 100%; }
+      #inventory-body tr.inv-row {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+        column-gap: 0.5rem; row-gap: 0.5rem; padding: 0.75rem 0;
+      }
+      #inventory-body tr.inv-row > td { display: block; padding: 0; min-width: 0; }
+      #inventory-body td.inv-name { grid-column: 1 / -1; overflow-wrap: anywhere; }
+      #inventory-body td[data-label]::before {
+        content: attr(data-label); display: block; font-size: 0.68rem; font-weight: 500;
+        color: var(--muted); text-transform: uppercase;
+      }
+      #inventory-body tr.inv-row > td.inv-actions {
+        grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center;
+        gap: 0.5rem; white-space: normal;
+      }
+      #inventory-body td.inv-actions button {
+        min-height: 44px; min-width: 44px; padding: 0.5rem 0.75rem; font-size: 0.9rem; flex: 0 0 auto;
+      }
+      /* Del: pushed to the right end of its line, with extra room after Edit. */
+      #inventory-body td.inv-actions button.danger { margin-left: auto; }
+      #inventory-body td.inv-actions button:has(+ button.danger) { margin-right: 1rem; }
+    }
     /* Labels print in a dedicated popup window (avoids blank DK-1201 feeds from hidden page content). */
   </style>
 </head>
@@ -406,7 +431,7 @@
           <div id="category-filters" class="category-filters"></div>
         </div>
         <div style="overflow-x: auto;">
-          <table>
+          <table class="inv-table">
             <thead>
               <tr>
                 <th>Name / Part #</th>
@@ -2210,21 +2235,21 @@ notify pgrst, 'reload schema';</pre>
         const meta = [];
         if (i.source) meta.push(`<span class="badge source-tag">${escapeHtml(i.source)}</span>`);
         if (i.category) meta.push(`<span class="badge category">${escapeHtml(i.category)}</span>`);
-        return `<tr>
-          <td>
+        return `<tr class="inv-row">
+          <td class="inv-name">
             <strong>${escapeHtml(i.name)}</strong><br>
             <code style="font-size:0.75rem;color:var(--muted)">${escapeHtml(i.part_number)}</code>
             ${meta.length ? `<div class="meta-line">${meta.join('')}</div>` : ''}
             ${i.location ? '<small style="color:var(--muted)">' + escapeHtml(i.location) + '</small>' : ''}
           </td>
-          <td class="qty ${qtyClass}">${i.qty || 0}${used ? `<br><small style="color:var(--muted);font-weight:400">used ${used}</small>` : ''}</td>
-          <td style="font-size:0.8rem;">
+          <td class="qty ${qtyClass}" data-label="Qty">${i.qty || 0}${used ? `<br><small style="color:var(--muted);font-weight:400">used ${used}</small>` : ''}</td>
+          <td class="inv-value" data-label="Value" style="font-size:0.8rem;">
             ${excluded
               ? `<span style="color:var(--muted)">Not valued</span>${i.buy_price != null ? '<br><small style="color:var(--muted)">cost ' + money(i.buy_price) + '</small>' : ''}`
               : `${i.buy_price != null ? money(costVal) : '—'}${i.buy_price != null ? '<br><small style="color:var(--muted)">@ ' + money(i.buy_price) + '</small>' : ''}`}
           </td>
-          <td>${badges.join('') || '—'}</td>
-          <td class="actions">
+          <td class="inv-status" data-label="Status">${badges.join('') || '—'}</td>
+          <td class="actions inv-actions">
             <button type="button" class="adjust-btn" onclick="adjustItem('${i.id}')">Adjust</button>
             <button class="secondary" onclick="quickAdjust('${i.id}', 1)">+</button>
             <button class="secondary" onclick="quickAdjust('${i.id}', -1)">−</button>
