@@ -225,6 +225,7 @@ export function installQuote() {
   let approvedInvoiceByQuote = {};
   let invoiceSaveBusy = false;
   let dueEditedByHand = false;
+  let invoiceBoxDraftId = 'none';
   let findView = null;
   let findSeq = 0;
 
@@ -802,6 +803,7 @@ export function installQuote() {
   }
 
   async function openQuote(id) {
+    resetInvoiceBox();
     if (String(id || '') !== currentQuoteId()) resetQuoteInvoiceUi();
     if (!(await ensureQuotesTables())) {
       shop().showStatus('Quotes tables not installed', 'error');
@@ -846,6 +848,10 @@ export function installQuote() {
     }));
     saveQuoteCart();
     await refreshQuoteInvoices();
+    if (currentQuoteId() === String(q.id)) {
+      if (quoteSaleBlocked() || quoteIsVoidFinal()) resetInvoiceBox();
+      else fillInvoiceBoxFromDraft(newestOpenDraft());
+    }
     shop().showStatus(`Opened ${q.number}`, 'success');
   }
 
@@ -1008,7 +1014,10 @@ export function installQuote() {
     document.getElementById('quote-edit-id').value = quoteId;
     loadedQuoteStatus = requestedStatus;
     shop().showStatus(`Quote ${number} saved (${shop().currentUser()})`, 'success');
-    if (requestedStatus === 'void') emptyWorkingCart();
+    if (requestedStatus === 'void') {
+      emptyWorkingCart();
+      resetInvoiceBox();
+    }
     await refreshQuoteInvoices();
     await loadQuotesList();
     return !!currentQuoteId();
@@ -1100,6 +1109,7 @@ export function installQuote() {
       const st = document.getElementById('quote-status');
       if (st) st.value = 'void';
       emptyWorkingCart();
+      resetInvoiceBox();
       await refreshQuoteInvoices();
     }
     shop().showStatus(`${num} voided. Stock unchanged.`, 'success');
@@ -1367,6 +1377,62 @@ export function installQuote() {
     el.innerHTML = `Merchandise ${shop().money(m.subtotal)} + shipping ${shop().money(m.shipping)} + duty ${shop().money(m.duty)} + tariffs ${shop().money(m.tariffs)}${m.cc ? ' + CC 3.5% ' + shop().money(m.ccFee) : ''} = <strong>${shop().money(m.total)}</strong> due`;
   }
 
+  function resetInvoiceBox() {
+    const po = document.getElementById('inv-po');
+    if (po) po.value = '';
+    const ship = document.getElementById('inv-ship');
+    if (ship) ship.value = '';
+    ['inv-shipfee', 'inv-duty', 'inv-tariffs'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '0';
+    });
+    const cc = document.getElementById('inv-cc');
+    if (cc) cc.checked = false;
+    dueEditedByHand = false;
+    syncDueFromValid();
+    const box = document.getElementById('invoice-box');
+    if (box) box.style.display = 'none';
+    updateInvoicePreview();
+    invoiceBoxDraftId = 'none';
+  }
+
+  function invoiceFeeBoxValue(value) {
+    if (value == null || value === '') return '0';
+    const n = Number(value);
+    if (!Number.isFinite(n) || n === 0) return '0';
+    return n.toFixed(2);
+  }
+
+  function fillInvoiceBoxFromDraft(inv) {
+    if (!inv) {
+      resetInvoiceBox();
+      return;
+    }
+    const po = document.getElementById('inv-po');
+    if (po) po.value = inv.po_number || '';
+    const ship = document.getElementById('inv-ship');
+    if (ship) ship.value = inv.ship_to || '';
+    const cc = document.getElementById('inv-cc');
+    if (cc) cc.checked = !!inv.cc_used;
+    const shipFee = document.getElementById('inv-shipfee');
+    if (shipFee) shipFee.value = invoiceFeeBoxValue(inv.shipping_fee);
+    const duty = document.getElementById('inv-duty');
+    if (duty) duty.value = invoiceFeeBoxValue(inv.duty);
+    const tariffs = document.getElementById('inv-tariffs');
+    if (tariffs) tariffs.value = invoiceFeeBoxValue(inv.tariffs);
+    const due = document.getElementById('inv-due');
+    const valid = document.getElementById('quote-valid')?.value || '';
+    if (inv.due_date) {
+      if (due) due.value = inv.due_date;
+      dueEditedByHand = inv.due_date !== valid;
+    } else {
+      dueEditedByHand = false;
+      syncDueFromValid();
+    }
+    invoiceBoxDraftId = inv.id || 'none';
+    updateInvoicePreview();
+  }
+
   function currentQuoteId() {
     return String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '').trim();
   }
@@ -1474,6 +1540,7 @@ export function installQuote() {
     printedDraftLines = null;
     dueEditedByHand = false;
     renderQuoteInvoiceRows([], { syncApproved: false });
+    resetInvoiceBox();
   }
 
   async function ensureQuoteForInvoice() {
@@ -1498,6 +1565,8 @@ export function installQuote() {
       shop().showStatus('This quote already has an approved invoice.', 'error');
       return;
     }
+    const d = newestOpenDraft();
+    if ((d ? String(d.id) : 'none') !== String(invoiceBoxDraftId)) fillInvoiceBoxFromDraft(d);
     const box = document.getElementById('invoice-box');
     if (!box) return;
     const valid = document.getElementById('quote-valid')?.value;
@@ -1590,7 +1659,7 @@ export function installQuote() {
       return;
     }
     const { data, error } = await shop().supabaseClient.from('invoices')
-      .select('id,number,status,total,created_at,notes')
+      .select('id,number,status,total,created_at,notes,po_number,ship_to,due_date,shipping_fee,duty,tariffs,cc_used')
       .eq('quote_id', quoteId)
       .order('created_at', { ascending: true });
     if (currentQuoteId() !== quoteId) return;
@@ -1811,6 +1880,11 @@ export function installQuote() {
         shop().showStatus('This quote already has an approved invoice.', 'error');
         return;
       }
+      const live = newestOpenDraft();
+      if (live && String(live.id) !== String(invoiceBoxDraftId)) {
+        shop().showStatus("This invoice changed or didn't load. Close and tap Invoice… again to reload it before saving.", 'error');
+        return;
+      }
       const data = collectQuoteHeader();
       const m = invoiceMath();
       const po = (document.getElementById('inv-po')?.value || '').trim();
@@ -1852,6 +1926,7 @@ export function installQuote() {
         }
         invNumber = draft.number || '';
         if (quoteId) await refreshQuoteInvoices();
+        if (currentQuoteId() === quoteId) fillInvoiceBoxFromDraft({ ...header, id: draft.id });
         shop().showStatus(`Draft ${invNumber} updated. Stock unchanged until you Approve.`, 'success');
       } else {
         try { invNumber = await nextDocNumber('invoice'); } catch (e) { return; }
@@ -1881,6 +1956,7 @@ export function installQuote() {
         }
         if (quoteId) await refreshQuoteInvoices();
         else renderQuoteInvoiceRows([{ id: inv.id, number: invNumber, status: 'draft', created_at: today }], { linked: false });
+        if (currentQuoteId() === quoteId) fillInvoiceBoxFromDraft({ ...header, id: inv.id });
         shop().showStatus(`Draft ${invNumber} saved. Stock unchanged until you Approve.`, 'success');
       }
       printInvoiceDocument({
