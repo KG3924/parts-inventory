@@ -1,3 +1,4 @@
+-- Superseded in part by schema/r1_round1_guards.sql. If you re-run this file, run r1_round1_guards.sql again right after.
 -- =============================================================================
 -- A2.4 — Refuse Approve when the quote is void, or the quote row is missing.
 --
