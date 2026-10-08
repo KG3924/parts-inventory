@@ -92,6 +92,7 @@ created_at (timestamptz)
 - `schema/a2_4b_void_quote_final.sql` — a void quote stays void. Line edits are refused. Deleting the quote removes its lines (run once after the A2.4b page is on the phones)
 - `schema/a2_6_freeze_approved_invoice.sql` — an approved invoice and its lines stay as sold (run once after this build is on the phones)
 - `schema/r1_round1_guards.sql` — Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Re-run it if A1, A2, or A2.4 is re-run after it. Do not VALIDATE the new checks.
+- `schema/b038_part_delete_guard.sql` — a part on an open quote can't be deleted (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -177,8 +178,8 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Source + Category filter chips
 - **+ Add part** at the top
 - Filter bar with Clear filter when a Home tile is on
-- +/− qty logs adjustments on **new** stock only; Quote / Edit / Del / Adjust (Scan, New vs Used)
-- On a phone (640px wide or less) each part is a card: name, part # and tags on top, then Qty / Value / Status, then the buttons on their own row (at least 44px tall, wrapping instead of scrolling sideways). Del sits at the right end, away from + / −, and still asks before deleting. Computer layout unchanged.
+- +/− qty logs adjustments on **new** stock only; Quote / Edit / Adjust (Scan, New vs Used). Delete part is at the bottom of Edit (not on the rows), same confirm. A part on an open quote (not void, no approved invoice; draft invoices count through their quote) can't be deleted: "Not deleted. This part is on open quote Q-…. Remove it from that quote first." Clear all is refused as a whole and lists every blocking quote (schema/b038_part_delete_guard.sql).
+- On a phone (640px wide or less) each part is a card: name, part # and tags on top, then Qty / Value / Status, then the buttons on their own row (at least 44px tall, wrapping instead of scrolling sideways). The five buttons (Adjust + − Quote Edit) fit on one line on an iPhone. Computer layout unchanged.
 
 ### Plain errors
 Known sale sentences stay exact, including `Q-… is void…`, `INV-… is approved…`, `Not enough on hand…`, `Only N on hand…`, `Enter how many to remove — 1 or more.`, `Enter how many to add — 1 or more.`, `This invoice has no customer…`, `Quote changed since INV-… was printed. Save & print before Approve`, and `Couldn't approve — try again`. Raw `P0001`, function names, and other Postgres text are not shown. An unknown save says `Couldn't save — try again`. An unknown load says `Couldn't load — try again`. A known sentence is never replaced with those.
@@ -424,6 +425,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/a2_approve_invoice.sql` | Older Approve function. Superseded in part by Round 1. Re-run Round 1 right after if this file is re-run |
 | `schema/a2_4_void_quote_approve_lock.sql` | Older void-quote Approve lock. Superseded in part by Round 1. Re-run Round 1 right after if this file is re-run |
 | `schema/r1_round1_guards.sql` | Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Do not VALIDATE the new checks. A grey button alone is not the lock |
+| `schema/b038_part_delete_guard.sql` | A part on an open quote can't be deleted. Run once after this build is on Pages and every phone has hard-refreshed. Safe to re-run |
 | `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Deleting the quote removes its lines. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule |
 | `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
 

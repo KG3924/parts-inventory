@@ -238,6 +238,9 @@
       margin-top: 1rem; padding: 0.85rem; border: 1px solid var(--danger);
       border-radius: 8px; background: rgba(220, 38, 38, 0.04);
     }
+    /* BUG-038: Delete part sits at the bottom of the Edit form, apart from Save. No display rule here, so [hidden] keeps working. */
+    .item-delete-zone { margin-top: 1.75rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+    #item-delete-btn { width: 100%; }
     .meta-line {
       display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; align-items: center;
     }
@@ -336,9 +339,6 @@
       #inventory-body td.inv-actions button {
         min-height: 44px; min-width: 44px; padding: 0.5rem 0.75rem; font-size: 0.9rem; flex: 0 0 auto;
       }
-      /* Del: pushed to the right end of its line, with extra room after Edit. */
-      #inventory-body td.inv-actions button.danger { margin-left: auto; }
-      #inventory-body td.inv-actions button:has(+ button.danger) { margin-right: 1rem; }
     }
     /* Labels print in a dedicated popup window (avoids blank DK-1201 feeds from hidden page content). */
   </style>
@@ -580,6 +580,9 @@
         <div class="btn-group">
           <button class="tap" onclick="saveItem()">Save</button>
           <button class="secondary tap" onclick="clearForm()">Clear</button>
+        </div>
+        <div id="item-delete-zone" class="item-delete-zone" hidden>
+          <button type="button" class="danger tap" id="item-delete-btn" onclick="deleteItemFromForm()">Delete part</button>
         </div>
       </div>
     </div>
@@ -1032,7 +1035,8 @@ notify pgrst, 'reload schema';</pre>
         /(Enter how many to remove — 1 or more\.)/,
         /(Enter how many to add — 1 or more\.)/,
         /(Quantity must be a whole number, zero or more)/,
-        /(This invoice has no customer\. Add a customer or tap Cash sale, then Save & print before Approve\.)/
+        /(This invoice has no customer\. Add a customer or tap Cash sale, then Save & print before Approve\.)/,
+        /(Not deleted\. (?:This part is|\d+ parts are) on open quotes? .+?\. Remove (?:it|them) from (?:that quote|those quotes) first\.)/
       ];
       for (const re of patterns) {
         const hit = text.match(re);
@@ -2255,7 +2259,6 @@ notify pgrst, 'reload schema';</pre>
             <button class="secondary" onclick="quickAdjust('${i.id}', -1)">−</button>
             <button class="quote-btn" onclick="addToQuote('${i.id}')">Quote</button>
             <button class="secondary" onclick="editItem('${i.id}')">Edit</button>
-            <button class="danger" onclick="deleteItem('${i.id}', '${escapeHtml(i.part_number)}')">Del</button>
           </td>
         </tr>`;
       }).join('');
@@ -2282,6 +2285,18 @@ notify pgrst, 'reload schema';</pre>
       });
       showStatus(`Part deleted by ${currentUser()}`, 'success');
       await loadInventory();
+      return true;
+    }
+
+    // BUG-038: Delete part on the Edit form. Same deleteItem() flow and confirm; leaves the form only after a successful delete.
+    async function deleteItemFromForm() {
+      const id = document.getElementById('edit-id').value;
+      const item = id ? inventory.find(i => i.id === id) : null;
+      if (!item) { showStatus("Couldn't find this part. Go back to Inventory and try again.", 'error'); return; }
+      const deleted = await deleteItem(item.id, item.part_number);
+      if (!deleted) return;
+      clearForm();
+      showPanel('inventory');
     }
 
     async function clearAllInventory() {
@@ -2760,6 +2775,8 @@ notify pgrst, 'reload schema';</pre>
       hideItemFormError();
       document.getElementById('edit-id').value = '';
       document.getElementById('form-title').textContent = 'Add Part';
+      const delZone = document.getElementById('item-delete-zone');
+      if (delZone) delZone.hidden = true;
       ['item-name','item-barcode','item-list-price','item-sell-factor','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
        'item-date-ordered','item-est-delivery','item-ordered-qty'].forEach(id => {
         const el = document.getElementById(id);
@@ -2784,6 +2801,8 @@ notify pgrst, 'reload schema';</pre>
       hideItemFormError();
       document.getElementById('edit-id').value = item.id;
       document.getElementById('form-title').textContent = 'Edit Part';
+      const delZone = document.getElementById('item-delete-zone');
+      if (delZone) delZone.hidden = false;
       document.getElementById('item-name').value = item.name || '';
       document.getElementById('item-barcode').value = item.part_number || '';
       document.getElementById('item-qty').value = item.qty || 0;
