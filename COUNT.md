@@ -5,7 +5,7 @@ Fast shelf count for the parts room. It is **not** the live inventory app. Openi
 | | |
 |--|--|
 | Tool | `count.html` — after a push: https://kg3924.github.io/parts-inventory/count.html |
-| Catalog | `count-seed.json` — known part # / name / source / category / prices (lookup only) |
+| Catalog | The live inventory, read after sign-in — part # / name / source / category / prices / app qty (lookup only). No public catalog file (BUG-041) |
 | Live app | https://kg3924.github.io/parts-inventory/ → **More → Import JSON** |
 
 ---
@@ -16,12 +16,7 @@ Fast shelf count for the parts room. It is **not** the live inventory app. Openi
 
 ### A. Get the files onto Pages (Mac)
 
-In the project folder the two files are:
-
-- `count.html`
-- `count-seed.json`
-
-These are already on GitHub Pages. On the iPad open:
+The tool is `public/count.html`. It is already on GitHub Pages. On the iPad open:
 
 `https://kg3924.github.io/parts-inventory/count.html`
 
@@ -30,7 +25,7 @@ These are already on GitHub Pages. On the iPad open:
 ### B. First launch on the iPad (Safari)
 
 1. Open the URL above in **Safari or Chrome** (not a Files preview). Pick **one** browser and stay in it for the whole count — drafts do not sync between Safari and Chrome.
-2. Confirm search finds known parts (try `belt` or `1588`). If search is empty, tap **Load catalog file…** and choose `count-seed.json` (AirDrop or Files).
+2. Confirm search finds known parts (try `belt` or `1588`). If search is empty, check you are signed in and online, then reload. (**Load catalog file…** still takes a private catalog JSON from Files.)
 3. **Add to Home Screen:**
    - **Safari:** Share → **Add to Home Screen** → name it `Parts count`.
    - **Chrome:** Share → **Add to Home Screen** (or Chrome’s menu). Open that icon later, not a new blank Chrome tab to a different URL.
@@ -88,7 +83,7 @@ After import, the live app owns pricing: **sell $** = list × sell factor, round
 
 | Problem | What to do |
 |---------|------------|
-| Search finds nothing | Load `count-seed.json` via **Load catalog file…**, or confirm you opened the Pages URL not a Files preview |
+| Search finds nothing | Sign in, get online, reload. Confirm you opened the Pages URL, not a Files preview |
 | Draft disappeared | Wrong browser / Private mode / Safari data cleared. No server copy exists |
 | Import added 0 / skipped all | Those part numbers already exist in the live app |
 | Export button does nothing | Add at least one saved line; fix any red validation on the line first |
@@ -146,18 +141,15 @@ Optional extras the app ignores if columns are missing: `list_price`, `list_curr
 
 ## Catalog vs your count
 
-`count-seed.json` is built from:
+The catalog is the live `inventory` table, read after sign-in (BUG-041). The old `count-seed.json` (built from the Wynn 2026 catalog and the consolidated sheet) is no longer on the site.
 
-- `Wynn Master Catalog 2026.xlsx` (2026 Hepworth prices when matched)
-- `Consolidated Parts Inventory.xlsx` (names / sources / categories)
-
-If the catalog name disagrees with an old sheet, the form shows a **note** and you choose. Nothing is overwritten silently.
+With a loaded catalog file, if the catalog name disagrees with an old sheet, the form shows a **note** and you choose. Nothing is overwritten silently.
 
 Old sheet qty is **not** trusted. You always type the shelf count.
 
 ## Offline
 
-After the catalog has loaded once (or you picked the seed file), search and draft work without a network. Export still just downloads a file.
+After the catalog has loaded once while signed in, search and draft work without a network. **Sign out** clears that saved catalog on the phone. Export still just downloads a file.
 
 ## Clear
 
@@ -165,4 +157,4 @@ After the catalog has loaded once (or you picked the seed file), search and draf
 
 ---
 
-*Last updated: 2026-09-01 — count tool live on Pages; after import, live app uses FX for buy (not sell factor).*
+*Last updated: 2026-10-22 — BUG-041: the count tool reads its parts catalog from the live inventory after sign-in; count-seed.json is off the site (a build check refuses it). 2026-09-01: count tool live on Pages; after import, live app uses FX for buy (not sell factor).*

@@ -318,13 +318,13 @@
     const REORDER_DEFAULT = 5;
 
     const FALLBACK = {
-      sources: ['Alu Design', 'FFS', 'In-Mar', 'Skum', 'Triplex', 'Versa', 'Wynn', 'Amazon', 'Uline'],
+      sources: ['Alu Design', 'FFS', 'In-Mar', 'Skum', 'Sprayer Supplies', 'Triplex', 'Versa', 'Wynn', 'Amazon', 'Uline'],
       categories: [
         'Alarm', 'Arm', 'Bearing', 'Blade', 'Cable', 'Chair Parts', 'Complete System',
         'Control Unit', 'Cylinder Seal Kit', 'Electrical', 'Filter', 'Fitting/Hose',
         'Gasket', 'Gasket/Seal', 'Hardware', 'Heater', 'Motor', 'Nozzle', 'O-Ring',
         'Packaging', 'Packing/Seal', 'Proximity Switch', 'Pump', 'Pump Parts',
-        'Seal/Service Kit', 'Spring', 'Spring/Strut', 'V-Belt', 'Valve', 'Unclassified'
+        'Seal/Service Kit', 'Shop Supplies', 'Spring', 'Spring/Strut', 'V-Belt', 'Valve', 'Unclassified'
       ],
       generics: [
         'Alarm', 'Arm', 'Bearing', 'Belt', 'Blade', 'Bolt', 'Box', 'Bracket', 'Brush',
@@ -336,7 +336,7 @@
         'Washer', 'Wiper'
       ],
       locations: [],
-      brands: ['Wynn', 'Hepworth', 'FFS', 'Alu', 'Alu Design', 'Amazon', 'Uline', 'Versa', 'Skum', 'Triplex', 'In-Mar', 'Inmar', 'Siemens', 'Danfoss', 'Parker', 'Bosch'],
+      brands: ['Wynn', 'Hepworth', 'FFS', 'Alu', 'Alu Design', 'Amazon', 'Uline', 'Versa', 'Skum', 'Triplex', 'In-Mar', 'Inmar', 'Siemens', 'Danfoss', 'Brother', 'Parker', 'Bosch'],
       parts: []
     };
 
@@ -1083,15 +1083,56 @@
         if (cached) data = JSON.parse(cached);
       } catch (e) {}
       try {
-        const res = await fetch('count-seed.json', { cache: 'reload' });
-        if (res.ok) {
-          data = await res.json();
+        const live = await fetchLiveCatalog();
+        if (live) {
+          data = live;
           try { localStorage.setItem(SEED_CACHE_KEY, JSON.stringify(data)); } catch (e2) {}
         }
-      } catch (e) { /* file:// or offline — use cache / fallback */ }
+      } catch (e) { /* offline — use cache / fallback */ }
       if (data && Array.isArray(data.parts)) {
         seed = Object.assign({}, FALLBACK, data);
       }
+    }
+
+    // BUG-041: the catalog comes from the inventory table after sign-in (RLS: signed-in only), not a public file.
+    async function fetchLiveCatalog() {
+      const client = window.InmarAuth && InmarAuth.client;
+      if (!client) return null;
+      const cols = 'part_number,name,source,category,location,notes,buy_price,sell_price,list_price,list_currency,sell_factor,reorder_level,exclude_from_valuation,qty,barcode';
+      const num = (v) => (v == null || v === '' ? null : Number(v));
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await client.from('inventory').select(cols).order('part_number').range(from, from + 999);
+        if (error) return null;
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      const parts = rows.filter(r => r && r.part_number).map(r => ({
+        part_number: r.part_number,
+        name: r.name || '',
+        source: r.source || null,
+        category: r.category || null,
+        location: r.location || null,
+        notes: r.notes || null,
+        buy_price: num(r.buy_price),
+        sell_price: num(r.sell_price),
+        list_price: num(r.list_price),
+        list_currency: r.list_currency || null,
+        sell_factor: num(r.sell_factor),
+        reorder_level: r.reorder_level == null ? null : r.reorder_level,
+        exclude_from_valuation: !!r.exclude_from_valuation,
+        app_qty: r.qty == null ? null : r.qty,
+        barcode: r.barcode || null
+      }));
+      if (!parts.length) return null;
+      return {
+        sources: uniqueKeep(FALLBACK.sources.concat(parts.map(p => p.source))),
+        categories: uniqueKeep(FALLBACK.categories.concat(parts.map(p => p.category))),
+        generics: FALLBACK.generics,
+        locations: uniqueKeep(parts.map(p => p.location)),
+        brands: FALLBACK.brands,
+        parts
+      };
     }
 
     document.getElementById('restore-file').addEventListener('change', (e) => {
@@ -1140,6 +1181,7 @@
       if (!window.InmarAuth) return;
       const ok = await InmarAuth.restore();
       if (!ok) {
+        try { localStorage.removeItem(SEED_CACHE_KEY); } catch (e) {}
         InmarAuth.bindLoginForm(() => { location.reload(); });
         return;
       }
@@ -1148,6 +1190,7 @@
       if (sub) sub.textContent = InmarAuth.currentName() + ' · draft stays on this phone';
       const out = document.getElementById('count-sign-out');
       if (out) out.addEventListener('click', async () => {
+        try { localStorage.removeItem(SEED_CACHE_KEY); } catch (e) {}
         await InmarAuth.signOut();
         location.reload();
       });

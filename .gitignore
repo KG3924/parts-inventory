@@ -6,3 +6,5 @@ service-role*
 .DS_Store
 node_modules
 dist
+
+count-seed*.json

@@ -53,7 +53,6 @@ The public anon key is in `public-config.js`. Never commit a service-role key.
 | `public/shop-auth.js` | Sign-in wall (copied into `dist/`) |
 | `public/inmar-logo.jpg` | Logo used on quotes / packing lists / invoices |
 | `public/count.html` | Physical count tool |
-| `public/count-seed.json` | Catalog lookup for the count tool |
 
 ---
 
@@ -197,11 +196,11 @@ A database error keeps a known sale sentence exactly (`Q-… is void…`, `INV-�
 Use **`count.html`** in the parts room (iPhone / iPad). It asks for the same sign-in and still does not write stock. Draft stays on the device. **Export JSON** → this app **More → Import JSON**.
 
 - Names: `Generic, specific…` (enforced). Part #s: no spaces, max 40.
-- Catalog lookup: `count-seed.json` (Wynn 2026 prices + consolidated names). Old qtys are not imported.
+- Catalog lookup: the live inventory, read after sign-in (BUG-041; no public catalog file). App qty is shown, never used as the count.
 - Existing part numbers in Supabase are **skipped** on import — use a clean DB or only new PNs.
 
 Details: [`COUNT.md`](COUNT.md).
 
 ---
 
-*Last updated: 2026-10-08 — BUG-038: Delete part is on the Edit screen, not the Inventory rows; a part on an open quote can't be deleted (run schema/b038_part_delete_guard.sql once after Pages + hard-refresh). BUG-037: phone Inventory rows are cards with the buttons on their own row, no sideways scrolling. BUG-035: invoice box loads the draft's values and clears between quotes. Round 1: Commit refuses a short remove and points at Set (it does not floor at zero). Add 0 and Remove 0 are refused. Set 0 still works. Quote prices can't be negative and qty is a whole number, 1 or more. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. A draft print shows DRAFT. An approved reprint does not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
+*Last updated: 2026-10-22 — BUG-041: the count tool reads its parts catalog from the live inventory after sign-in; count-seed.json is off the site (a build check refuses it). BUG-038: Delete part is on the Edit screen, not the Inventory rows; a part on an open quote can't be deleted (run schema/b038_part_delete_guard.sql once after Pages + hard-refresh). BUG-037: phone Inventory rows are cards with the buttons on their own row, no sideways scrolling. BUG-035: invoice box loads the draft's values and clears between quotes. Round 1: Commit refuses a short remove and points at Set (it does not floor at zero). Add 0 and Remove 0 are refused. Set 0 still works. Quote prices can't be negative and qty is a whole number, 1 or more. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. A draft print shows DRAFT. An approved reprint does not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
