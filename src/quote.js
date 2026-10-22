@@ -478,28 +478,170 @@ export function installQuote() {
     await fillComboSelect('terms', termExtras);
   }
 
-  async function findCustomerByName(name) {
-    if (!name || !shop().supabaseClient || !shop().hasQuotesTables) return null;
-    try {
-      const { data } = await shop().supabaseClient.from('customers')
-        .select('id,payment_terms,name').ilike('name', name).limit(1);
-      return (data && data[0]) || null;
-    } catch (e) {
-      return null;
-    }
+  // Customer list: type-ahead pick, "Did you mean", add new, "New, not in QuickBooks yet" tag.
+  // The typed name is still what quotes and invoices store and print. customer_id is the link.
+  const CASH_SALE = 'Cash sale';
+  let pickedCustomer = null; // { id, name, qb_status, payment_terms, forText }
+  let customerPickRows = [];
+  let customerPickTimer = null;
+  let customerPickSeq = 0;
+  let customerListReady = false;
+
+  function customerKey(s) {
+    return String(s || '').replace(/[\s\u00a0]+/g, ' ').trim().toLowerCase();
   }
 
+  function customerBoxText() {
+    return document.getElementById('quote-customer')?.value || '';
+  }
+
+  // The link holds only while the box still says what it said when the link was made.
+  function linkedCustomerId() {
+    return pickedCustomer && customerKey(customerBoxText()) === pickedCustomer.forText ? pickedCustomer.id : null;
+  }
+
+  function setPickedCustomer(row) {
+    pickedCustomer = row && row.id
+      ? { id: row.id, name: row.name, qb_status: row.qb_status, payment_terms: row.payment_terms, forText: customerKey(customerBoxText()) }
+      : null;
+    const idEl = document.getElementById('quote-customer-id');
+    if (idEl) idEl.value = pickedCustomer ? pickedCustomer.id : '';
+    renderCustomerTag();
+  }
+
+  function renderCustomerTag() {
+    const el = document.getElementById('quote-customer-tag');
+    if (!el) return;
+    if (!linkedCustomerId() || pickedCustomer.qb_status !== 'new_not_in_qb') {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = '<span class="badge badge-new-qb">New, not in QuickBooks yet</span>'
+      + '<button type="button" class="secondary" onclick="markCustomerInQb()">Mark In QuickBooks</button>';
+    el.hidden = false;
+  }
+
+  function hideCustomerPick() {
+    const box = document.getElementById('customer-pick');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+  }
+
+  async function ensureCustomerList() {
+    if (customerListReady) return true;
+    if (!shop().supabaseClient) return false;
+    const { error } = await shop().supabaseClient.from('invoices').select('customer_id').limit(1);
+    customerListReady = !error;
+    return customerListReady;
+  }
+
+  async function suggestCustomers(text) {
+    if (!shop().supabaseClient || !shop().hasQuotesTables) return null;
+    const { data, error } = await shop().supabaseClient.rpc('shop_customer_suggest', { p_q: text });
+    return error ? null : (data || []);
+  }
+
+  async function findCustomerByName(name) {
+    if (!customerKey(name) || customerKey(name) === customerKey(CASH_SALE)) return null;
+    const rows = await suggestCustomers(name);
+    return (rows || []).find(r => r.exact) || null;
+  }
+
+  function onQuoteCustomerInput() {
+    if (pickedCustomer && !linkedCustomerId()) setPickedCustomer(null);
+    clearTimeout(customerPickTimer);
+    const text = customerBoxText();
+    customerPickTimer = setTimeout(() => showCustomerPick(text), 200);
+  }
+
+  async function showCustomerPick(text) {
+    const box = document.getElementById('customer-pick');
+    if (!box) return;
+    const key = customerKey(text);
+    if (key.length < 2 || key === customerKey(CASH_SALE) || linkedCustomerId()) { customerPickSeq++; hideCustomerPick(); return; }
+    const seq = ++customerPickSeq;
+    const rows = await suggestCustomers(text);
+    if (seq !== customerPickSeq) return; // a later keystroke wins
+    if (!rows) { hideCustomerPick(); return; } // customer SQL not run yet: plain text box, as before
+    customerPickRows = rows;
+    const esc = shop().escapeHtml;
+    const exact = rows.some(r => r.exact);
+    const clean = text.replace(/[\s\u00a0]+/g, ' ').trim();
+    const items = rows.map((r, i) => `<button type="button" class="customer-pick-row" onclick="pickCustomer(${i})">${esc(r.name)}`
+      + (r.qb_status === 'new_not_in_qb' ? ' <span class="badge badge-new-qb">New, not in QuickBooks yet</span>' : '') + '</button>');
+    const head = rows.length && !exact ? '<div class="customer-pick-head">Did you mean</div>' : '';
+    const add = exact ? '' : `<button type="button" class="customer-pick-row customer-pick-add" onclick="addCustomerFromQuote()">+ Add “${esc(clean)}” as a new customer</button>`;
+    box.innerHTML = head + items.join('') + add;
+    box.hidden = false;
+  }
+
+  function pickCustomer(i) {
+    const row = customerPickRows[i];
+    if (!row) return;
+    const el = document.getElementById('quote-customer');
+    if (el) el.value = row.name;
+    setPickedCustomer(row);
+    hideCustomerPick();
+    if (row.payment_terms) setComboValue('terms', row.payment_terms);
+  }
+
+  async function addCustomerFromQuote() {
+    if (!shop().requireUser('adding customers')) return;
+    const text = customerBoxText();
+    const { data, error } = await shop().supabaseClient.rpc('shop_add_customer', { p_name: text });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (error || !row?.id) {
+      shop().showStatus(error ? shop().plainDbError(error, 'save') : "Couldn't save — try again", 'error');
+      showCustomerPick(text); // someone else may have just added it: show it to pick
+      return;
+    }
+    const el = document.getElementById('quote-customer');
+    if (el) el.value = row.name;
+    setPickedCustomer(row);
+    hideCustomerPick();
+    shop().showStatus(`${row.name} added. Tagged New, not in QuickBooks yet.`, 'success');
+  }
+
+  async function markCustomerInQb() {
+    if (!shop().requireUser('updating customers')) return;
+    const id = linkedCustomerId();
+    if (!id) return;
+    if (!confirm(`Mark “${pickedCustomer.name}” as entered in QuickBooks?`)) return;
+    const { data, error } = await shop().supabaseClient.from('customers')
+      .update({ qb_status: 'in_qb' }).eq('id', id).select('id,name,qb_status,payment_terms').maybeSingle();
+    if (error || !data) {
+      shop().showStatus(error ? shop().plainDbError(error, 'save') : "Couldn't save — try again", 'error');
+      return;
+    }
+    setPickedCustomer(data);
+    shop().showStatus(`${data.name} marked In QuickBooks.`, 'success');
+  }
+
+  // Leaving the box: link an exact name typed in full, and fill its saved terms.
   async function onQuoteCustomerChange() {
-    const name = (document.getElementById('quote-customer')?.value || '').trim();
-    if (!name) return;
-    const row = await findCustomerByName(name);
-    if (row && row.payment_terms) setComboValue('terms', row.payment_terms);
+    const text = customerBoxText();
+    if (!customerKey(text) || customerKey(text) === customerKey(CASH_SALE)) { setPickedCustomer(null); return; }
+    if (linkedCustomerId()) return;
+    const row = await findCustomerByName(text);
+    if (!row || customerKey(customerBoxText()) !== customerKey(text)) return;
+    setPickedCustomer(row);
+    if (row.payment_terms) setComboValue('terms', row.payment_terms);
+  }
+
+  async function loadQuoteCustomer(customerId) {
+    setPickedCustomer(null);
+    if (!customerId || !shop().supabaseClient) return;
+    const cols = 'id,name,qb_status,payment_terms,merged_into';
+    let { data } = await shop().supabaseClient.from('customers').select(cols).eq('id', customerId).maybeSingle();
+    if (data?.merged_into) ({ data } = await shop().supabaseClient.from('customers').select(cols).eq('id', data.merged_into).maybeSingle());
+    if (data) setPickedCustomer(data);
   }
 
   function setCashSale() {
     const el = document.getElementById('quote-customer');
-    if (el) el.value = 'Cash sale';
-    onQuoteCustomerChange();
+    if (el) el.value = CASH_SALE;
+    setPickedCustomer(null);
+    hideCustomerPick();
   }
 
   async function nextDocNumber(docType) {
@@ -523,18 +665,6 @@ export function installQuote() {
     const probe = await shop().supabaseClient.from('quotes').select('id').limit(1);
     shop().hasQuotesTables = !probe.error;
     return shop().hasQuotesTables;
-  }
-
-  async function loadCustomerSuggestions() {
-    const list = document.getElementById('customer-suggestions');
-    if (!list || !shop().supabaseClient || !shop().hasQuotesTables) return;
-    const { data } = await shop().supabaseClient.from('customers').select('name,company').order('name').limit(200);
-    const names = new Set();
-    (data || []).forEach(c => {
-      if (c.name) names.add(c.name);
-      if (c.company) names.add(c.company);
-    });
-    list.innerHTML = [...names].sort().map(n => `<option value="${shop().escapeHtml(n)}">`).join('');
   }
 
   function quoteIsLiveStatus(status) {
@@ -580,7 +710,6 @@ export function installQuote() {
       return;
     }
     quotesListCache = rows.filter(q => quoteIsLiveStatus(q.status) && !approvedInvoiceByQuote[q.id]);
-    await loadCustomerSuggestions();
     renderQuotesList();
   }
 
@@ -787,6 +916,8 @@ export function installQuote() {
     document.getElementById('quote-lead').value = '';
     document.getElementById('quote-notes').value = '';
     document.getElementById('quote-customer').value = '';
+    setPickedCustomer(null);
+    hideCustomerPick();
     const invBox = document.getElementById('invoice-box');
     if (invBox) invBox.style.display = 'none';
     await refreshQuoteInvoices();
@@ -826,6 +957,8 @@ export function installQuote() {
     document.getElementById('quote-date').value = q.quote_date || '';
     document.getElementById('quote-valid').value = q.valid_until || '';
     document.getElementById('quote-customer').value = q.customer_name || '';
+    hideCustomerPick();
+    await loadQuoteCustomer(q.customer_id);
     const proj = document.getElementById('quote-project');
     if (proj) proj.value = q.project || '';
     const rfq = document.getElementById('quote-rfq');
@@ -837,7 +970,6 @@ export function installQuote() {
     await refreshQuoteLookups();
     setComboValue('fob', q.fob_point || '');
     setComboValue('terms', q.payment_terms || '');
-    document.getElementById('quote-save-customer').checked = false;
     quoteCart = (lines || []).map(l => ({
       id: l.inventory_id || l.id,
       inventory_id: l.inventory_id,
@@ -917,19 +1049,8 @@ export function installQuote() {
     const lead = (document.getElementById('quote-lead')?.value || '').trim();
     if (fob) saveLocalLookup('fob', fob);
     if (terms) saveLocalLookup('payment_terms', terms);
-    let customerId = null;
-    if (document.getElementById('quote-save-customer')?.checked && customerName) {
-      const existing = await findCustomerByName(customerName);
-      if (existing?.id) {
-        customerId = existing.id;
-        await shop().supabaseClient.from('customers').update({ payment_terms: terms || null, updated_at: new Date().toISOString() }).eq('id', customerId);
-      } else {
-        const { data: created, error: cErr } = await shop().supabaseClient.from('customers')
-          .insert({ name: customerName, payment_terms: terms || null }).select('id').maybeSingle();
-        if (cErr) console.warn(cErr);
-        else customerId = created?.id;
-      }
-    }
+    if (customerName && !linkedCustomerId()) await onQuoteCustomerChange();
+    const customerId = linkedCustomerId();
     const payload = {
       number,
       customer_id: customerId,
@@ -1054,8 +1175,8 @@ export function installQuote() {
     setVal('quote-date', today);
     setVal('quote-valid', addDaysIso(today, 90));
     setVal('quote-by', shop().currentUser() || '');
-    const saveCustomer = document.getElementById('quote-save-customer');
-    if (saveCustomer) saveCustomer.checked = false;
+    setPickedCustomer(null);
+    hideCustomerPick();
     const invBox = document.getElementById('invoice-box');
     if (invBox) invBox.style.display = 'none';
     setComboValue('fob', '');
@@ -1162,6 +1283,7 @@ export function installQuote() {
       date: document.getElementById('quote-date')?.value || new Date().toISOString().slice(0, 10),
       valid: document.getElementById('quote-valid')?.value || '',
       customer: document.getElementById('quote-customer')?.value || '',
+      customerId: linkedCustomerId(),
       project: document.getElementById('quote-project')?.value || '',
       rfq: document.getElementById('quote-rfq')?.value || '',
       by: document.getElementById('quote-by')?.value || shop().currentUser() || '',
@@ -1898,6 +2020,7 @@ export function installQuote() {
       }
       const draft = quoteId ? newestOpenDraft() : null;
       const header = invoiceHeaderFields(data, m, po, shipTo, due, today);
+      if (await ensureCustomerList()) header.customer_id = data.customerId || null; // column exists only after the customer SQL
       let invNumber = '';
       if (!shop().supabaseClient) return;
       if (draft) {
@@ -2552,9 +2675,12 @@ export function installQuote() {
     findCustomerByName,
     onQuoteCustomerChange,
     setCashSale,
+    onQuoteCustomerInput,
+    pickCustomer,
+    addCustomerFromQuote,
+    markCustomerInQb,
     nextDocNumber,
     ensureQuotesTables,
-    loadCustomerSuggestions,
     loadQuotesList,
     openFindFromQuotes,
     renderQuotesList,
@@ -2623,6 +2749,9 @@ export function installQuote() {
     if (findLast7) findLast7.addEventListener('click', () => { runFindLast7(); });
     const statusSel = document.getElementById('quote-status');
     if (statusSel) statusSel.addEventListener('change', () => applySaleLocks());
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#customer-pick, #quote-customer')) hideCustomerPick();
+    });
   })();
 
   // Refresh quote panel when switching to Quote tab

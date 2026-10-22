@@ -100,6 +100,15 @@
     .badge.open-order { background: rgba(168, 85, 247, 0.2); color: var(--open-order); }
     .badge.needs-date { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
     .badge.low { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+    /* Customer list: type-ahead under the Customer box. No display rule on [hidden] boxes. */
+    .customer-pick { border: 1px solid var(--border); border-radius: 8px; background: var(--card); margin: -0.4rem 0 0.7rem; max-height: 18rem; overflow-y: auto; }
+    .customer-pick-head { font-size: 0.75rem; color: var(--muted); padding: 0.45rem 0.7rem 0.15rem; }
+    button.customer-pick-row { display: block; width: 100%; min-height: 44px; text-align: left; background: transparent; color: var(--text); border-radius: 0; border-bottom: 1px solid var(--border); }
+    button.customer-pick-row:last-child { border-bottom: none; }
+    button.customer-pick-row:hover { background: var(--bg); }
+    button.customer-pick-add { color: var(--accent); font-weight: 600; }
+    .badge.badge-new-qb { background: rgba(245, 158, 11, 0.2); color: #92400e; }
+    .customer-tag:not([hidden]) { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: -0.3rem 0 0.6rem; }
     .barcode-preview { text-align: center; padding: 1rem; background: white; border-radius: 8px; margin: 0.75rem 0; }
     .status {
       padding: 0.65rem 0.85rem; border-radius: 8px; margin-bottom: 0.75rem; display: none; font-size: 0.9rem;
@@ -1036,7 +1045,11 @@ notify pgrst, 'reload schema';</pre>
         /(Enter how many to add — 1 or more\.)/,
         /(Quantity must be a whole number, zero or more)/,
         /(This invoice has no customer\. Add a customer or tap Cash sale, then Save & print before Approve\.)/,
-        /(Not deleted\. (?:This part is|\d+ parts are) on open quotes? .+?\. Remove (?:it|them) from (?:that quote|those quotes) first\.)/
+        /(Not deleted\. (?:This part is|\d+ parts are) on open quotes? .+?\. Remove (?:it|them) from (?:that quote|those quotes) first\.)/,
+        /(Not added\. .+? is already on the customer list\. Pick it from the list\.)/,
+        /(Cash sale is not a customer\. Tap Cash sale instead\.)/,
+        /(Type the customer name first\.)/,
+        /(Not changed\. This login can't mark customers In QuickBooks\.)/
       ];
       for (const re of patterns) {
         const hit = text.match(re);
