@@ -33,6 +33,9 @@ jobs:
       - name: Refuse secret keys in the published site
         run: sh scripts/refuse-shipped-secrets.sh dist
 
+      - name: Refuse the part-count catalog in the published site
+        run: sh scripts/refuse-shipped-count-seed.sh dist
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

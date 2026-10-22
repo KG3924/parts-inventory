@@ -140,7 +140,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Five accounts, no public signup: `glynn@inmarsystems.com`, `ricky@inmarsystems.com`, `grant@inmarsystems.com`, `toby@inmarsystems.com`, `kyle.grantham.kg@gmail.com`. Stamps and Prepared By use that signed-in full name. There is no header name dropdown.
 - First open on a phone: pick the name, type the password, let the phone **save the password**. Next open, Face ID / Touch ID / fingerprint fills it. That is the biometric unlock. There is no in-app fake Face ID button.
 - Session lasts **12 hours** on that phone (`inmar_shift_expires_at`). Five phones can be signed in as five people at once.
-- **Sign out** is in the header. `count.html` uses the same gate and still does not write Supabase.
+- **Sign out** is in the header. `count.html` uses the same gate and still does not write Supabase. After sign-in it reads the `inventory` table for its catalog (BUG-041). There is no public catalog file.
 - **More → Passwords** lets a signed-in person set a new password for any of the five. The admin key stays on Supabase (edge function `set-staff-password`), not in the page. That person unlocks once on their phone and saves the new password.
 - Passkeys were not turned on: Supabase passkeys are experimental and the relying-party id is one domain. Preview and live Pages are different addresses, so a passkey enrolled on preview would not be the live one anyway.
 
@@ -409,14 +409,14 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `package.json` | `npm run dev` / `npm run build` |
 | `.github/workflows/pages.yml` | `npm ci`, build, secret scan, publish `dist/` |
 | `scripts/refuse-shipped-secrets.sh` | Fails the Pages build if a real secret is in `dist/` |
+| `scripts/refuse-shipped-count-seed.sh` | Fails the Pages build if `count-seed*` or part-catalog JSON is in `dist/` (BUG-041) |
 | `public/public-config.js` | Public Supabase URL + anon key only (copied into the Pages build) |
 | `public/shop-auth.js` | Shared login wall for the app and count tool |
 | `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
 | `public/inmar-logo.jpg` | Quote / packing list / invoice logo |
 | `README.md` | Setup docs |
 | `CONTEXT.md` | This file — read first in a new session |
-| `public/count.html` | Mobile physical-count capture (no Supabase writes) |
-| `public/count-seed.json` | Known-parts lookup for the count tool |
+| `public/count.html` | Mobile physical-count capture (reads `inventory` after sign-in, no Supabase writes) |
 | `COUNT.md` | How to count on phone and import JSON |
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
@@ -447,4 +447,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-08 — BUG-038: Delete part is on the Edit screen, not the Inventory rows; a part on an open quote can't be deleted (run schema/b038_part_delete_guard.sql once after Pages + hard-refresh). BUG-037: phone Inventory rows are cards with the buttons on their own row, no sideways scrolling. BUG-035: invoice box loads the draft's values and clears between quotes. Round 1: Commit refuses a short remove and points at Set. It does not floor at zero. Add 0 and Remove 0 are refused. Set 0 still works. Quote qty is a whole number, 1 or more. Prices can't be negative and round to cents. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. Draft prints show DRAFT. Approved reprints do not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
+*Last updated: 2026-10-22 — BUG-041: the count tool reads its parts catalog from the live inventory after sign-in; count-seed.json is off the site (a build check refuses it). BUG-038: Delete part is on the Edit screen, not the Inventory rows; a part on an open quote can't be deleted (run schema/b038_part_delete_guard.sql once after Pages + hard-refresh). BUG-037: phone Inventory rows are cards with the buttons on their own row, no sideways scrolling. BUG-035: invoice box loads the draft's values and clears between quotes. Round 1: Commit refuses a short remove and points at Set. It does not floor at zero. Add 0 and Remove 0 are refused. Set 0 still works. Quote qty is a whole number, 1 or more. Prices can't be negative and round to cents. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. Draft prints show DRAFT. Approved reprints do not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
