@@ -93,6 +93,7 @@ created_at (timestamptz)
 - `schema/a2_6_freeze_approved_invoice.sql` — an approved invoice and its lines stay as sold (run once after this build is on the phones)
 - `schema/r1_round1_guards.sql` — Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Re-run it if A1, A2, or A2.4 is re-run after it. Do not VALIDATE the new checks.
 - `schema/b038_part_delete_guard.sql` — a part on an open quote can't be deleted (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
+- schema/c1_customer_list.sql — customer list: unique name, type-ahead / Did you mean, New-not-in-QB tag, merge by pointer (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -100,7 +101,7 @@ If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`
 ### Phase 1 sales docs (additive — safe alongside inventory)
 
 ```
-customers (name, company, email, phone, notes, payment_terms)
+customers (name, company, email, phone, contact_name, billing_address, ship_to_address, tax_exempt_number, notes, payment_terms, qb_status, merged_into)
 quotes (number Q-YYYY-###, customer_id?, customer_name, status, dates, prepared_by, notes, created_by)
 quote_lines (quote_id, line_no, inventory_id?, part_number, name, qty, unit_price)
 document_counters (doc_type, year, last_value)
@@ -237,7 +238,7 @@ Known sale sentences stay exact, including `Q-… is void…`, `INV-… is appro
 - **Approve** sells the draft invoice's lines, not the cart on screen. When the lines differ, or the Notes box differs from the notes stored on that draft at Save & print, the note says `Quote changed since INV-… was printed. Save & print before Approve` and **Approve** stays grey until **Save & print**. Nothing else in that hold changes.
 - Once an invoice is approved, that invoice and its lines stay as sold. A later change raises `INV-… is approved. This invoice can't change.` Save & print still rewrites a draft. Run `schema/a2_6_freeze_approved_invoice.sql` once after this build is on live Pages and every phone has hard-refreshed. A grey button alone is not the lock.
 - An Approve failure (short shelf, missing shelf id, quote already sold, or anything else) shows a red message fixed at the top of the screen and scrolls that banner into view. Approve stays tappable, including when a line is short. The shelf does not change and the draft stays a draft. The banner still clears after a few seconds.
-- Customer free-text + optional “Also save this customer” (stores name + payment terms)
+- Customer type-ahead: pick from the list, or tap **+ Add “…” as a new customer**. App-added rows are tagged **New, not in QuickBooks yet**; any signed-in person can mark **In QuickBooks**. **Cash sale** still fills `Cash sale` and does not write `customers`. Duplicate names are refused by the database itself (`schema/c1_customer_list.sql`).
 - Document numbers come from `shop_next_doc_number` (Q- / INV- / PL-).
 - Line snapshots: part_number, name, qty, unit_price (+ optional inventory_id)
 - Tables optional: if missing, inventory still works; print still works; save of extra fields / packing / invoices prompts for Phase 2 SQL
@@ -426,6 +427,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/a2_4_void_quote_approve_lock.sql` | Older void-quote Approve lock. Superseded in part by Round 1. Re-run Round 1 right after if this file is re-run |
 | `schema/r1_round1_guards.sql` | Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Do not VALIDATE the new checks. A grey button alone is not the lock |
 | `schema/b038_part_delete_guard.sql` | A part on an open quote can't be deleted. Run once after this build is on Pages and every phone has hard-refreshed. Safe to re-run |
+| `schema/c1_customer_list.sql` | customer list: unique name, type-ahead / Did you mean, New-not-in-QB tag, merge by pointer (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run) |
 | `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Deleting the quote removes its lines. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule |
 | `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
 
