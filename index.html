@@ -1036,9 +1036,9 @@ notify pgrst, 'reload schema';</pre>
     function lockedShopSentence(raw) {
       const text = String(raw || '');
       const patterns = [
-        /((?:INV-[\w-]+|This invoice) is approved\. This invoice can't change\.)/,
-        /((?:INV-[\w-]+|This invoice) is approved\. Voiding this quote won't undo the sale\.)/,
-        /((?:INV-[\w-]+|This invoice) is approved\. This quote's lines can't change after the sale\.)/,
+        /((?:INV-[\w-]+|I-[LS]\d+|This invoice) is approved\. This invoice can't change\.)/,
+        /((?:INV-[\w-]+|I-[LS]\d+|This invoice) is approved\. Voiding this quote won't undo the sale\.)/,
+        /((?:INV-[\w-]+|I-[LS]\d+|This invoice) is approved\. This quote's lines can't change after the sale\.)/,
         /((?:Q-[\w-]+|This quote) is void\. This invoice can't be approved\.)/,
         /((?:Q-[\w-]+|This quote) is void\. Start a new quote to bring this deal back\.)/,
         /(This invoice's quote is missing\. This invoice can't be approved\.)/,
