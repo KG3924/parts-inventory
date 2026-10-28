@@ -1315,6 +1315,7 @@ export function installQuote() {
           loadedQuoteStatus = 'void';
           const st = document.getElementById('quote-status');
           if (st) st.value = 'void';
+          applySaleLocks();
           await refreshQuoteInvoices();
         }
         shop().showStatus(voidFinalMessage(row?.number || document.getElementById('quote-number')?.value), 'error');
@@ -1772,12 +1773,13 @@ export function installQuote() {
   function applySaleLocks() {
     const blocked = quoteSaleBlocked();
     const voidFinal = quoteIsVoidFinal();
+    const hideActions = voidFinal && !blocked;
     const voidBtn = document.getElementById('quote-void-btn');
     if (voidBtn) {
-      voidBtn.disabled = blocked;
+      voidBtn.hidden = hideActions;
+      voidBtn.disabled = blocked || hideActions;
       voidBtn.style.opacity = blocked ? '0.45' : '';
     }
-    const hideActions = voidFinal && !blocked;
     const saveBtn = document.getElementById('quote-save-btn');
     const invoiceBtn = document.getElementById('quote-invoice-btn');
     [saveBtn, invoiceBtn].forEach(btn => {
