@@ -481,7 +481,12 @@ export function installQuote() {
   // Customer list: type-ahead pick, "Did you mean", add new, "New, not in QuickBooks yet" tag.
   // The typed name is still what quotes and invoices store and print. customer_id is the link.
   const CASH_SALE = 'Cash sale';
-  let pickedCustomer = null; // { id, name, qb_status, payment_terms, forText }
+  let pickedCustomer = null; // { id, name, qb_status, qb_status_systems, payment_terms, forText }
+  let quoteCompany = ''; // '' until picked, then 'L' or 'S'. Locked after the first save.
+  let quoteCompanyLocked = false;
+  const NEW_QUOTE_NUMBER = 'New — number on first save';
+  const DRAFT_INVOICE_NUMBER = 'Draft — number at Approve';
+  const PICK_COMPANY_MSG = 'Pick In-Mar Solutions or In-Mar Systems first. The quote was not saved.';
   let customerPickRows = [];
   let customerPickTimer = null;
   let customerPickSeq = 0;
@@ -502,17 +507,42 @@ export function installQuote() {
 
   function setPickedCustomer(row) {
     pickedCustomer = row && row.id
-      ? { id: row.id, name: row.name, qb_status: row.qb_status, payment_terms: row.payment_terms, forText: customerKey(customerBoxText()) }
+      ? {
+        id: row.id,
+        name: row.name,
+        qb_status: row.qb_status,
+        qb_status_systems: row.qb_status_systems,
+        payment_terms: row.payment_terms,
+        forText: customerKey(customerBoxText())
+      }
       : null;
     const idEl = document.getElementById('quote-customer-id');
     if (idEl) idEl.value = pickedCustomer ? pickedCustomer.id : '';
     renderCustomerTag();
   }
 
+  function companyName(code) {
+    if (code === 'L') return 'In-Mar Solutions';
+    if (code === 'S') return 'In-Mar Systems';
+    return '';
+  }
+
+  function qbColumnForCompany() {
+    return quoteCompany === 'S' ? 'qb_status_systems' : 'qb_status';
+  }
+
+  // Solutions reads qb_status. Systems reads qb_status_systems. No company picked: no badge.
+  function activeQbStatus() {
+    if (!pickedCustomer || !linkedCustomerId()) return '';
+    if (quoteCompany !== 'L' && quoteCompany !== 'S') return '';
+    const status = pickedCustomer[qbColumnForCompany()];
+    return status || '';
+  }
+
   function renderCustomerTag() {
     const el = document.getElementById('quote-customer-tag');
     if (!el) return;
-    if (!linkedCustomerId() || pickedCustomer.qb_status !== 'new_not_in_qb') {
+    if (activeQbStatus() !== 'new_not_in_qb') {
       el.hidden = true;
       el.innerHTML = '';
       return;
@@ -520,6 +550,52 @@ export function installQuote() {
     el.innerHTML = '<span class="badge badge-new-qb">New, not in QuickBooks yet</span>'
       + '<button type="button" class="secondary" onclick="markCustomerInQb()">Mark In QuickBooks</button>';
     el.hidden = false;
+  }
+
+  function setQuoteNumberDisplay(number) {
+    const el = document.getElementById('quote-number');
+    if (!el) return;
+    el.readOnly = true;
+    const text = String(number || '').trim();
+    el.value = text || NEW_QUOTE_NUMBER;
+  }
+
+  function renderCompanyPicker() {
+    const pick = document.getElementById('quote-company-pick');
+    const locked = document.getElementById('quote-company-locked');
+    const lBtn = document.getElementById('quote-company-l');
+    const sBtn = document.getElementById('quote-company-s');
+    if (lBtn) lBtn.classList.toggle('company-picked', !quoteCompanyLocked && quoteCompany === 'L');
+    if (sBtn) sBtn.classList.toggle('company-picked', !quoteCompanyLocked && quoteCompany === 'S');
+    if (pick) pick.hidden = !!quoteCompanyLocked;
+    if (locked) {
+      locked.hidden = !quoteCompanyLocked;
+      locked.textContent = quoteCompanyLocked ? companyName(quoteCompany) : '';
+    }
+    renderCustomerTag();
+  }
+
+  function pickQuoteCompany(code) {
+    if (quoteCompanyLocked) return;
+    if (code !== 'L' && code !== 'S') return;
+    quoteCompany = code;
+    renderCompanyPicker();
+    refreshPickedQb();
+  }
+
+  // The suggest list does not return qb_status_systems. Read it from the customer row.
+  async function refreshPickedQb() {
+    const id = linkedCustomerId();
+    if (!id || !shop().supabaseClient) return;
+    if (quoteCompany !== 'L' && quoteCompany !== 'S') return;
+    const { data } = await shop().supabaseClient.from('customers')
+      .select('id,qb_status,qb_status_systems,payment_terms')
+      .eq('id', id)
+      .maybeSingle();
+    if (!data || !pickedCustomer || pickedCustomer.id !== data.id) return;
+    pickedCustomer.qb_status = data.qb_status;
+    pickedCustomer.qb_status_systems = data.qb_status_systems;
+    renderCustomerTag();
   }
 
   function hideCustomerPick() {
@@ -567,8 +643,9 @@ export function installQuote() {
     const esc = shop().escapeHtml;
     const exact = rows.some(r => r.exact);
     const clean = text.replace(/[\s\u00a0]+/g, ' ').trim();
+    const showSolutionsNew = quoteCompany === 'L';
     const items = rows.map((r, i) => `<button type="button" class="customer-pick-row" onclick="pickCustomer(${i})">${esc(r.name)}`
-      + (r.qb_status === 'new_not_in_qb' ? ' <span class="badge badge-new-qb">New, not in QuickBooks yet</span>' : '') + '</button>');
+      + (showSolutionsNew && r.qb_status === 'new_not_in_qb' ? ' <span class="badge badge-new-qb">New, not in QuickBooks yet</span>' : '') + '</button>');
     const head = rows.length && !exact ? '<div class="customer-pick-head">Did you mean</div>' : '';
     const add = exact ? '' : `<button type="button" class="customer-pick-row customer-pick-add" onclick="addCustomerFromQuote()">+ Add “${esc(clean)}” as a new customer</button>`;
     box.innerHTML = head + items.join('') + add;
@@ -583,6 +660,7 @@ export function installQuote() {
     setPickedCustomer(row);
     hideCustomerPick();
     if (row.payment_terms) setComboValue('terms', row.payment_terms);
+    refreshPickedQb();
   }
 
   async function addCustomerFromQuote() {
@@ -599,6 +677,7 @@ export function installQuote() {
     if (el) el.value = row.name;
     setPickedCustomer(row);
     hideCustomerPick();
+    refreshPickedQb();
     shop().showStatus(`${row.name} added. Tagged New, not in QuickBooks yet.`, 'success');
   }
 
@@ -606,15 +685,19 @@ export function installQuote() {
     if (!shop().requireUser('updating customers')) return;
     const id = linkedCustomerId();
     if (!id) return;
-    if (!confirm(`Mark “${pickedCustomer.name}” as entered in QuickBooks?`)) return;
+    if (quoteCompany !== 'L' && quoteCompany !== 'S') return;
+    const which = companyName(quoteCompany);
+    if (!confirm(`Mark “${pickedCustomer.name}” as entered in QuickBooks for ${which}?`)) return;
+    const column = qbColumnForCompany();
     const { data, error } = await shop().supabaseClient.from('customers')
-      .update({ qb_status: 'in_qb' }).eq('id', id).select('id,name,qb_status,payment_terms').maybeSingle();
+      .update({ [column]: 'in_qb' }).eq('id', id)
+      .select('id,name,qb_status,qb_status_systems,payment_terms').maybeSingle();
     if (error || !data) {
       shop().showStatus(error ? shop().plainDbError(error, 'save') : "Couldn't save — try again", 'error');
       return;
     }
     setPickedCustomer(data);
-    shop().showStatus(`${data.name} marked In QuickBooks.`, 'success');
+    shop().showStatus(`${data.name} marked In QuickBooks for ${which}.`, 'success');
   }
 
   // Leaving the box: link an exact name typed in full, and fill its saved terms.
@@ -626,14 +709,23 @@ export function installQuote() {
     if (!row || customerKey(customerBoxText()) !== customerKey(text)) return;
     setPickedCustomer(row);
     if (row.payment_terms) setComboValue('terms', row.payment_terms);
+    refreshPickedQb();
   }
 
   async function loadQuoteCustomer(customerId) {
     setPickedCustomer(null);
     if (!customerId || !shop().supabaseClient) return;
-    const cols = 'id,name,qb_status,payment_terms,merged_into';
-    let { data } = await shop().supabaseClient.from('customers').select(cols).eq('id', customerId).maybeSingle();
-    if (data?.merged_into) ({ data } = await shop().supabaseClient.from('customers').select(cols).eq('id', data.merged_into).maybeSingle());
+    const cols = 'id,name,qb_status,qb_status_systems,payment_terms,merged_into';
+    const older = 'id,name,qb_status,payment_terms,merged_into';
+    let res = await shop().supabaseClient.from('customers').select(cols).eq('id', customerId).maybeSingle();
+    if (res.error && /qb_status_systems/i.test([res.error.message, res.error.details].filter(Boolean).join(' '))) {
+      res = await shop().supabaseClient.from('customers').select(older).eq('id', customerId).maybeSingle();
+    }
+    let { data } = res;
+    if (data?.merged_into) {
+      const keep = res.error ? older : cols;
+      ({ data } = await shop().supabaseClient.from('customers').select(keep).eq('id', data.merged_into).maybeSingle());
+    }
     if (data) setPickedCustomer(data);
   }
 
@@ -672,7 +764,7 @@ export function installQuote() {
   }
 
   function quoteStatusLabel(status) {
-    if (status === 'void') return 'Voided';
+    if (status === 'void') return 'Cancelled';
     if (status === 'expired') return 'Expired';
     if (status === 'sent') return 'Sent';
     if (status === 'accepted') return 'Accepted';
@@ -822,13 +914,15 @@ export function installQuote() {
   }
 
   async function writeQuoteHeader(quoteId, payload) {
-    const run = (body) => {
-      if (quoteId) return shop().supabaseClient.from('quotes').update(body).eq('id', quoteId);
-      return shop().supabaseClient.from('quotes').insert(body).select('id').maybeSingle();
-    };
-    let res = await run(payload);
+    const clean = { ...payload };
+    delete clean.number;
+    delete clean.company;
+    delete clean.id;
+    if (!quoteId) return { error: { message: "Couldn't save the quote" }, id: null };
+    const run = (body) => shop().supabaseClient.from('quotes').update(body).eq('id', quoteId);
+    let res = await run(clean);
     if (res.error && /project|rfq_number|fob_point|payment_terms|lead_time/i.test(res.error.message || '')) {
-      const slim = { ...payload };
+      const slim = { ...clean };
       delete slim.project;
       delete slim.rfq_number;
       delete slim.fob_point;
@@ -892,7 +986,7 @@ export function installQuote() {
                 <button type="button" class="secondary" onclick="openQuote('${q.id}')">Open</button>
                 <button type="button" class="secondary" onclick="printQuoteById('${q.id}')">Print</button>
                 <button type="button" class="secondary" onclick="duplicateQuoteById('${q.id}')">Dup</button>
-                <button type="button" class="secondary" ${approvedInvoiceByQuote[q.id] ? 'disabled style="opacity:0.45"' : ''} onclick="voidQuoteById('${q.id}')">Void quote</button>
+                <button type="button" class="secondary" ${approvedInvoiceByQuote[q.id] ? 'disabled style="opacity:0.45"' : ''} onclick="voidQuoteById('${q.id}')">Cancel quote</button>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -918,12 +1012,13 @@ export function installQuote() {
     document.getElementById('quote-customer').value = '';
     setPickedCustomer(null);
     hideCustomerPick();
+    quoteCompany = '';
+    quoteCompanyLocked = false;
+    setQuoteNumberDisplay('');
+    renderCompanyPicker();
     const invBox = document.getElementById('invoice-box');
     if (invBox) invBox.style.display = 'none';
     await refreshQuoteInvoices();
-    if (shop().hasQuotesTables) {
-      document.getElementById('quote-number').value = await nextDocNumber('quote');
-    }
     await refreshQuoteLookups();
     setComboValue('fob', '');
     setComboValue('terms', '');
@@ -952,7 +1047,10 @@ export function installQuote() {
     editingQuoteId = q.id;
     loadedQuoteStatus = q.status || '';
     document.getElementById('quote-edit-id').value = q.id;
-    document.getElementById('quote-number').value = q.number || '';
+    quoteCompany = q.company === 'L' || q.company === 'S' ? q.company : '';
+    quoteCompanyLocked = true;
+    setQuoteNumberDisplay(q.number || '');
+    renderCompanyPicker();
     document.getElementById('quote-status').value = q.status || 'draft';
     document.getElementById('quote-date').value = q.quote_date || '';
     document.getElementById('quote-valid').value = q.valid_until || '';
@@ -1036,11 +1134,6 @@ export function installQuote() {
       return false;
     }
     const requestedStatus = document.getElementById('quote-status').value || 'draft';
-    let number = (document.getElementById('quote-number').value || '').trim();
-    if (!number) {
-      number = await nextDocNumber('quote');
-      document.getElementById('quote-number').value = number;
-    }
     const customerName = (document.getElementById('quote-customer').value || '').trim();
     const project = (document.getElementById('quote-project')?.value || '').trim();
     const rfq = (document.getElementById('quote-rfq')?.value || '').trim();
@@ -1052,7 +1145,6 @@ export function installQuote() {
     if (customerName && !linkedCustomerId()) await onQuoteCustomerChange();
     const customerId = linkedCustomerId();
     const payload = {
-      number,
       customer_id: customerId,
       customer_name: customerName || null,
       project: project || null,
@@ -1069,8 +1161,36 @@ export function installQuote() {
       updated_at: new Date().toISOString()
     };
     let quoteId = existingId || null;
+    let number = '';
     const sealingVoid = requestedStatus === 'void' && storedStatus !== 'void';
-    if (quoteId && sealingVoid) {
+    const firstSave = !quoteId;
+    if (firstSave) {
+      if (quoteCompany !== 'L' && quoteCompany !== 'S') {
+        shop().showStatus(PICK_COMPANY_MSG, 'error');
+        return false;
+      }
+      const { data, error } = await shop().supabaseClient.rpc('shop_save_new_quote', {
+        p_company: quoteCompany,
+        p_quote: payload,
+        p_lines: quoteLineRows(null)
+      });
+      let saved = data;
+      if (typeof saved === 'string') {
+        try { saved = JSON.parse(saved); } catch (e) { saved = null; }
+      }
+      if (error || !saved || !saved.id) {
+        showQuoteSaveError(error || { message: "Couldn't save the quote" }, 'header');
+        return false;
+      }
+      quoteId = saved.id;
+      number = saved.number || '';
+      if (saved.company === 'L' || saved.company === 'S') quoteCompany = saved.company;
+      quoteCompanyLocked = true;
+      editingQuoteId = quoteId;
+      document.getElementById('quote-edit-id').value = quoteId;
+      setQuoteNumberDisplay(number);
+      renderCompanyPicker();
+    } else if (quoteId && sealingVoid) {
       const lineErr = await replaceQuoteLines(quoteId);
       if (lineErr) {
         showQuoteSaveError(lineErr, 'before-header');
@@ -1092,49 +1212,20 @@ export function installQuote() {
         showQuoteSaveError(lineErr, 'lines');
         return false;
       }
-    } else if (sealingVoid) {
-      const written = await writeQuoteHeader(null, { ...payload, status: 'draft' });
-      if (written.error || !written.id) {
-        showQuoteSaveError(written.error || { message: "Couldn't save the quote" }, 'header');
-        return false;
-      }
-      quoteId = written.id;
-      editingQuoteId = quoteId;
-      document.getElementById('quote-edit-id').value = quoteId;
-      loadedQuoteStatus = 'draft';
-      const lineErr = await insertQuoteLines(quoteId);
-      if (lineErr) {
-        showQuoteSaveError(lineErr, 'lines');
-        return false;
-      }
-      const sealed = await shop().supabaseClient.from('quotes')
-        .update({ status: 'void', updated_at: new Date().toISOString() })
-        .eq('id', quoteId);
-      if (sealed.error) {
-        showQuoteSaveError(sealed.error, 'header');
-        return false;
-      }
-    } else {
-      const written = await writeQuoteHeader(null, payload);
-      if (written.error || !written.id) {
-        showQuoteSaveError(written.error || { message: "Couldn't save the quote" }, 'header');
-        return false;
-      }
-      quoteId = written.id;
-      const lineErr = await insertQuoteLines(quoteId);
-      if (lineErr) {
-        showQuoteSaveError(lineErr, 'lines');
-        return false;
-      }
+    }
+    if (!firstSave) {
+      const shown = (document.getElementById('quote-number')?.value || '').trim();
+      if (shown && shown !== NEW_QUOTE_NUMBER) number = shown;
     }
     if (!quoteId) {
       shop().showStatus("Couldn't save the quote — invoice was not created", 'error');
       return false;
     }
+    if (number === NEW_QUOTE_NUMBER) number = '';
     editingQuoteId = quoteId;
     document.getElementById('quote-edit-id').value = quoteId;
     loadedQuoteStatus = requestedStatus;
-    shop().showStatus(`Quote ${number} saved (${shop().currentUser()})`, 'success');
+    shop().showStatus(firstSave ? `Saved ${number}` : `Quote ${number} saved (${shop().currentUser()})`, 'success');
     if (requestedStatus === 'void') {
       emptyWorkingCart();
       resetInvoiceBox();
@@ -1181,6 +1272,9 @@ export function installQuote() {
     if (invBox) invBox.style.display = 'none';
     setComboValue('fob', '');
     setComboValue('terms', '');
+    quoteCompanyLocked = false;
+    setQuoteNumberDisplay('');
+    renderCompanyPicker();
     quoteCart = lines;
     saveQuoteCart();
     return saveQuoteToDb();
@@ -1189,12 +1283,12 @@ export function installQuote() {
   async function voidQuoteById(id) {
     if (!shop().requireUser('voiding quotes')) return;
     if (!id) {
-      shop().showStatus('Open a saved quote to void it', 'error');
+      shop().showStatus('Open a saved quote to cancel it', 'error');
       return;
     }
     const blockedNum = await blockingApprovedNumber(id);
     if (blockedNum === null) {
-      shop().showStatus("Couldn't check invoices — quote was not voided", 'error');
+      shop().showStatus("Couldn't check invoices — quote was not cancelled", 'error');
       return;
     }
     if (blockedNum) {
@@ -1205,7 +1299,11 @@ export function installQuote() {
     }
     const row = quotesListCache.find(q => q.id === id);
     const num = row?.number || document.getElementById('quote-number')?.value || 'this quote';
-    if (!confirm(`Void ${num}? The number stays. Stock is not put back.`)) return;
+    if (num === NEW_QUOTE_NUMBER) {
+      shop().showStatus('Open a saved quote to cancel it', 'error');
+      return;
+    }
+    if (!confirm(`Cancel ${num}? The number stays. Stock is not put back.`)) return;
     const { error } = await shop().supabaseClient.from('quotes')
       .update({ status: 'void', updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -1233,14 +1331,14 @@ export function installQuote() {
       resetInvoiceBox();
       await refreshQuoteInvoices();
     }
-    shop().showStatus(`${num} voided. Stock unchanged.`, 'success');
+    shop().showStatus(`${num} cancelled. Stock unchanged.`, 'success');
     await loadQuotesList();
   }
 
   async function voidCurrentQuote() {
     const id = editingQuoteId || document.getElementById('quote-edit-id')?.value;
     if (!id) {
-      shop().showStatus('Open a saved quote to void it', 'error');
+      shop().showStatus('Open a saved quote to cancel it', 'error');
       return;
     }
     await voidQuoteById(id);
@@ -1257,7 +1355,9 @@ export function installQuote() {
     document.getElementById('quote-status').value = 'draft';
     resetQuoteInvoiceUi();
     if (!(await ensureQuotesTables())) return;
-    document.getElementById('quote-number').value = await nextDocNumber('quote');
+    quoteCompanyLocked = false;
+    setQuoteNumberDisplay('');
+    renderCompanyPicker();
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('quote-date').value = today;
     document.getElementById('quote-valid').value = addDaysIso(today, 90);
@@ -1330,38 +1430,46 @@ export function installQuote() {
     w.document.close();
   }
 
-  function companyBlock() {
-    return `<img class="logo" src="inmar-logo.jpg" alt="In-Mar Systems & Solutions" onerror="this.style.display='none'">
+  function companyBlock(company) {
+    const logo = company === 'L'
+      ? { src: 'In-Mar-Solutions-logo-v4.png', alt: 'In-Mar Solutions' }
+      : company === 'S'
+        ? { src: 'In-Mar-Systems-logo-v4.png', alt: 'In-Mar Systems' }
+        : null;
+    const img = logo ? `<img class="logo" src="${logo.src}" alt="${shop().escapeHtml(logo.alt)}">` : '';
+    return `${img}
     <div style="font-size:11px;color:#64748b;margin-top:4px;">3011 S. Ruby Ave, Gonzales, LA 70737<br>(225) 430-9111 • info@inmarsystems.com</div>`;
   }
 
-  function generateQuote() {
-    if (quoteCart.length === 0) {
-      shop().showStatus('Add at least one part to the quote first', 'error');
-      return;
-    }
-    const data = collectQuoteHeader();
-    if (!data.by) data.by = shop().currentUser();
+  function letterheadName(company) {
+    const name = companyName(company);
+    return name ? `<br>${shop().escapeHtml(name)}` : '';
+  }
+
+  function quoteDocumentHtml(header, lines) {
+    const data = header || {};
     let total = 0;
-    const rows = quoteCart.map(c => {
-      const line = (c.qty || 1) * (c.unit_price || 0);
+    const rows = (lines || []).map(c => {
+      const qty = Number(c.qty) || 1;
+      const price = Number(c.unit_price) || 0;
+      const line = qty * price;
       total += line;
       return `<tr>
         <td style="font-family:monospace;font-size:12px;">${shop().escapeHtml(c.part_number)}</td>
         <td>${shop().escapeHtml(c.name)}</td>
-        <td style="text-align:center;">${c.qty}</td>
-        <td style="text-align:right;">${shop().money(c.unit_price)}</td>
+        <td style="text-align:center;">${qty}</td>
+        <td style="text-align:right;">${shop().money(price)}</td>
         <td style="text-align:right;font-weight:600;">${shop().money(line)}</td>
       </tr>`;
     }).join('');
-    printDocWindow('In-Mar Quote ' + data.number, `
+    return `
     <div class="header">
-  <div>${companyBlock()}</div>
+  <div>${companyBlock(data.company)}</div>
   <div class="meta">
     <div class="doc-title">QUOTE</div>
     <div><strong>Quote #:</strong> ${shop().escapeHtml(data.number)}</div>
     ${data.rfq ? `<div><strong>RFQ #:</strong> ${shop().escapeHtml(data.rfq)}</div>` : ''}
-    <div><strong>Status:</strong> ${shop().escapeHtml(data.status)}</div>
+    <div><strong>Status:</strong> ${shop().escapeHtml(quoteStatusLabel(data.status))}</div>
     <div><strong>Date:</strong> ${shop().escapeHtml(data.date)}</div>
     <div><strong>Valid Until:</strong> ${shop().escapeHtml(data.valid) || '—'}</div>
   </div>
@@ -1381,7 +1489,37 @@ export function installQuote() {
     <div class="totals"><div class="grand"><span>Quoted total</span><span>${shop().money(total)}</span></div></div>
     <p class="legal">3.5% fee if paid by credit card. Prices in USD. Valid until the date shown.</p>
     <div><div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div><div class="notes">${shop().escapeHtml(data.notes) || '—'}</div></div>
-    <div class="footer">Thank you for the opportunity to quote.<br>In-Mar Systems &amp; Solutions</div>`);
+    <div class="footer">Thank you for the opportunity to quote.${letterheadName(data.company)}</div>`;
+  }
+
+  function quoteHeaderFromSaved(quote) {
+    const row = quote || {};
+    return {
+      number: row.number || '',
+      date: row.quote_date || '',
+      valid: row.valid_until || '',
+      customer: row.customer_name || '',
+      project: row.project || '',
+      rfq: row.rfq_number || '',
+      by: row.prepared_by || '',
+      notes: row.notes || '',
+      status: row.status || '',
+      fob: row.fob_point || '',
+      terms: row.payment_terms || '',
+      lead: row.lead_time || '',
+      company: row.company || ''
+    };
+  }
+
+  function generateQuote() {
+    if (quoteCart.length === 0) {
+      shop().showStatus('Add at least one part to the quote first', 'error');
+      return;
+    }
+    const data = collectQuoteHeader();
+    data.company = quoteCompany;
+    if (!data.by) data.by = shop().currentUser();
+    printDocWindow('In-Mar Quote ' + data.number, quoteDocumentHtml(data, quoteCart));
   }
 
   async function printPackingList() {
@@ -1390,6 +1528,7 @@ export function installQuote() {
       return;
     }
     const data = collectQuoteHeader();
+    data.company = quoteCompany;
     let plNumber = '';
     try { plNumber = await nextDocNumber('packing_list'); } catch (e) { return; }
     const quoteId = editingQuoteId || document.getElementById('quote-edit-id')?.value || null;
@@ -1424,7 +1563,7 @@ export function installQuote() {
     </tr>`).join('');
     printDocWindow('In-Mar Packing List ' + plNumber, `
     <div class="header">
-  <div>${companyBlock()}</div>
+  <div>${companyBlock(data.company)}</div>
   <div class="meta">
     <div class="doc-title">PACKING LIST</div>
     <div><strong>Packing list #:</strong> ${shop().escapeHtml(plNumber)}</div>
@@ -1447,7 +1586,7 @@ export function installQuote() {
   <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Packed by / date</div>
   <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Received by / date — contents checked</div>
     </div>
-    <div class="footer">Check contents on receipt.<br>In-Mar Systems &amp; Solutions</div>`);
+    <div class="footer">Check contents on receipt.${letterheadName(data.company)}</div>`);
   }
 
   function invoiceMath() {
@@ -1764,7 +1903,7 @@ export function installQuote() {
       const zombie = quoteVoided && !isApproved;
       const holdApprove = !isApproved && (zombie || !!mismatchMsg);
       return `<div class="btn-group" style="align-items:center;">
-        <code>${shop().escapeHtml(r.number || '')}</code>
+        <div><code>${shop().escapeHtml(r.number || DRAFT_INVOICE_NUMBER)}</code><div>From quote ${shop().escapeHtml(quoteNum)}</div></div>
         <span class="badge ${isApproved ? 'open-order' : 'source-tag'}">${isApproved ? 'Approved' : 'Draft'}</span>
         ${zombie ? `<span>${shop().escapeHtml(quoteVoidedMessage(quoteNum))}</span>` : ''}
         <button type="button" class="tap" ${holdApprove ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
@@ -1863,8 +2002,8 @@ export function installQuote() {
     } else if (payload.ok) {
       const approvedNumber = payload.number || 'Invoice';
       const marked = payload.quote_marked_accepted
-        ? `${approvedNumber} approved. Parts left the shelf. Quote marked Accepted.`
-        : `${approvedNumber} approved. Parts left the shelf.`;
+        ? `Approved ${approvedNumber}. Parts left the shelf. Quote marked Accepted.`
+        : `Approved ${approvedNumber}. Parts left the shelf.`;
       shop().showStatus(marked, 'success');
       await startNewQuote({ keepStatus: true });
     } else {
@@ -1928,12 +2067,14 @@ export function installQuote() {
     const po = doc.po;
     const rfq = doc.rfq;
     const stamp = doc.draft ? '<div class="draft-stamp">DRAFT</div>' : '';
+    const invLabel = doc.invNumber || DRAFT_INVOICE_NUMBER;
     return `${stamp}
     <div class="header">
-  <div>${companyBlock()}</div>
+  <div>${companyBlock(doc.company)}</div>
   <div class="meta">
     <div class="doc-title">INVOICE</div>${banner}
-    <div><strong>Invoice #:</strong> ${shop().escapeHtml(doc.invNumber)}</div>
+    <div><strong>Invoice #:</strong> ${shop().escapeHtml(invLabel)}</div>
+    <div>From quote ${shop().escapeHtml(doc.quoteNumber || '')}</div>
     <div><strong>Quote #:</strong> ${shop().escapeHtml(doc.quoteNumber)}</div>
     ${po ? `<div><strong>PO #:</strong> ${shop().escapeHtml(po)}</div>` : ''}
     ${rfq ? `<div><strong>RFQ #:</strong> ${shop().escapeHtml(rfq)}</div>` : ''}
@@ -1963,7 +2104,7 @@ export function installQuote() {
     </div>
     <p class="legal">Please remit by the due date. Amounts in USD.${doc.cc ? ' Includes 3.5% card fee.' : ' 3.5% fee if paid by card.'}</p>
     <div><div style="font-weight:500;color:#64748b;margin-bottom:4px;">Notes</div><div class="notes">${shop().escapeHtml(doc.notes) || '—'}</div></div>
-    <div class="footer">Please remit with invoice number ${shop().escapeHtml(doc.invNumber)}.<br>In-Mar Systems &amp; Solutions</div>`;
+    <div class="footer">Please remit with invoice number ${shop().escapeHtml(invLabel)}.${letterheadName(doc.company)}</div>`;
   }
 
   function printInvoiceDocument(doc) {
@@ -2050,11 +2191,11 @@ export function installQuote() {
         invNumber = draft.number || '';
         if (quoteId) await refreshQuoteInvoices();
         if (currentQuoteId() === quoteId) fillInvoiceBoxFromDraft({ ...header, id: draft.id });
-        shop().showStatus(`Draft ${invNumber} updated. Stock unchanged until you Approve.`, 'success');
+        shop().showStatus(invNumber
+          ? `Draft ${invNumber} updated. Stock unchanged until you Approve.`
+          : 'Draft updated. Stock unchanged until you Approve.', 'success');
       } else {
-        try { invNumber = await nextDocNumber('invoice'); } catch (e) { return; }
         const { data: inv, error } = await shop().supabaseClient.from('invoices').insert({
-          number: invNumber,
           quote_id: quoteId || null,
           ...header,
           created_by: shop().currentUser()
@@ -2080,10 +2221,11 @@ export function installQuote() {
         if (quoteId) await refreshQuoteInvoices();
         else renderQuoteInvoiceRows([{ id: inv.id, number: invNumber, status: 'draft', created_at: today }], { linked: false });
         if (currentQuoteId() === quoteId) fillInvoiceBoxFromDraft({ ...header, id: inv.id });
-        shop().showStatus(`Draft ${invNumber} saved. Stock unchanged until you Approve.`, 'success');
+        shop().showStatus('Draft saved. Stock unchanged until you Approve.', 'success');
       }
       printInvoiceDocument({
         invNumber,
+        company: quoteCompany,
         quoteNumber: data.number,
         po,
         rfq: data.rfq,
@@ -2112,8 +2254,8 @@ export function installQuote() {
     }
   }
 
-  const FIND_QUOTE_COLS = 'id,number,customer_name,status,quote_date,valid_until,prepared_by,notes,project,rfq_number,fob_point,payment_terms,lead_time';
-  const FIND_INVOICE_COLS = 'id,number,quote_id,customer_name,project,po_number,ship_to,invoice_date,due_date,fob_point,payment_terms,cc_used,cc_fee_amount,shipping_fee,duty,tariffs,subtotal,total,prepared_by,notes,status';
+  const FIND_QUOTE_COLS = 'id,number,company,customer_name,status,quote_date,valid_until,prepared_by,notes,project,rfq_number,fob_point,payment_terms,lead_time';
+  const FIND_INVOICE_COLS = 'id,number,company,quote_id,customer_name,project,po_number,ship_to,invoice_date,due_date,fob_point,payment_terms,cc_used,cc_fee_amount,shipping_fee,duty,tariffs,subtotal,total,prepared_by,notes,status';
   const FIND_LINE_COLS = 'line_no,part_number,name,qty,unit_price';
 
   function sortFindLines(lines) {
@@ -2362,7 +2504,7 @@ export function installQuote() {
 
   async function loadFindInvoice(id) {
     const client = shop().supabaseClient;
-    const { data: inv, error } = await client.from('invoices').select(FIND_INVOICE_COLS).eq('id', id).maybeSingle();
+    const { data: inv, error } = await selectFindRow('invoices', FIND_INVOICE_COLS, id);
     if (error) return { error };
     if (!inv) return { missing: true };
     const { data: lines, error: lineErr } = await client.from('invoice_lines').select(FIND_LINE_COLS).eq('invoice_id', id).order('line_no');
@@ -2380,7 +2522,7 @@ export function installQuote() {
     const client = shop().supabaseClient;
     if (!client) return { error: { message: "Couldn't load — try again" } };
     if (kind === 'invoice') return loadFindInvoice(id);
-    const { data: quote, error } = await client.from('quotes').select(FIND_QUOTE_COLS).eq('id', id).maybeSingle();
+    const { data: quote, error } = await selectFindRow('quotes', FIND_QUOTE_COLS, id);
     if (error) return { error };
     if (!quote) return { missing: true };
     const { data: lines, error: lineErr } = await client.from('quote_lines').select(FIND_LINE_COLS).eq('quote_id', id).order('line_no');
@@ -2545,8 +2687,19 @@ export function installQuote() {
     renderFindDetail(safeKind, loaded);
   }
 
-  function lineAmount(line) {
-    return (Number(line.qty) || 0) * (Number(line.unit_price) || 0);
+  function missingCompanyColumn(error) {
+    const raw = [error && error.message, error && error.details, error && error.hint].filter(Boolean).join(' ');
+    return /company/i.test(raw) && /does not exist|schema cache|could not find/i.test(raw);
+  }
+
+  async function selectFindRow(table, cols, id) {
+    const client = shop().supabaseClient;
+    let res = await client.from(table).select(cols).eq('id', id).maybeSingle();
+    if (res.error && missingCompanyColumn(res.error)) {
+      const slim = cols.split(',').filter(col => col !== 'company').join(',');
+      res = await client.from(table).select(slim).eq('id', id).maybeSingle();
+    }
+    return res;
   }
 
   function printDocFromInvoice(inv, lines, parent, banner) {
@@ -2573,36 +2726,8 @@ export function installQuote() {
       ccFee: Number(inv.cc_fee_amount) || 0,
       total: Number(inv.total) || 0,
       banner: banner || '',
-      draft: false
-    };
-  }
-
-  function printDocFromQuote(quote, lines) {
-    const subtotal = (lines || []).reduce((sum, line) => sum + lineAmount(line), 0);
-    return {
-      invNumber: '',
-      quoteNumber: quote.number || '',
-      po: '',
-      rfq: quote.rfq_number || '',
-      invoiceDate: quote.quote_date || '',
-      due: quote.valid_until || '',
-      customer: quote.customer_name || '',
-      project: quote.project || '',
-      shipTo: '',
-      by: quote.prepared_by || '',
-      fob: quote.fob_point || '',
-      terms: quote.payment_terms || '',
-      notes: quote.notes || '',
-      lines: lines || [],
-      subtotal,
-      shipping: 0,
-      duty: 0,
-      tariffs: 0,
-      cc: false,
-      ccFee: 0,
-      total: subtotal,
-      banner: FIND_DRAFT_BANNER,
-      draft: true
+      draft: false,
+      company: inv.company || ''
     };
   }
 
@@ -2648,7 +2773,9 @@ export function installQuote() {
         shop().showStatus('Nothing to reprint', 'error');
         return;
       }
-      doc = printDocFromQuote(loaded.quote, loaded.lines);
+      const header = quoteHeaderFromSaved(loaded.quote);
+      printDocWindow('In-Mar Quote ' + (header.number || ''), quoteDocumentHtml(header, loaded.lines));
+      return;
     }
     if (!doc) return;
     printInvoiceDocument(doc);
@@ -2679,6 +2806,7 @@ export function installQuote() {
     pickCustomer,
     addCustomerFromQuote,
     markCustomerInQb,
+    pickQuoteCompany,
     nextDocNumber,
     ensureQuotesTables,
     loadQuotesList,
@@ -2696,6 +2824,8 @@ export function installQuote() {
     collectQuoteHeader,
     printDocWindow,
     companyBlock,
+    quoteDocumentHtml,
+    invoiceDocumentHtml,
     generateQuote,
     printPackingList,
     invoiceMath,
@@ -2740,6 +2870,10 @@ export function installQuote() {
       if (el) el.addEventListener('input', updateInvoicePreview);
     });
     renderQuotePanel();
+    if (!document.getElementById('quote-edit-id')?.value) {
+      setQuoteNumberDisplay('');
+      renderCompanyPicker();
+    }
     const findForm = document.getElementById('find-form');
     if (findForm) findForm.addEventListener('submit', (e) => {
       e.preventDefault();

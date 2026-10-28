@@ -79,12 +79,16 @@
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
     .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
     .row > * { flex: 1; min-width: 120px; }
+    @media (max-width: 640px) {
+      .row > div:has(#quote-number) { flex-basis: 100%; min-width: 100%; }
+    }
     button {
       background: var(--accent); color: white; border: none; padding: 0.6rem 1rem;
       border-radius: 8px; font-size: 0.9rem; cursor: pointer;
     }
     button:hover { background: var(--accent-hover); }
     button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    button.company-picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
     .btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 0.5rem 0.3rem; vertical-align: middle; }
@@ -112,7 +116,8 @@
     /* CL1b Customers screen. No display rule on [hidden] boxes. */
     .customer-pick.cust-list { margin: 0 0 0.6rem; max-height: none; }
     .badge.badge-in-qb { background: rgba(34, 197, 94, 0.15); color: #166534; }
-    .cust-qb { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: -0.3rem 0 0.6rem; }
+    .cust-qb { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; margin: -0.3rem 0 0.6rem; }
+    .cust-qb-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .cust-error { color: var(--danger); font-size: 0.9rem; margin-bottom: 0.5rem; }
     #customers textarea { resize: vertical; font: inherit; }
     .barcode-preview { text-align: center; padding: 1rem; background: white; border-radius: 8px; margin: 0.75rem 0; }
@@ -873,7 +878,7 @@ alter table quotes enable row level security;
 alter table quote_lines enable row level security;
 alter table document_counters enable row level security;
 grant select, insert, update, delete on table customers to authenticated;
-grant select, insert, update, delete on table quotes to authenticated;
+grant select, update on table quotes to authenticated;
 grant select, insert, update, delete on table quote_lines to authenticated;
 grant select on table document_counters to authenticated;
 grant select, insert, update, delete on table inventory_adjustments to authenticated;
@@ -1058,6 +1063,18 @@ notify pgrst, 'reload schema';</pre>
         /(Not added\. .+? is already on the customer list\. Pick it from the list\.)/,
         /(Cash sale is not a customer\. Tap Cash sale instead\.)/,
         /(Type the customer name first\.)/,
+        /(Pick In-Mar Solutions or In-Mar Systems first\. The quote was not saved\.)/,
+        /(Add at least one line before saving)/,
+        /(A line points at a part that is no longer on the shelf list\. The quote was not saved and no number was used\.)/,
+        /((?:Q-\S+|This quote) can't be deleted\. A saved quote keeps its number\. Cancel it instead\.)/,
+        /(Q-\S+ keeps its number\.)/,
+        /(The company is locked once a quote has its number\.)/,
+        /(Invoice numbers are given only at Approve\. Hard refresh the app and try again\.)/,
+        /(Invoice numbers are given only at Approve\.)/,
+        /(The company is locked once an invoice has its number\.)/,
+        /(This invoice has no company\. Start a new quote for In-Mar Solutions or In-Mar Systems\. This invoice stayed a draft\.)/,
+        /(Quotes get their number only from Save in the app\. Hard refresh the app and save again\.)/,
+        /(Quote and invoice numbers now come only from Save and Approve\. Hard refresh the app\.)/,
         /(Not changed\. This login can't mark customers In QuickBooks\.)/
       ];
       for (const re of patterns) {

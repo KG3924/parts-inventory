@@ -20,7 +20,7 @@ export const CUSTOMER_FIELDS = [
   { key: "tax_exempt_number", label: "Tax-exempt or resale number", kind: "text" },
   { key: "notes", label: "Notes", kind: "area" }
 ];
-export const CUSTOMER_COLS = "id,name,contact_name,phone,email,billing_address,ship_to_address,payment_terms,tax_exempt_number,notes,qb_status,merged_into,updated_at";
+export const CUSTOMER_COLS = "id,name,contact_name,phone,email,billing_address,ship_to_address,payment_terms,tax_exempt_number,notes,qb_status,qb_status_systems,merged_into,updated_at";
 export const CUSTOMER_SEARCH_CAP = 8;
 
 // '' and null both mean blank (the list import left some of each). Line endings compare equal.
@@ -66,7 +66,8 @@ export function customerSaveError(error, typedName, plain) {
 // QuickBooks keeps its own copy of the name and terms. When those change on a customer already
 // in QuickBooks, remind the person to change it there too. Other boxes and New customers: no reminder.
 export function customerSavedMessage(before, patch, savedName) {
-  const qbCopy = before && before.qb_status === "in_qb" && patch && ("name" in patch || "payment_terms" in patch);
+  const inQb = before && (before.qb_status === "in_qb" || before.qb_status_systems === "in_qb");
+  const qbCopy = inQb && patch && ("name" in patch || "payment_terms" in patch);
   return `${savedName} saved.` + (qbCopy ? " Update it in QuickBooks too." : "");
 }
 
@@ -129,12 +130,19 @@ export function installCustomers() {
     form.querySelectorAll("input, textarea").forEach(el => { el.disabled = !on; });
     $("cust-save").hidden = !on;
   }
+  function qbLine(label, status, markId) {
+    const body = status === "in_qb"
+      ? '<span class="badge badge-in-qb">In QuickBooks</span>'
+      : '<span class="badge badge-new-qb">New, not in QuickBooks yet</span>'
+        + (markId ? `<button type="button" class="secondary" id="${markId}">Mark In QuickBooks</button>` : "");
+    return `<div class="cust-qb-line"><span>${label}: </span>${body}</div>`;
+  }
   function renderQb() {
     const el = $("cust-qb");
     if (!loaded || loaded.merged_into) { el.innerHTML = ""; return; }
-    el.innerHTML = loaded.qb_status === "new_not_in_qb"
-      ? '<span class="badge badge-new-qb">New, not in QuickBooks yet</span><button type="button" class="secondary" id="cust-mark-qb">Mark In QuickBooks</button>'
-      : '<span class="badge badge-in-qb">In QuickBooks</span>';
+    const systems = Object.prototype.hasOwnProperty.call(loaded, "qb_status_systems");
+    el.innerHTML = qbLine("Solutions", loaded.qb_status, loaded.qb_status === "new_not_in_qb" ? "cust-mark-qb" : "")
+      + (systems ? qbLine("Systems", loaded.qb_status_systems, loaded.qb_status_systems === "new_not_in_qb" ? "cust-mark-qb-systems" : "") : "");
   }
 
   // ---- list ----
@@ -188,7 +196,11 @@ export function installCustomers() {
     $("cust-form-view").hidden = false;
     $("cust-loading").hidden = false;
     window.scrollTo(0, 0);
-    const { data, error } = await shop().supabaseClient.from("customers").select(CUSTOMER_COLS).eq("id", id).maybeSingle();
+    let res = await shop().supabaseClient.from("customers").select(CUSTOMER_COLS).eq("id", id).maybeSingle();
+    if (res.error && /qb_status_systems/i.test([res.error.message, res.error.details].filter(Boolean).join(" "))) {
+      res = await shop().supabaseClient.from("customers").select(CUSTOMER_COLS.replace(",qb_status_systems", "")).eq("id", id).maybeSingle();
+    }
+    const { data, error } = res;
     $("cust-loading").hidden = true;
     if (error || !data) { setFormError("Couldn't load this customer — tap Back and try again."); return; }
     showLoaded(data);
@@ -252,19 +264,21 @@ export function installCustomers() {
     }
   }
 
-  async function markInQb() {
+  async function markInQb(column) {
     if (busy || !loaded || loaded.merged_into) return;
+    const field = column === "qb_status_systems" ? "qb_status_systems" : "qb_status";
+    const which = field === "qb_status_systems" ? "In-Mar Systems" : "In-Mar Solutions";
     setFormError("");
     if (!shop().requireUser("updating customers")) return;
     if (isDirty()) { setFormError("Save or cancel your changes first, then Mark In QuickBooks."); return; }
-    if (!confirm(`Mark “${loaded.name}” as entered in QuickBooks?`)) return;
+    if (!confirm(`Mark “${loaded.name}” as entered in QuickBooks for ${which}?`)) return;
     busy = true;
     try {
-      const { data, error } = await guardedUpdate({ qb_status: "in_qb" });
+      const { data, error } = await guardedUpdate({ [field]: "in_qb" });
       if (error) { setFormError(shop().plainDbError(error, "save")); return; }
       if (!data) { setFormError(await whyNotSaved(loaded.id)); return; }
       showLoaded(data);
-      shop().showStatus(`${data.name} marked In QuickBooks.`, "success");
+      shop().showStatus(`${data.name} marked In QuickBooks for ${which}.`, "success");
     } finally {
       busy = false;
     }
@@ -287,7 +301,10 @@ export function installCustomers() {
     const r = results[Number(row.dataset.i)];
     if (r) openCustomer(r.id);
   });
-  $("cust-qb").addEventListener("click", ev => { if (ev.target.closest("#cust-mark-qb")) markInQb(); });
+  $("cust-qb").addEventListener("click", ev => {
+    if (ev.target.closest("#cust-mark-qb-systems")) markInQb("qb_status_systems");
+    else if (ev.target.closest("#cust-mark-qb")) markInQb("qb_status");
+  });
   $("cust-back").addEventListener("click", leave);
   $("cust-cancel").addEventListener("click", leave);
   form.addEventListener("submit", save);
