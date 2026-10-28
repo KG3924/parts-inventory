@@ -6,8 +6,6 @@ function shop() {
   return api;
 }
 
-export const FIND_DRAFT_BANNER = 'Draft — current rows';
-
 export function findSearchText(raw) {
   return String(raw || '').replace(/[%_\\]/g, '').trim();
 }
@@ -228,6 +226,7 @@ export function installQuote() {
   let invoiceBoxDraftId = 'none';
   let findView = null;
   let findSeq = 0;
+  let findKind = 'quote';
 
   // Save, print, packing, and draft invoices do not change qty. Approve does, on the server.
   let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
@@ -1398,7 +1397,10 @@ export function installQuote() {
     };
   }
 
-  function printDocWindow(title, bodyHtml) {
+  function printDocWindow(title, bodyHtml, opts) {
+    const autoPrint = opts && opts.view
+      ? ''
+      : '<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>';
     const html = `<!DOCTYPE html>
   <html><head><meta charset="UTF-8"><title>${shop().escapeHtml(title)}</title>
   <style>
@@ -1422,7 +1424,7 @@ export function installQuote() {
     @media print { body { padding: 12px; } @page { margin: 0.6in; size: letter; } }
   </style></head><body>
   ${bodyHtml}
-  <script>window.onload=function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+  ${autoPrint}
   </body></html>`;
     const w = window.open('', '_blank');
     if (!w) {
@@ -2116,8 +2118,8 @@ export function installQuote() {
     <div class="footer">Please remit with invoice number ${shop().escapeHtml(invLabel)}.${letterheadName(doc.company)}</div>`;
   }
 
-  function printInvoiceDocument(doc) {
-    printDocWindow('In-Mar Invoice ' + (doc.invNumber || ''), invoiceDocumentHtml(doc));
+  function printInvoiceDocument(doc, opts) {
+    printDocWindow('In-Mar Invoice ' + (doc.invNumber || ''), invoiceDocumentHtml(doc), opts);
   }
 
   async function saveAndPrintInvoice() {
@@ -2405,10 +2407,40 @@ export function installQuote() {
     await runFindSearch();
   }
 
-  function openFindFromQuotes() {
-    if (typeof window.showPanel === 'function') window.showPanel('find');
+  function openFindKind(kind) {
+    findKind = kind === 'invoice' ? 'invoice' : 'quote';
+    findSeq += 1;
+    findView = null;
     const box = document.getElementById('find-q');
+    const fromEl = document.getElementById('find-from');
+    const toEl = document.getElementById('find-to');
+    if (box) box.value = '';
+    if (fromEl) fromEl.value = '';
+    if (toEl) toEl.value = '';
+    const results = document.getElementById('find-results');
+    const detail = document.getElementById('find-detail');
+    if (results) {
+      results.hidden = false;
+      results.innerHTML = '';
+    }
+    if (detail) {
+      detail.hidden = true;
+      detail.innerHTML = '';
+      detail.removeAttribute('aria-busy');
+    }
+    const title = document.getElementById('find-title');
+    if (title) title.textContent = findKind === 'invoice' ? 'Find invoices' : 'Find quotes';
+    const hint = document.getElementById('find-hint');
+    if (hint) {
+      const lead = findKind === 'invoice' ? 'Type an invoice number or customer.' : 'Type a quote number or customer.';
+      hint.textContent = `${lead} Last 7 days and From–To use Chicago time. An empty search with no dates does not list everything.`;
+    }
+    if (typeof window.showPanel === 'function') window.showPanel('find');
     if (box) box.focus();
+  }
+
+  function openFindFromQuotes() {
+    openFindKind('quote');
   }
 
   async function runFindSearch() {
@@ -2450,28 +2482,25 @@ export function installQuote() {
       return;
     }
     const pattern = q ? `%${q}%` : '';
-    const quoteRes = await runFindBuckets('quotes', FIND_QUOTE_LIST_COLS, quoteFindSpecs(bounds), pattern);
+    const kind = findKind === 'invoice' ? 'invoice' : 'quote';
+    const found = kind === 'invoice'
+      ? await runFindBuckets('invoices', FIND_INVOICE_LIST_COLS, invoiceFindSpecs(bounds), pattern)
+      : await runFindBuckets('quotes', FIND_QUOTE_LIST_COLS, quoteFindSpecs(bounds), pattern);
     if (seq !== findSeq) return;
-    if (quoteRes.error) {
-      console.warn(quoteRes.error);
-      if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(quoteRes.error, 'load'))}</p>`;
-      return;
-    }
-    const invoiceRes = await runFindBuckets('invoices', FIND_INVOICE_LIST_COLS, invoiceFindSpecs(bounds), pattern);
-    if (seq !== findSeq) return;
-    if (invoiceRes.error) {
-      console.warn(invoiceRes.error);
-      if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(invoiceRes.error, 'load'))}</p>`;
+    if (found.error) {
+      console.warn(found.error);
+      if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(found.error, 'load'))}</p>`;
       return;
     }
     const items = [];
-    quoteRes.rows.forEach(row => items.push({ kind: 'quote', row, stamp: quoteListStamp(row) }));
-    invoiceRes.rows.forEach(row => items.push({ kind: 'invoice', row, stamp: invoiceListStamp(row) }));
-    if (quoteRes.truncated || invoiceRes.truncated) items.push({ truncated: true });
+    const stampOf = kind === 'invoice' ? invoiceListStamp : quoteListStamp;
+    found.rows.forEach(row => items.push({ kind, row, stamp: stampOf(row) }));
+    if (found.truncated) items.push({ truncated: true });
     const picked = assembleFindHits(items, dateWindow, FIND_LIST_CAP);
     const narrow = picked.capped ? `<p class="hint">${findNarrowCopy(!!dateWindow)}</p>` : '';
     if (!picked.rows.length) {
-      if (results) results.innerHTML = `<p class="empty">No quotes or invoices match.</p>${narrow}`;
+      const none = kind === 'invoice' ? 'No invoices match.' : 'No quotes match.';
+      if (results) results.innerHTML = `<p class="empty">${none}</p>${narrow}`;
       return;
     }
     const hit = (entry) => {
@@ -2488,14 +2517,7 @@ export function installQuote() {
         ${extra ? `<div style="font-size:0.8rem;color:var(--muted);">${shop().escapeHtml(extra)}</div>` : ''}
       </button>`;
     };
-    const quoteRows = picked.rows.filter(entry => entry.kind === 'quote');
-    const invoiceRows = picked.rows.filter(entry => entry.kind === 'invoice');
-    if (results) {
-      results.innerHTML = `
-        ${quoteRows.length ? `<h2>Quotes</h2>${quoteRows.map(hit).join('')}` : ''}
-        ${invoiceRows.length ? `<h2>Invoices</h2>${invoiceRows.map(hit).join('')}` : ''}
-        ${narrow}`;
-    }
+    if (results) results.innerHTML = `${picked.rows.map(hit).join('')}${narrow}`;
   }
 
   function showFindResults() {
@@ -2598,7 +2620,6 @@ export function installQuote() {
     const dupId = kind === 'invoice'
       ? findDocId(loaded.invoice && loaded.invoice.quote_id)
       : findDocId(loaded.quote && loaded.quote.id);
-    const reprintingSold = kind === 'quote' && loaded.sold && loaded.sold.invoice && loaded.sold.invoice.status === 'approved';
     const headerBits = [];
     const addBit = (label, value) => {
       headerBits.push(`<div><span style="color:var(--muted);">${label}</span> ${shop().escapeHtml(value || '—')}</div>`);
@@ -2629,10 +2650,12 @@ export function installQuote() {
       addBit('Lead time', q.lead_time);
       addBit('Prepared by', q.prepared_by);
     }
-    const lines = reprintingSold ? (loaded.sold.lines || []) : (kind === 'invoice' ? loaded.lines : loaded.lines);
-    const readOnlyNote = reprintingSold
-      ? `Reprint prints ${loaded.sold.invoice.number || 'the approved invoice'} as sold. Stock does not change.`
-      : (allowed ? 'Reprint does not save and does not change stock.' : '');
+    const lines = loaded.lines;
+    const readOnlyNote = !allowed
+      ? ''
+      : (kind === 'quote'
+        ? 'Reprint shows this quote. Stock does not change.'
+        : 'Reprint does not save and does not change stock.');
     detail.innerHTML = `
       <button type="button" class="secondary tap" onclick="showFindResults()">Back</button>
       <div class="info" style="margin-top:0.75rem;">${headerBits.join('')}</div>
@@ -2771,23 +2794,19 @@ export function installQuote() {
     }
     let doc = null;
     if (findView.kind === 'invoice' && loaded.invoice) {
-      const banner = loaded.invoice.status === 'approved' ? '' : FIND_DRAFT_BANNER;
-      doc = printDocFromInvoice(loaded.invoice, loaded.lines, loaded.parent, banner);
+      doc = printDocFromInvoice(loaded.invoice, loaded.lines, loaded.parent, '');
       doc.draft = loaded.invoice.status !== 'approved';
-    } else if (loaded.sold && loaded.sold.invoice && loaded.sold.invoice.status === 'approved') {
-      doc = printDocFromInvoice(loaded.sold.invoice, loaded.sold.lines, loaded.sold.parent || loaded.quote, '');
-      doc.draft = false;
     } else if (loaded.quote) {
       if (!(loaded.lines || []).length) {
         shop().showStatus('Nothing to reprint', 'error');
         return;
       }
       const header = quoteHeaderFromSaved(loaded.quote);
-      printDocWindow('In-Mar Quote ' + (header.number || ''), quoteDocumentHtml(header, loaded.lines));
+      printDocWindow('In-Mar Quote ' + (header.number || ''), quoteDocumentHtml(header, loaded.lines), { view: true });
       return;
     }
     if (!doc) return;
-    printInvoiceDocument(doc);
+    printInvoiceDocument(doc, { view: true });
   }
 
   Object.assign(window, {
@@ -2820,6 +2839,7 @@ export function installQuote() {
     ensureQuotesTables,
     loadQuotesList,
     openFindFromQuotes,
+    openFindKind,
     renderQuotesList,
     startNewQuote,
     openQuote,

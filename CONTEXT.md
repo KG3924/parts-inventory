@@ -157,21 +157,22 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Home
 - Stats row: **Parts**, **Units**, **Low**, **Open Orders**. Parts, Low, and Open Orders open Inventory on that list. Parts opens the full list. Units is a count only.
-- **Find quotes & invoices** is its own full-width tile under that row and above the value cards. It is not inside the stats grid, not on the front row, not in More, and not on the Quote row.
+- **Find Quotes** and **Find Invoices** are two tiles side by side under that row and above the value cards. Each opens its own Find area, fresh every time. **Back to Home** returns to Home. They are not inside the stats grid, not on the front row, not in More, and not on the Quote row.
 - Value cards: **Inventory at Cost**, **At Sell Price**, **Potential Margin**, **Needs Delivery Date**. Needs Delivery Date opens Inventory on that list.
 - **More** sits under the tiles
 
 ### Find & reprint
-- Search needs a number fragment or a customer name. Partial match is enough. An empty search with no dates does not list the book.
-- **Last 7 days** and **From–To** browse quotes and invoices in that window. Dates are shop-local America/Chicago, not UTC midnight. Last 7 is Chicago today and the six days before it, inclusive. From and To are inclusive. One filled date is that one day. Empty search plus a date window lists that window.
+- **Find Quotes** and **Find Invoices** are separate areas. Entering either one, even the same one again, starts fresh: empty search, empty From and To, no list, and no open document. **Back to Home** returns to Home. **Back** on an open document returns to that area's list. Search text, dates, a list, or an open document in one area does not show in the other.
+- Search needs a number fragment or a customer name. Find quotes searches quotes. Find invoices searches invoices. Partial match is enough. An empty search with no dates does not list the book.
+- **Last 7 days** and **From–To** browse that area only. Dates are shop-local America/Chicago, not UTC midnight. Last 7 is Chicago today and the six days before it, inclusive. From and To are inclusive. One filled date is that one day. Empty search plus a date window lists that window.
 - A quote's date is `created_at` in Chicago, then `quote_date`, then `updated_at`. An invoice uses `invoice_date`. An approved invoice uses the Chicago date of `approved_at` when that stamp is set.
 - Typed search and date browse both show about 50, newest first by that date. More than that shows the newest 50 and `Narrow the dates.` A typed search with no dates says `Narrow the search.`
 - A match opens Find only. It does not open the Quote builder. It has Reprint and Dup. It has no Approve, no Void, and no stock control.
 - Find says `Searching…` on the list as soon as search starts, and `Opening…` on the detail as soon as a row is tapped. A newer search, or Back, wins. A slow older request does not paint over that.
-- **Reprint** of a quote prints the saved quote: heading QUOTE, Quote #, Quote date, Valid Until, Quoted total, and the quote footer. It has no Status line. It does not use the open quote form. It does not say INVOICE, Invoice #, or Amount due, and it has no DRAFT stamp and no `Draft — current rows` banner.
-- **Reprint** of an invoice uses the same invoice builder as **Save & print**. It does not save a PDF and does not write a row.
-- An **approved** invoice reprints the stored header and `invoice_lines` (the sold paper), with no DRAFT stamp. A quote that already sold reprints that approved invoice.
-- A **draft** invoice reprints the stored draft. With no number yet it says `Draft — number at Approve`. `From quote` and the quote number sit under that. It shows a DRAFT stamp and `Draft — current rows`.
+- **Reprint** opens the document to look at. It does not open the print dialog. **Print quote**, **Packing list**, and **Save & print invoice** still do. **Reprint** of a quote shows that saved quote: heading QUOTE, Quote #, Quote date, Valid Until, Quoted total, and the quote footer. It has no Status line. It does not use the open quote form. It does not say INVOICE, Invoice #, or Amount due, and it has no DRAFT stamp.
+- **Reprint** of an invoice uses the same invoice builder as **Save & print**, opened to look at. It does not save a PDF and does not write a row.
+- An **approved** invoice reprint shows the stored header and `invoice_lines` (the sold paper), with no DRAFT stamp. A quote that already sold reprints the quote. Open the invoice row in Find Invoices for the sold paper.
+- A **draft** invoice reprint shows the stored draft. With no number yet it says `Draft — number at Approve`. `From quote` and the quote number sit under that. It shows a DRAFT stamp and does not say `Draft — current rows`.
 - A **void** quote hides Reprint and shows `Q-… is cancelled. Start a new quote to bring this deal back.` A draft invoice under that void quote hides Reprint and shows `Q-… is cancelled. This invoice can't be approved.` An approved invoice under a void quote can still be reprinted as sold.
 - **Dup** starts a new draft only. It uses the quote, or the invoice's parent quote. It does not void and does not approve.
 
@@ -222,7 +223,7 @@ Known sale sentences stay exact, including `Q-… is cancelled…`, `I-L… is a
 
 ### Quote (Phase 2 — quote / packing list / invoice)
 - Working **cart** still in `localStorage` (`inv_quote`) until Save
-- **Saved Quotes** is live unsold only: Open (stored as draft), Sent, or Accepted, and no approved invoice. Void, Expired, and any quote with an approved invoice are not in this list. Row actions: Edit, Print, Dup, **Cancel quote**. **Search all in Find** under the list opens Find and focuses the search. Cancel keeps the number. The stored status stays `void`. Lists say **Cancelled**. There is no Delete and no Archive chip.
+- **Saved Quotes** is live unsold only: Open (stored as draft), Sent, or Accepted, and no approved invoice. Void, Expired, and any quote with an approved invoice are not in this list. Row actions: Edit, Print, Dup, **Cancel quote**. **Search all quotes** under the list opens Find quotes, fresh, and focuses the search. Cancel keeps the number. The stored status stays `void`. Lists say **Cancelled**. There is no Delete and no Archive chip.
 - Builder fields: number, status, date, **valid until (default +90 days)**, **Customer** and **Project** (separate), **RFQ #**, **Prepared By** (defaults to logged-in full name), FOB dropdown (Origin / Destination / type-and-save), payment terms dropdown (customer-specific when saved), lead time, notes
 - Printed quote includes a **3.5% credit-card fee** notice
 - **Save quote** / **Print quote** / **Packing list** / **Invoice…** / Duplicate / **Cancel quote** do **not** change stock. Cancel does not restock and does not clear `approved_at`, so a second invoice for that quote is still refused. The **Cancel quote** button sits outside the Invoice… buttons. The status dropdown says **Cancelled** and still saves `void`. Invoices keep the word Void. There is no draft-invoice void. There is no Delete on a saved quote.
