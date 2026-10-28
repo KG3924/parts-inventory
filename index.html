@@ -109,6 +109,12 @@
     button.customer-pick-add { color: var(--accent); font-weight: 600; }
     .badge.badge-new-qb { background: rgba(245, 158, 11, 0.2); color: #92400e; }
     .customer-tag:not([hidden]) { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: -0.3rem 0 0.6rem; }
+    /* CL1b Customers screen. No display rule on [hidden] boxes. */
+    .customer-pick.cust-list { margin: 0 0 0.6rem; max-height: none; }
+    .badge.badge-in-qb { background: rgba(34, 197, 94, 0.15); color: #166534; }
+    .cust-qb { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: -0.3rem 0 0.6rem; }
+    .cust-error { color: var(--danger); font-size: 0.9rem; margin-bottom: 0.5rem; }
+    #customers textarea { resize: vertical; font: inherit; }
     .barcode-preview { text-align: center; padding: 1rem; background: white; border-radius: 8px; margin: 0.75rem 0; }
     .status {
       padding: 0.65rem 0.85rem; border-radius: 8px; margin-bottom: 0.75rem; display: none; font-size: 0.9rem;
@@ -128,7 +134,8 @@
     .status.error { background: #fef2f2; color: var(--danger); border: 1px solid var(--danger); }
     .status.info { background: #eff6ff; color: var(--accent); border: 1px solid var(--accent); }
     /* Part-form errors stay in the card. .status.show is the fixed top banner. */
-    #item-form-error:not([hidden]) {
+    #item-form-error:not([hidden]),
+    #cust-form-error:not([hidden]) {
       display: block;
       position: static;
       width: auto;
@@ -724,6 +731,7 @@
 
     <!-- QUOTE -->
     <div id="quote" class="panel"></div>
+    <div id="customers" class="panel"></div>
 
     <!-- MORE -->
     <div id="data" class="panel">
@@ -961,6 +969,7 @@ notify pgrst, 'reload schema';</pre>
     </div>
     <div class="tab-row tab-row-quote">
       <button type="button" class="tab" data-tab="quote">Quote</button>
+      <button type="button" class="tab" data-tab="customers">Customers</button>
     </div>
   </nav>
 
