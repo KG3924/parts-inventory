@@ -166,9 +166,12 @@
     .stat.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
     .stat.clickable:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
     .stat.clickable.active-filter { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+    .find-home-row {
+      display: flex; gap: 0.5rem; margin: 0 0 0.85rem;
+    }
     .find-home-tile {
       display: flex; align-items: center; justify-content: center;
-      width: 100%; margin: 0 0 0.85rem;
+      flex: 1; min-height: 44px; margin: 0;
       background: var(--card); border: 1px solid var(--border); border-radius: 10px;
       color: var(--text); font-weight: 600; line-height: 1.2; cursor: pointer;
     }
@@ -402,16 +405,20 @@
     <!-- HOME -->
     <div id="dashboard" class="panel active">
       <div class="stats" id="stats"></div>
-      <button type="button" class="find-home-tile tap" onclick="showPanel('find')">Find quotes & invoices</button>
+      <div class="find-home-row">
+        <button type="button" class="find-home-tile tap" onclick="openFindKind('quote')">Find Quotes</button>
+        <button type="button" class="find-home-tile tap" onclick="openFindKind('invoice')">Find Invoices</button>
+      </div>
       <div class="value-cards" id="value-summary"></div>
       <p class="hint">Tap a tile to open it.</p>
       <button type="button" class="secondary tap" id="home-more-btn" onclick="showPanel('data')">More</button>
     </div>
 
-    <!-- FIND quotes and invoices. Not a tab. -->
+    <!-- FIND. One section, two areas. Not a tab. -->
     <div id="find" class="panel">
       <div class="card">
-        <h2>Find quotes & invoices</h2>
+        <button type="button" class="secondary tap" onclick="showPanel('dashboard')">Back to Home</button>
+        <h2 id="find-title">Find quotes</h2>
         <form id="find-form" action="#">
           <label for="find-q">Number or customer</label>
           <input id="find-q" type="search" autocomplete="off" enterkeyhint="search">
@@ -428,7 +435,7 @@
           <button type="submit" class="tap" id="find-go">Find</button>
           <button type="button" class="secondary tap" id="find-last7">Last 7 days</button>
         </form>
-        <p class="hint" id="find-hint">Type a quote number, invoice number, or customer. Last 7 days and From–To use Chicago time. An empty search with no dates does not list everything.</p>
+        <p class="hint" id="find-hint">Type a quote number or customer. Last 7 days and From–To use Chicago time. An empty search with no dates does not list everything.</p>
         <div id="find-results"></div>
         <div id="find-detail" hidden></div>
       </div>
