@@ -769,7 +769,7 @@ export function installQuote() {
     if (status === 'expired') return 'Expired';
     if (status === 'sent') return 'Sent';
     if (status === 'accepted') return 'Accepted';
-    if (status === 'draft' || !status) return 'Draft';
+    if (status === 'draft' || !status) return 'Open';
     return status;
   }
 
@@ -984,7 +984,7 @@ export function installQuote() {
               <td><span class="badge ${q.status === 'accepted' ? 'open-order' : 'source-tag'}">${shop().escapeHtml(quoteStatusLabel(q.status))}</span></td>
               <td style="font-size:0.8rem;color:var(--muted)">${shop().escapeHtml(q.quote_date || '')}</td>
               <td class="actions">
-                <button type="button" class="secondary" onclick="openQuote('${q.id}')">Open</button>
+                <button type="button" class="secondary" onclick="openQuote('${q.id}')">Edit</button>
                 <button type="button" class="secondary" onclick="printQuoteById('${q.id}')">Print</button>
                 <button type="button" class="secondary" onclick="duplicateQuoteById('${q.id}')">Dup</button>
                 <button type="button" class="secondary" ${approvedInvoiceByQuote[q.id] ? 'disabled style="opacity:0.45"' : ''} onclick="voidQuoteById('${q.id}')">Cancel quote</button>
@@ -1367,7 +1367,7 @@ export function installQuote() {
     const by = document.getElementById('quote-by');
     if (by && shop().currentUser()) by.value = shop().currentUser();
     await refreshQuoteInvoices();
-    shop().showStatus('Duplicated as new draft — click Save quote', 'info');
+    shop().showStatus('Duplicated as a new quote. Tap Save quote.', 'info');
   }
 
   async function duplicateQuoteById(id) {
