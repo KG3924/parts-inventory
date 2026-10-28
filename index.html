@@ -1079,7 +1079,7 @@ notify pgrst, 'reload schema';</pre>
       ];
       for (const re of patterns) {
         const hit = text.match(re);
-        if (hit) return hit[1];
+        if (hit) return hit[1].replace(/ is void\./, ' is cancelled.');
       }
       return '';
     }

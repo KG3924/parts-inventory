@@ -24,11 +24,11 @@ export function findReprintAllowed(kind, quoteStatus, invoiceStatus, parentStatu
 export function findVoidNoteText(kind, quoteNumber, quoteStatus, invoiceStatus, parentNumber, parentStatus) {
   if (kind === 'quote' && quoteStatus === 'void') {
     const n = String(quoteNumber || '').trim() || 'This quote';
-    return `${n} is void. Start a new quote to bring this deal back.`;
+    return `${n} is cancelled. Start a new quote to bring this deal back.`;
   }
   if (kind === 'invoice' && invoiceStatus !== 'approved' && parentStatus === 'void') {
     const n = String(parentNumber || '').trim() || 'This quote';
-    return `${n} is void. This invoice can't be approved.`;
+    return `${n} is cancelled. This invoice can't be approved.`;
   }
   return '';
 }
@@ -485,6 +485,7 @@ export function installQuote() {
   let quoteCompany = ''; // '' until picked, then 'L' or 'S'. Locked after the first save.
   let quoteCompanyLocked = false;
   const NEW_QUOTE_NUMBER = 'New — number on first save';
+  const SAVE_QUOTE_FIRST = 'Save the quote first.';
   const DRAFT_INVOICE_NUMBER = 'Draft — number at Approve';
   const PICK_COMPANY_MSG = 'Pick In-Mar Solutions or In-Mar Systems first. The quote was not saved.';
   let customerPickRows = [];
@@ -842,7 +843,7 @@ export function installQuote() {
 
   function voidBlockedMessage(number) {
     const n = String(number || '').trim() || 'This invoice';
-    return `${n} is approved. Voiding this quote won't undo the sale.`;
+    return `${n} is approved. Cancelling this quote won't undo the sale.`;
   }
 
   function linesLockedMessage(number) {
@@ -852,7 +853,7 @@ export function installQuote() {
 
   function quoteVoidedMessage(number) {
     const n = String(number || '').trim() || 'This quote';
-    return `${n} is void. This invoice can't be approved.`;
+    return `${n} is cancelled. This invoice can't be approved.`;
   }
 
   function openQuoteIsVoid() {
@@ -861,7 +862,7 @@ export function installQuote() {
 
   function voidFinalMessage(number) {
     const n = String(number || '').trim() || 'This quote';
-    return `${n} is void. Start a new quote to bring this deal back.`;
+    return `${n} is cancelled. Start a new quote to bring this deal back.`;
   }
 
   function quoteIsVoidFinal() {
@@ -1281,7 +1282,7 @@ export function installQuote() {
   }
 
   async function voidQuoteById(id) {
-    if (!shop().requireUser('voiding quotes')) return;
+    if (!shop().requireUser('cancelling quotes')) return;
     if (!id) {
       shop().showStatus('Open a saved quote to cancel it', 'error');
       return;
@@ -1329,6 +1330,7 @@ export function installQuote() {
       if (st) st.value = 'void';
       emptyWorkingCart();
       resetInvoiceBox();
+      applySaleLocks();
       await refreshQuoteInvoices();
     }
     shop().showStatus(`${num} cancelled. Stock unchanged.`, 'success');
@@ -1469,8 +1471,7 @@ export function installQuote() {
     <div class="doc-title">QUOTE</div>
     <div><strong>Quote #:</strong> ${shop().escapeHtml(data.number)}</div>
     ${data.rfq ? `<div><strong>RFQ #:</strong> ${shop().escapeHtml(data.rfq)}</div>` : ''}
-    <div><strong>Status:</strong> ${shop().escapeHtml(quoteStatusLabel(data.status))}</div>
-    <div><strong>Date:</strong> ${shop().escapeHtml(data.date)}</div>
+    <div><strong>Quote date:</strong> ${shop().escapeHtml(data.date)}</div>
     <div><strong>Valid Until:</strong> ${shop().escapeHtml(data.valid) || '—'}</div>
   </div>
     </div>
@@ -1512,6 +1513,10 @@ export function installQuote() {
   }
 
   function generateQuote() {
+    if (!currentQuoteId()) {
+      shop().showStatus(SAVE_QUOTE_FIRST, 'error');
+      return;
+    }
     if (quoteCart.length === 0) {
       shop().showStatus('Add at least one part to the quote first', 'error');
       return;
@@ -1523,6 +1528,10 @@ export function installQuote() {
   }
 
   async function printPackingList() {
+    if (!currentQuoteId()) {
+      shop().showStatus(SAVE_QUOTE_FIRST, 'error');
+      return;
+    }
     if (quoteCart.length === 0) {
       shop().showStatus('Add quote lines first', 'error');
       return;
@@ -1768,11 +1777,15 @@ export function installQuote() {
       voidBtn.disabled = blocked;
       voidBtn.style.opacity = blocked ? '0.45' : '';
     }
+    const hideActions = voidFinal && !blocked;
     const saveBtn = document.getElementById('quote-save-btn');
-    if (saveBtn) {
-      saveBtn.disabled = blocked;
-      saveBtn.style.opacity = (blocked || voidFinal) ? '0.45' : '';
-    }
+    const invoiceBtn = document.getElementById('quote-invoice-btn');
+    [saveBtn, invoiceBtn].forEach(btn => {
+      if (!btn) return;
+      btn.hidden = hideActions;
+      btn.disabled = blocked || hideActions;
+      btn.style.opacity = blocked ? '0.45' : '';
+    });
     const saveNew = document.getElementById('quote-save-new-btn');
     if (saveNew) saveNew.hidden = !(blocked || voidFinal);
     const printBtn = document.getElementById('quote-save-print-btn');
@@ -1853,11 +1866,6 @@ export function installQuote() {
     const blocked = quoteSaleBlocked();
     applySaleLocks();
     if (linked && (!opts || opts.syncApproved !== false)) renderQuotesList();
-    const btn = document.getElementById('quote-invoice-btn');
-    if (btn) {
-      btn.disabled = blocked;
-      btn.style.opacity = blocked ? '0.45' : '';
-    }
     const display = linked ? currentQuoteInvoices : (rows || []);
     const mismatchMsg = linked ? quoteDraftMismatch() : '';
     const note = document.getElementById('quote-sale-note');
@@ -2074,8 +2082,7 @@ export function installQuote() {
   <div class="meta">
     <div class="doc-title">INVOICE</div>${banner}
     <div><strong>Invoice #:</strong> ${shop().escapeHtml(invLabel)}</div>
-    <div>From quote ${shop().escapeHtml(doc.quoteNumber || '')}</div>
-    <div><strong>Quote #:</strong> ${shop().escapeHtml(doc.quoteNumber)}</div>
+    ${doc.quoteNumber ? `<div>From quote ${shop().escapeHtml(doc.quoteNumber)}</div>` : ''}
     ${po ? `<div><strong>PO #:</strong> ${shop().escapeHtml(po)}</div>` : ''}
     ${rfq ? `<div><strong>RFQ #:</strong> ${shop().escapeHtml(rfq)}</div>` : ''}
     <div><strong>Invoice date:</strong> ${shop().escapeHtml(doc.invoiceDate)}</div>
