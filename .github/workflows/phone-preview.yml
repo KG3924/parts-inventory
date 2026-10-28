@@ -30,6 +30,9 @@ jobs:
       - name: Refuse the part-count catalog in the published site
         run: sh scripts/refuse-shipped-count-seed.sh dist
 
+      - name: Refuse customer data in the published site
+        run: sh scripts/refuse-customer-data.sh dist
+
       - name: Publish the built site to the stable preview URL
         env:
           PREVIEW_DEPLOY_TOKEN: ${{ secrets.PREVIEW_DEPLOY_TOKEN }}
