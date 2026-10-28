@@ -16,7 +16,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 - GitHub: https://github.com/KG3924/parts-inventory (public). **Settings → Pages → Source** is **GitHub Actions** (`.github/workflows/pages.yml`), not “Deploy from a branch.”
 - Data backend: **Supabase** (Postgres + realtime)
 - Frontend: Vite. `index.html` is the shell. The Quote screen is `src/quote.js` and `src/quote-markup.js`, started from `src/main.js`. No React. There is no separate Invoice tab.
-- Logos follow the company stored on that document. L uses `public/In-Mar-Solutions-logo-v4.png` (alt In-Mar Solutions). S uses `public/In-Mar-Systems-logo-v4.png` (alt In-Mar Systems). A blank company prints no logo. Those two PNG files are not in this repo yet; do not substitute `inmar-logo.jpg`. The address line stays 3011 S. Ruby Ave, Gonzales, LA 70737, (225) 430-9111, info@inmarsystems.com.
+- Logos follow the company stored on that document. L uses `public/In-Mar-Solutions-logo-v4.png` (alt In-Mar Solutions). S uses `public/In-Mar-Systems-logo-v4.png` (alt In-Mar Systems). A blank company prints no logo. Do not substitute `inmar-logo.jpg`. The address line stays 3011 S. Ruby Ave, Gonzales, LA 70737, (225) 430-9111, info@inmarsystems.com.
 - Label printer: **Brother QL-710W** with **DK-1201** die-cut labels (1.1″ × 3.5″)
 
 ---
@@ -419,8 +419,8 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `public/shop-auth.js` | Shared login wall for the app and count tool |
 | `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
 | `public/inmar-logo.jpg` | Older shop logo. Quotes, packing lists, and invoices no longer use it |
-| `public/In-Mar-Solutions-logo-v4.png` | Logo when the document company is L. Not in the repo yet |
-| `public/In-Mar-Systems-logo-v4.png` | Logo when the document company is S. Not in the repo yet |
+| `public/In-Mar-Solutions-logo-v4.png` | Logo when the document company is L |
+| `public/In-Mar-Systems-logo-v4.png` | Logo when the document company is S |
 | `schema/co1_company_numbering.sql` | Two companies, four gap-free counters, number on first save, delete lock. Kyle runs it once by hand after Pages is live and every phone has hard-refreshed. Not wired into the build |
 | `schema/co1_cutover_reset.sql` | Cutover-day tool only. Not part of the build. Run the file, then count only, then CLEAR PRACTICE DATA, after a backup |
 | `README.md` | Setup docs |
