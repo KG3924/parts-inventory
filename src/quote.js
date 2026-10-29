@@ -227,6 +227,7 @@ export function installQuote() {
   let findView = null;
   let findSeq = 0;
   let findKind = 'quote';
+  let findPackingBusy = false;
 
   // Save, print, packing, and draft invoices do not change qty. Approve does, on the server.
   let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
@@ -1530,77 +1531,6 @@ export function installQuote() {
     printDocWindow('In-Mar Quote ' + data.number, quoteDocumentHtml(data, quoteCart));
   }
 
-  async function printPackingList() {
-    if (!currentQuoteId()) {
-      shop().showStatus(SAVE_QUOTE_FIRST, 'error');
-      return;
-    }
-    if (quoteCart.length === 0) {
-      shop().showStatus('Add quote lines first', 'error');
-      return;
-    }
-    const data = collectQuoteHeader();
-    data.company = quoteCompany;
-    let plNumber = '';
-    try { plNumber = await nextDocNumber('packing_list'); } catch (e) { return; }
-    const quoteId = editingQuoteId || document.getElementById('quote-edit-id')?.value || null;
-    if (shop().supabaseClient && quoteId) {
-      try {
-        const { data: pl, error } = await shop().supabaseClient.from('packing_lists').insert({
-          number: plNumber,
-          quote_id: quoteId,
-          customer_name: data.customer || null,
-          project: data.project || null,
-          pack_date: data.date,
-          prepared_by: data.by || shop().currentUser(),
-          notes: null,
-          created_by: shop().currentUser()
-        }).select('id').maybeSingle();
-        if (!error && pl?.id) {
-          await shop().supabaseClient.from('packing_list_lines').insert(quoteCart.map((c, i) => ({
-            packing_list_id: pl.id,
-            line_no: i + 1,
-            inventory_id: c.inventory_id || c.id || null,
-            part_number: c.part_number,
-            name: c.name,
-            qty: c.qty || 1
-          })));
-        }
-      } catch (e) { /* print even if save tables missing */ }
-    }
-    const rows = quoteCart.map(c => `<tr>
-      <td style="font-family:monospace;font-size:12px;">${shop().escapeHtml(c.part_number)}</td>
-      <td>${shop().escapeHtml(c.name)}</td>
-      <td style="text-align:center;font-weight:700;">${c.qty}</td>
-    </tr>`).join('');
-    printDocWindow('In-Mar Packing List ' + plNumber, `
-    <div class="header">
-  <div>${companyBlock(data.company)}</div>
-  <div class="meta">
-    <div class="doc-title">PACKING LIST</div>
-    <div><strong>Packing list #:</strong> ${shop().escapeHtml(plNumber)}</div>
-    <div><strong>Quote #:</strong> ${shop().escapeHtml(data.number)}</div>
-    <div><strong>Date:</strong> ${shop().escapeHtml(data.date)}</div>
-  </div>
-    </div>
-    <div class="info">
-  <div><span>Customer / consignee:</span> ${shop().escapeHtml(data.customer) || '—'}</div>
-  <div><span>Project:</span> ${shop().escapeHtml(data.project) || '—'}</div>
-  <div><span>Prepared By:</span> ${shop().escapeHtml(data.by) || '—'}</div>
-  <div><span>FOB / ship point:</span> ${shop().escapeHtml(data.fob) || '—'}</div>
-    </div>
-    <p class="legal">Contents only — not a quote or invoice.</p>
-    <table>
-  <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty shipped</th></tr></thead>
-  <tbody>${rows}</tbody>
-    </table>
-    <div style="display:flex;gap:40px;margin-top:36px;">
-  <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Packed by / date</div>
-  <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Received by / date — contents checked</div>
-    </div>
-    <div class="footer">Check contents on receipt.${letterheadName(data.company)}</div>`);
-  }
-
   function invoiceMath() {
     const subtotal = quoteCartTotal();
     const shipping = parseFloat(document.getElementById('inv-shipfee')?.value) || 0;
@@ -2723,16 +2653,26 @@ export function installQuote() {
       ${kind === 'quote' && (loaded.invoices || []).length ? `<p class="hint">On this quote: ${shop().escapeHtml((loaded.invoices || []).map(row => `${row.number || ''} ${findStatusLabel('invoice', row.status)}`).join(', '))}</p>` : ''}
       ${note ? `<p class="hint">${shop().escapeHtml(note)}</p>` : ''}
       ${readOnlyNote ? `<p class="hint">${shop().escapeHtml(readOnlyNote)}</p>` : ''}
-      ${findDetailActions(allowed, dupId)}`;
+      ${findDetailActions(allowed, dupId, findPackingAllowed(kind, loaded))}`;
     const btn = document.getElementById('find-reprint');
     if (btn) btn.addEventListener('click', () => { reprintFindDoc(); });
+    const packBtn = document.getElementById('find-packing');
+    if (packBtn) packBtn.addEventListener('click', () => { printFindPackingList(); });
     const dupBtn = document.getElementById('find-dup');
     if (dupBtn) dupBtn.addEventListener('click', () => { duplicateFindDoc(); });
   }
 
-  function findDetailActions(allowed, dupId) {
+  function findPackingAllowed(kind, loaded) {
+    const inv = kind === 'invoice' && loaded && loaded.invoice;
+    if (!inv) return false;
+    if (inv.status !== 'approved' || !String(inv.number || '').startsWith('I-')) return false;
+    return Array.isArray(loaded.lines) && loaded.lines.length > 0;
+  }
+
+  function findDetailActions(allowed, dupId, packing) {
     const buttons = [
       allowed ? '<button type="button" class="tap" id="find-reprint">Reprint</button>' : '',
+      packing ? '<button type="button" class="secondary tap" id="find-packing">Packing list</button>' : '',
       dupId ? '<button type="button" class="secondary tap" id="find-dup">Dup</button>' : ''
     ].filter(Boolean);
     return buttons.length ? `<div class="btn-group">${buttons.join('')}</div>` : '';
@@ -2867,6 +2807,73 @@ export function installQuote() {
     printInvoiceDocument(doc, { view: true });
   }
 
+  function packingListDocumentHtml(inv, lines, quoteNumber) {
+    const rows = (lines || []).map(line => `<tr>
+      <td style="font-family:monospace;font-size:12px;">${shop().escapeHtml(line.part_number || '')}</td>
+      <td>${shop().escapeHtml(line.name || '')}</td>
+      <td style="text-align:center;font-weight:700;">${shop().escapeHtml(line.qty == null ? '' : String(line.qty))}</td>
+    </tr>`).join('');
+    const fromQuote = quoteNumber ? `<div>From quote ${shop().escapeHtml(quoteNumber)}</div>` : '';
+    return `
+    <div class="header">
+  <div>${companyBlock(inv.company)}</div>
+  <div class="meta">
+    <div class="doc-title">PACKING LIST</div>
+    <div><strong>Invoice #:</strong> ${shop().escapeHtml(inv.number || '')}</div>
+    ${fromQuote}
+    <div><strong>Date:</strong> ${shop().escapeHtml(inv.invoice_date || '')}</div>
+  </div>
+    </div>
+    <div class="info">
+  <div><span>Customer / consignee:</span> ${shop().escapeHtml(inv.customer_name) || '—'}</div>
+  <div><span>Project:</span> ${shop().escapeHtml(inv.project) || '—'}</div>
+  <div><span>Prepared By:</span> ${shop().escapeHtml(inv.prepared_by) || '—'}</div>
+  <div><span>FOB / ship point:</span> ${shop().escapeHtml(inv.fob_point) || '—'}</div>
+    </div>
+    <p class="legal">Contents only — not a quote or invoice.</p>
+    <table>
+  <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty shipped</th></tr></thead>
+  <tbody>${rows}</tbody>
+    </table>
+    <div style="display:flex;gap:40px;margin-top:36px;">
+  <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Packed by / date</div>
+  <div style="flex:1;border-top:1px solid #94a3b8;padding-top:6px;font-size:12px;color:#475569;">Received by / date — contents checked</div>
+    </div>
+    <div class="footer">Check contents on receipt.${letterheadName(inv.company)}</div>`;
+  }
+
+  async function printFindPackingList() {
+    if (findPackingBusy) return;
+    if (!findView || findView.kind !== 'invoice') return;
+    const viewAtStart = findView;
+    const seqAtStart = findSeq;
+    findPackingBusy = true;
+    try {
+      const loaded = await loadFindDoc(viewAtStart.kind, viewAtStart.id);
+      if (findView !== viewAtStart || seqAtStart !== findSeq) return;
+      if (!loaded || loaded.error) {
+        shop().showStatus(shop().plainDbError(loaded && loaded.error, 'load'), 'error');
+        return;
+      }
+      if (loaded.missing) {
+        shop().showStatus('Invoice not found', 'error');
+        return;
+      }
+      findView = { kind: findView.kind, id: findView.id, loaded };
+      const inv = loaded.invoice;
+      const lines = loaded.lines || [];
+      renderFindDetail(findView.kind, loaded);
+      if (!findPackingAllowed(findView.kind, loaded) || !lines.length) {
+        shop().showStatus('A packing list needs an approved invoice with lines.', 'error');
+        return;
+      }
+      const quoteNumber = (loaded.parent && loaded.parent.number) || '';
+      printDocWindow('In-Mar Packing List ' + (inv.number || ''), packingListDocumentHtml(inv, lines, quoteNumber));
+    } finally {
+      findPackingBusy = false;
+    }
+  }
+
   Object.assign(window, {
     saveQuoteCart,
     addToQuote,
@@ -2914,7 +2921,6 @@ export function installQuote() {
     quoteDocumentHtml,
     invoiceDocumentHtml,
     generateQuote,
-    printPackingList,
     invoiceMath,
     updateInvoicePreview,
     openInvoiceForm,
