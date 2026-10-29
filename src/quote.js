@@ -2393,6 +2393,44 @@ export function installQuote() {
     return { error: null, rows, truncated };
   }
 
+  function findPartRpcMissing(error) {
+    if (!error) return false;
+    const code = String(error.code || '');
+    if (code === 'PGRST202' || code === '42883') return true;
+    const raw = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+    return /shop_find_docs_by_part/i.test(raw) && /schema cache|could not find the function|does not exist/i.test(raw);
+  }
+
+  async function loadFindByPart(kind, q, dateWindow, knownIds) {
+    const { data, error } = await shop().supabaseClient.rpc('shop_find_docs_by_part', {
+      p_kind: kind,
+      p_q: q,
+      p_from: dateWindow ? dateWindow.from : null,
+      p_to: dateWindow ? dateWindow.to : null
+    });
+    if (error) {
+      if (findPartRpcMissing(error)) return { missing: true, rows: [], truncated: false };
+      return { error, rows: [], truncated: false };
+    }
+    const hits = Array.isArray(data) ? data : [];
+    const truncated = hits.some(row => row && row.more === true);
+    const ids = [];
+    hits.forEach(row => {
+      const id = findDocId(row && row.id);
+      if (!id) return;
+      const key = id.toLowerCase();
+      if (knownIds.has(key)) return;
+      knownIds.add(key);
+      ids.push(id);
+    });
+    if (!ids.length) return { rows: [], truncated };
+    const table = kind === 'invoice' ? 'invoices' : 'quotes';
+    const cols = kind === 'invoice' ? FIND_INVOICE_LIST_COLS : FIND_QUOTE_LIST_COLS;
+    const loaded = await shop().supabaseClient.from(table).select(cols).in('id', ids);
+    if (loaded.error) return { error: loaded.error, rows: [], truncated: false };
+    return { rows: loaded.data || [], truncated };
+  }
+
   function fillFindLast7() {
     const today = shopToday(new Date());
     const from = addCivilDays(today, -6);
@@ -2432,7 +2470,7 @@ export function installQuote() {
     if (title) title.textContent = findKind === 'invoice' ? 'Find invoices' : 'Find quotes';
     const hint = document.getElementById('find-hint');
     if (hint) {
-      const lead = findKind === 'invoice' ? 'Type an invoice number or customer.' : 'Type a quote number or customer.';
+      const lead = findKind === 'invoice' ? 'Type an invoice number, customer or part.' : 'Type a quote number, customer or part.';
       hint.textContent = `${lead} Last 7 days and From–To use Chicago time. An empty search with no dates does not list everything.`;
     }
     if (typeof window.showPanel === 'function') window.showPanel('find');
@@ -2461,7 +2499,7 @@ export function installQuote() {
     const dateWindow = readFindWindow();
     if (!q && !dateWindow) {
       if (seq !== findSeq) return;
-      if (results) results.innerHTML = '<p class="empty">Type a number or customer, or pick dates. An empty search with no dates does not list the book.</p>';
+      if (results) results.innerHTML = '<p class="empty">Type a number, customer or part, or pick dates. An empty search with no dates does not list the book.</p>';
       return;
     }
     if (!shop().supabaseClient) {
@@ -2496,11 +2534,31 @@ export function installQuote() {
     const stampOf = kind === 'invoice' ? invoiceListStamp : quoteListStamp;
     found.rows.forEach(row => items.push({ kind, row, stamp: stampOf(row) }));
     if (found.truncated) items.push({ truncated: true });
+    let partNote = '';
+    if (q) {
+      const knownIds = new Set();
+      found.rows.forEach(row => {
+        const id = findDocId(row && row.id);
+        if (id) knownIds.add(id.toLowerCase());
+      });
+      const part = await loadFindByPart(kind, q, dateWindow, knownIds);
+      if (seq !== findSeq) return;
+      if (part.missing) {
+        partNote = '<p class="hint">Search needs an update. Only numbers and customers were searched.</p>';
+      } else if (part.error) {
+        console.warn(part.error);
+        if (results) results.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(part.error, 'load'))}</p>`;
+        return;
+      } else {
+        part.rows.forEach(row => items.push({ kind, row, stamp: stampOf(row) }));
+        if (part.truncated) items.push({ truncated: true });
+      }
+    }
     const picked = assembleFindHits(items, dateWindow, FIND_LIST_CAP);
     const narrow = picked.capped ? `<p class="hint">${findNarrowCopy(!!dateWindow)}</p>` : '';
     if (!picked.rows.length) {
       const none = kind === 'invoice' ? 'No invoices match.' : 'No quotes match.';
-      if (results) results.innerHTML = `<p class="empty">${none}</p>${narrow}`;
+      if (results) results.innerHTML = `<p class="empty">${none}</p>${narrow}${partNote}`;
       return;
     }
     const hit = (entry) => {
@@ -2517,7 +2575,7 @@ export function installQuote() {
         ${extra ? `<div style="font-size:0.8rem;color:var(--muted);">${shop().escapeHtml(extra)}</div>` : ''}
       </button>`;
     };
-    if (results) results.innerHTML = `${picked.rows.map(hit).join('')}${narrow}`;
+    if (results) results.innerHTML = `${picked.rows.map(hit).join('')}${narrow}${partNote}`;
   }
 
   function showFindResults() {
