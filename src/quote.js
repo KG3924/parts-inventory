@@ -2809,13 +2809,13 @@ export function installQuote() {
 
   function shipToFontPx(text) {
     const lines = String(text || '').split('\n');
-    for (let size = 22; size >= 13; size--) {
-      const per = Math.floor(298 / (size * 0.6));
+    for (let size = 16; size >= 13; size--) {
+      const per = Math.floor(224 / (size * 0.6));
       let rows = 0;
       lines.forEach(line => {
         rows += line.length === 0 ? 1 : Math.ceil(line.length / per);
       });
-      if (rows * size * 1.25 <= 190) return size;
+      if (rows * size * 1.3 <= 170) return size;
     }
     return 12;
   }
@@ -2828,10 +2828,12 @@ export function installQuote() {
     </tr>`).join('');
     const ship = String(inv.ship_to || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
     const shipBlock = ship
-      ? `<div style="font-size:11px;letter-spacing:0.06em;color:#64748b;font-weight:600;">SHIP TO</div>
-    <div style="font-weight:700;font-size:${shipToFontPx(ship)}px;line-height:1.25;white-space:pre-line;overflow-wrap:anywhere;">${shop().escapeHtml(ship)}</div>`
+      ? `<div style="font-size:13px;font-weight:500;color:#64748b;">Ship to:</div>
+    <div style="font-weight:400;color:#1e293b;font-size:${shipToFontPx(ship)}px;line-height:1.3;white-space:pre-line;overflow-wrap:anywhere;">${shop().escapeHtml(ship)}</div>`
       : '';
-    const fromQuote = quoteNumber ? `<div style="font-size:14px;">From quote ${shop().escapeHtml(quoteNumber)}</div>` : '';
+    const fromQuote = quoteNumber
+      ? `<div style="font-size:13px;"><span style="font-weight:500;color:#64748b;">From quote:</span> <span style="font-weight:400;color:#1e293b;">${shop().escapeHtml(quoteNumber)}</span></div>`
+      : '';
     return `
     <div style="position:relative;box-sizing:border-box;height:2.94in;border-bottom:2px solid #1e3a5f;padding-bottom:16px;margin-bottom:20px;">
   <div style="width:3.4in;max-width:3.4in;">
@@ -2839,9 +2841,9 @@ export function installQuote() {
     <div class="doc-title">PACKING LIST</div>
     <div><strong>Date:</strong> ${shop().escapeHtml(inv.invoice_date || '')}</div>
   </div>
-  <div style="position:absolute;left:3.725in;top:0;width:3.3in;height:2.75in;box-sizing:border-box;border:2px solid #1e3a5f;padding:8px;">
+  <div style="position:absolute;left:4.6in;top:0;width:2.4in;height:2.5in;box-sizing:border-box;">
     ${shipBlock}
-    <div style="margin-top:8px;font-size:14px;font-weight:700;">Invoice #: ${shop().escapeHtml(inv.number || '')}</div>
+    <div style="margin-top:8px;font-size:13px;"><span style="font-weight:500;color:#64748b;">Invoice #:</span> <span style="font-weight:400;color:#1e293b;">${shop().escapeHtml(inv.number || '')}</span></div>
     ${fromQuote}
   </div>
     </div>
