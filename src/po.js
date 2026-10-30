@@ -133,15 +133,13 @@ function poPrintStyle() {
     table.po-meta td.po-side-right { padding-left: 0.28in; }
     table.po-fields td.po-lab { font-weight: 700; text-align: right; vertical-align: top; white-space: nowrap; padding: 2px 10px 8px 0; width: 1%; }
     table.po-fields td.po-val { vertical-align: top; white-space: pre-wrap; padding: 0 0 8px 0; }
-    .po-box { border: 1px solid #000; padding: 2px 6px; white-space: pre-wrap; box-sizing: border-box; }
-    .po-box-tall { min-height: 0.8in; }
     .po-bar { height: 10px; background: #c8c8c8; margin: 8px 0 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .po-please { font-style: italic; margin: 0 0 8px; }
     table.po-items { width: 100%; border-collapse: collapse; }
     table.po-items th, table.po-items td { border: 1px solid #000; background: #fff; padding: 4px 6px; vertical-align: top; font-weight: 400; }
     table.po-items th { font-weight: 700; text-align: center; white-space: nowrap; }
     td.po-num, td.po-qty { text-align: center; }
-    tr.po-gap td { height: 1.9in; }
+    tr.po-gap td { height: 0.9in; }
     td.po-notes { white-space: pre-wrap; }
     table.po-foot { width: 100%; border-collapse: collapse; margin-top: 10px; }
     table.po-foot td.po-del { vertical-align: top; padding-top: 10px; white-space: pre-wrap; }
@@ -159,7 +157,6 @@ export function poPrintHtml(fields, lines, letterhead, escape) {
       <td>${e(line.part_number)}</td>
       <td>${e(line.name)}</td>
     </tr>`).join("");
-  const box = (text, tall) => `<div class="po-box${tall ? " po-box-tall" : ""}">${e(text)}</div>`;
   const field = (label, value) => `<tr><td class="po-lab">${label}</td><td class="po-val">${value}</td></tr>`;
   return `${poPrintStyle()}
   <div class="po-page">
@@ -175,7 +172,7 @@ export function poPrintHtml(fields, lines, letterhead, escape) {
         <td class="po-side">
           <table class="po-fields">
             ${field("Date:", e(src.date))}
-            ${field("To:", box(src.to, true))}
+            ${field("To:", e(src.to))}
             ${field("Attn:", e(src.attn))}
             ${field("Project:", e(src.project))}
             ${field("Customer PO ref:", e(src.ref))}
@@ -183,8 +180,8 @@ export function poPrintHtml(fields, lines, letterhead, escape) {
         </td>
         <td class="po-side po-side-right">
           <table class="po-fields">
-            ${field("Ship To:", box(src.ship, true))}
-            ${field("Invoice To:", box(src.invoice, false))}
+            ${field("Ship To:", e(src.ship))}
+            ${field("Invoice To:", e(src.invoice))}
           </table>
         </td>
       </tr>
