@@ -13,18 +13,45 @@ export function findSearchText(raw) {
 export function findReprintAllowed(kind, quoteStatus, invoiceStatus, parentStatus) {
   if (kind === 'quote') return quoteStatus !== 'void';
   if (kind === 'invoice') {
+    if (invoiceStatus === 'void') return false;
     if (invoiceStatus === 'approved') return true;
     return parentStatus !== 'void';
   }
   return false;
 }
 
-export function findVoidNoteText(kind, quoteNumber, quoteStatus, invoiceStatus, parentNumber, parentStatus) {
+export function findVoidAllowed(kind, invoice) {
+  if (kind !== 'invoice' || !invoice) return false;
+  if (invoice.status !== 'approved') return false;
+  return String(invoice.number || '').startsWith('I-');
+}
+
+// A void invoice is not a draft. Callers that used "not approved" as "draft" hide or mislabel it.
+export function isDraftInvoice(row) {
+  const status = row && row.status;
+  return status !== 'approved' && status !== 'void';
+}
+
+// Find's non-approved buckets. Void fails isDraftInvoice and must still show, labelled Void.
+function findInvoiceNotApprovedOr(includeNullApprovedAt) {
+  const voidIsDraft = isDraftInvoice({ status: 'void' });
+  const clause = includeNullApprovedAt
+    ? 'status.neq.approved,approved_at.is.null'
+    : 'status.is.null,status.neq.approved';
+  // A draft-only filter would hide the void invoice. Keep the wider clause either way.
+  return voidIsDraft ? clause : clause;
+}
+
+export function findVoidNoteText(kind, quoteNumber, quoteStatus, invoiceStatus, parentNumber, parentStatus, invoiceNumber) {
   if (kind === 'quote' && quoteStatus === 'void') {
     const n = String(quoteNumber || '').trim() || 'This quote';
     return `${n} is cancelled. Start a new quote to bring this deal back.`;
   }
-  if (kind === 'invoice' && invoiceStatus !== 'approved' && parentStatus === 'void') {
+  if (kind === 'invoice' && invoiceStatus === 'void') {
+    const n = String(invoiceNumber || '').trim() || 'This invoice';
+    return `${n} is void. It can't be reprinted or approved.`;
+  }
+  if (kind === 'invoice' && isDraftInvoice({ status: invoiceStatus }) && parentStatus === 'void') {
     const n = String(parentNumber || '').trim() || 'This quote';
     return `${n} is cancelled. This invoice can't be approved.`;
   }
@@ -154,6 +181,29 @@ function ymdOnly(raw) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
 }
 
+function formatChicagoWhen(value) {
+  if (value == null || value === '') return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: SHOP_TZ,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function findVoidedSummary(inv) {
+  if (!inv || inv.status !== 'void') return '';
+  const number = String(inv.number || '').trim() || 'This invoice';
+  const when = formatChicagoWhen(inv.voided_at);
+  const who = String(inv.voided_by || '').trim();
+  const why = String(inv.void_reason || '').trim();
+  return `${number} is void. Voided ${when} by ${who}: ${why}`;
+}
+
 function formatChicagoYmd(date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: SHOP_TZ,
@@ -228,6 +278,7 @@ export function installQuote() {
   let findSeq = 0;
   let findKind = 'quote';
   let findPackingBusy = false;
+  let findVoidBusy = false;
 
   // Save, print, packing, and draft invoices do not change qty. Approve does, on the server.
   let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
@@ -1646,7 +1697,7 @@ export function installQuote() {
   }
 
   function newestOpenDraft() {
-    const drafts = currentQuoteInvoices.filter(r => r && r.id && r.status !== 'approved');
+    const drafts = currentQuoteInvoices.filter(r => r && r.id && isDraftInvoice(r));
     drafts.sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     return drafts.length ? drafts[drafts.length - 1] : null;
   }
@@ -1815,7 +1866,7 @@ export function installQuote() {
         note.style.display = 'block';
         note.style.whiteSpace = '';
         note.textContent = voidFinalMessage(document.getElementById('quote-number')?.value);
-      } else if (linked && openQuoteIsVoid() && display.some(r => r && r.status !== 'approved')) {
+      } else if (linked && openQuoteIsVoid() && display.some(r => r && isDraftInvoice(r))) {
         note.style.display = 'block';
         note.style.whiteSpace = '';
         note.textContent = quoteVoidedMessage(document.getElementById('quote-number')?.value);
@@ -1841,12 +1892,13 @@ export function installQuote() {
     const quoteVoided = linked && openQuoteIsVoid();
     const quoteNum = document.getElementById('quote-number')?.value || '';
     list.innerHTML = display.map(r => {
+      const draft = isDraftInvoice(r);
       const isApproved = r.status === 'approved';
-      const zombie = quoteVoided && !isApproved;
-      const holdApprove = !isApproved && (zombie || !!mismatchMsg);
+      const zombie = quoteVoided && draft;
+      const holdApprove = draft && (zombie || !!mismatchMsg);
       return `<div class="btn-group" style="align-items:center;">
         <div><code>${shop().escapeHtml(r.number || DRAFT_INVOICE_NUMBER)}</code><div>From quote ${shop().escapeHtml(quoteNum)}</div></div>
-        <span class="badge ${isApproved ? 'open-order' : 'source-tag'}">${isApproved ? 'Approved' : 'Draft'}</span>
+        <span class="badge ${isApproved ? 'open-order' : 'source-tag'}">${shop().escapeHtml(findStatusLabel('invoice', r.status))}</span>
         ${zombie ? `<span>${shop().escapeHtml(quoteVoidedMessage(quoteNum))}</span>` : ''}
         <button type="button" class="tap" ${holdApprove ? 'disabled style="opacity:0.45"' : ''} onclick="approveInvoice('${r.id}')">Approve</button>
       </div>`;
@@ -1921,7 +1973,7 @@ export function installQuote() {
     }
     const row = currentQuoteInvoices.find(r => r && String(r.id) === String(id));
     const mismatchMsg = quoteDraftMismatch();
-    if (mismatchMsg && (!row || row.status !== 'approved')) {
+    if (mismatchMsg && (!row || isDraftInvoice(row))) {
       showApproveError(mismatchMsg);
       return;
     }
@@ -2196,7 +2248,7 @@ export function installQuote() {
   }
 
   const FIND_QUOTE_COLS = 'id,number,company,customer_name,status,quote_date,valid_until,prepared_by,notes,project,rfq_number,fob_point,payment_terms,lead_time';
-  const FIND_INVOICE_COLS = 'id,number,company,quote_id,customer_name,project,po_number,ship_to,invoice_date,due_date,fob_point,payment_terms,cc_used,cc_fee_amount,shipping_fee,duty,tariffs,subtotal,total,prepared_by,notes,status';
+  const FIND_INVOICE_COLS = 'id,number,company,quote_id,customer_name,project,po_number,ship_to,invoice_date,due_date,fob_point,payment_terms,cc_used,cc_fee_amount,shipping_fee,duty,tariffs,subtotal,total,prepared_by,notes,status,voided_at,voided_by,void_reason';
   const FIND_LINE_COLS = 'line_no,part_number,name,qty,unit_price';
 
   function sortFindLines(lines) {
@@ -2209,7 +2261,10 @@ export function installQuote() {
   }
 
   function findStatusLabel(kind, status) {
-    if (kind === 'invoice') return status === 'approved' ? 'Approved' : 'Draft';
+    if (kind === 'invoice') {
+      if (status === 'void' && !isDraftInvoice({ status })) return 'Void';
+      return status === 'approved' ? 'Approved' : 'Draft';
+    }
     return quoteStatusLabel(status);
   }
 
@@ -2292,14 +2347,14 @@ export function installQuote() {
         return next.order('invoice_date', { ascending: false });
       },
       (q) => {
-        let next = q.or('status.is.null,status.neq.approved').not('invoice_date', 'is', null);
+        let next = q.or(findInvoiceNotApprovedOr(false)).not('invoice_date', 'is', null);
         if (bounds.from) next = next.gte('invoice_date', bounds.from);
         if (bounds.to) next = next.lte('invoice_date', bounds.to);
         return next.order('invoice_date', { ascending: false });
       }
     ];
     if (!bounds.from && !bounds.to) {
-      specs.push((q) => q.is('invoice_date', null).or('status.neq.approved,approved_at.is.null').order('created_at', { ascending: false }));
+      specs.push((q) => q.is('invoice_date', null).or(findInvoiceNotApprovedOr(true)).order('created_at', { ascending: false }));
     }
     return specs;
   }
@@ -2521,9 +2576,20 @@ export function installQuote() {
     if (results) results.hidden = false;
   }
 
+  function missingVoidColumns(error) {
+    const raw = [error && error.message, error && error.details, error && error.hint].filter(Boolean).join(' ');
+    return /voided_at|voided_by|void_reason/i.test(raw) && /does not exist|schema cache|could not find/i.test(raw);
+  }
+
   async function loadFindInvoice(id) {
     const client = shop().supabaseClient;
-    const { data: inv, error } = await selectFindRow('invoices', FIND_INVOICE_COLS, id);
+    let res = await selectFindRow('invoices', FIND_INVOICE_COLS, id);
+    if (res.error && missingVoidColumns(res.error)) {
+      const slim = FIND_INVOICE_COLS.split(',').filter(col => col !== 'voided_at' && col !== 'voided_by' && col !== 'void_reason').join(',');
+      res = await selectFindRow('invoices', slim, id);
+    }
+    const inv = res.data;
+    const error = res.error;
     if (error) return { error };
     if (!inv) return { missing: true };
     const { data: lines, error: lineErr } = await client.from('invoice_lines').select(FIND_LINE_COLS).eq('invoice_id', id).order('line_no');
@@ -2603,8 +2669,11 @@ export function installQuote() {
       ? (loaded.quote && loaded.quote.number)
       : (loaded.parent && loaded.parent.number);
     const parentNumber = loaded.parent && loaded.parent.number;
-    const note = findVoidNoteText(kind, quoteNumber, state.quoteStatus, state.invoiceStatus, parentNumber, state.parentStatus);
+    const invoiceNumber = loaded.invoice && loaded.invoice.number;
+    const note = findVoidNoteText(kind, quoteNumber, state.quoteStatus, state.invoiceStatus, parentNumber, state.parentStatus, invoiceNumber);
     const allowed = findReprintAllowed(kind, state.quoteStatus, state.invoiceStatus, state.parentStatus);
+    const voidAllowed = findVoidAllowed(kind, loaded.invoice);
+    const voidedLine = kind === 'invoice' ? findVoidedSummary(loaded.invoice) : '';
     const dupId = kind === 'invoice'
       ? findDocId(loaded.invoice && loaded.invoice.quote_id)
       : findDocId(loaded.quote && loaded.quote.id);
@@ -2651,15 +2720,125 @@ export function installQuote() {
       ${loaded.invoice && loaded.invoice.notes ? `<div class="notes">${shop().escapeHtml(loaded.invoice.notes)}</div>` : ''}
       ${renderFindLines(lines)}
       ${kind === 'quote' && (loaded.invoices || []).length ? `<p class="hint">On this quote: ${shop().escapeHtml((loaded.invoices || []).map(row => `${row.number || ''} ${findStatusLabel('invoice', row.status)}`).join(', '))}</p>` : ''}
+      ${voidedLine ? `<p>${shop().escapeHtml(voidedLine)}</p>` : ''}
       ${note ? `<p class="hint">${shop().escapeHtml(note)}</p>` : ''}
       ${readOnlyNote ? `<p class="hint">${shop().escapeHtml(readOnlyNote)}</p>` : ''}
-      ${findDetailActions(allowed, dupId, findPackingAllowed(kind, loaded))}`;
+      ${findDetailActions(allowed, dupId, findPackingAllowed(kind, loaded), voidAllowed)}
+      ${voidAllowed ? findVoidPanelHtml(loaded.invoice, lines) : ''}`;
     const btn = document.getElementById('find-reprint');
     if (btn) btn.addEventListener('click', () => { reprintFindDoc(); });
     const packBtn = document.getElementById('find-packing');
     if (packBtn) packBtn.addEventListener('click', () => { printFindPackingList(); });
+    const voidBtn = document.getElementById('find-void');
+    if (voidBtn) voidBtn.addEventListener('click', () => { openFindVoidPanel(); });
+    const voidGo = document.getElementById('find-void-confirm');
+    if (voidGo) voidGo.addEventListener('click', () => { submitFindVoid(); });
+    const voidKeep = document.getElementById('find-void-keep');
+    if (voidKeep) voidKeep.addEventListener('click', () => { keepFindInvoice(); });
     const dupBtn = document.getElementById('find-dup');
     if (dupBtn) dupBtn.addEventListener('click', () => { duplicateFindDoc(); });
+  }
+
+  function findVoidPanelHtml(inv, lines) {
+    const number = shop().escapeHtml(inv && inv.number || '');
+    return `<div id="find-void-panel" hidden>
+      <p>Void only if these parts never left. If they shipped, this is a return, not a void.</p>
+      <p><code>${number}</code></p>
+      ${renderFindLines(lines)}
+      <label for="find-void-reason">Reason for the void</label>
+      <input type="text" id="find-void-reason" autocomplete="off">
+      <div class="btn-group">
+        <button type="button" class="danger tap" id="find-void-confirm">Void invoice</button>
+        <button type="button" class="secondary tap" id="find-void-keep">Keep invoice</button>
+      </div>
+    </div>`;
+  }
+
+  function openFindVoidPanel() {
+    const panel = document.getElementById('find-void-panel');
+    if (!panel) return;
+    panel.hidden = false;
+    const input = document.getElementById('find-void-reason');
+    if (input) input.focus();
+  }
+
+  function keepFindInvoice() {
+    if (findVoidBusy) return;
+    const panel = document.getElementById('find-void-panel');
+    if (panel) panel.hidden = true;
+    const input = document.getElementById('find-void-reason');
+    if (input) input.value = '';
+  }
+
+  function setFindVoidButtonsDisabled(disabled) {
+    ['find-void-confirm', 'find-void-keep'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = disabled;
+    });
+  }
+
+  function voidFailText(error) {
+    return shop().plainDbError(error, 'void');
+  }
+
+  async function refreshQuoteAfterVoid(quoteId) {
+    if (quoteId && String(quoteId) === currentQuoteId()) await refreshQuoteInvoices();
+    await loadQuotesList();
+  }
+
+  async function submitFindVoid() {
+    if (findVoidBusy) return;
+    if (!findView || findView.kind !== 'invoice' || !findView.loaded || !findView.loaded.invoice) return;
+    const input = document.getElementById('find-void-reason');
+    const reason = String(input && input.value || '').trim();
+    if (!reason) {
+      shop().showStatus('Enter a short reason for the void.', 'error');
+      return;
+    }
+    const invoice = findView.loaded.invoice;
+    const invoiceId = invoice.id;
+    const number = invoice.number || 'this invoice';
+    const quoteId = invoice.quote_id;
+    const seq = findSeq;
+    if (!shop().supabaseClient) {
+      shop().showStatus("Couldn't load — try again", 'error');
+      return;
+    }
+    findVoidBusy = true;
+    setFindVoidButtonsDisabled(true);
+    let finished = false;
+    try {
+      const { data, error } = await shop().supabaseClient.rpc('shop_void_invoice', {
+        p_invoice_id: invoiceId,
+        p_reason: reason
+      });
+      if (error) {
+        if (seq === findSeq) shop().showStatus(voidFailText(error), 'error');
+        return;
+      }
+      const payload = data && typeof data === 'object' ? data : {};
+      if (!payload.ok) {
+        if (seq === findSeq) shop().showStatus(voidFailText(payload), 'error');
+        return;
+      }
+      const shown = payload.number || number;
+      if (payload.already_void) {
+        shop().showStatus(`Already void — ${shown}. Shelf unchanged.`, 'info');
+      } else {
+        shop().showStatus(`Voided ${shown}. Parts are back on the shelf. The quote is Accepted again, so you can invoice it again (new I- number).`, 'success');
+      }
+      await refreshQuoteAfterVoid(quoteId);
+      if (seq !== findSeq) return;
+      const loaded = await loadFindDoc('invoice', invoiceId);
+      if (seq !== findSeq) return;
+      if (!loaded || loaded.error || loaded.missing) return;
+      findView = { kind: 'invoice', id: invoiceId, loaded };
+      renderFindDetail('invoice', loaded);
+      finished = true;
+    } finally {
+      findVoidBusy = false;
+      if (!finished) setFindVoidButtonsDisabled(false);
+    }
   }
 
   function findPackingAllowed(kind, loaded) {
@@ -2669,10 +2848,11 @@ export function installQuote() {
     return Array.isArray(loaded.lines) && loaded.lines.length > 0;
   }
 
-  function findDetailActions(allowed, dupId, packing) {
+  function findDetailActions(allowed, dupId, packing, voidAllowed) {
     const buttons = [
       allowed ? '<button type="button" class="tap" id="find-reprint">Reprint</button>' : '',
       packing ? '<button type="button" class="secondary tap" id="find-packing">Packing list</button>' : '',
+      voidAllowed ? '<button type="button" class="secondary tap" id="find-void">Void invoice</button>' : '',
       dupId ? '<button type="button" class="secondary tap" id="find-dup">Dup</button>' : ''
     ].filter(Boolean);
     return buttons.length ? `<div class="btn-group">${buttons.join('')}</div>` : '';
@@ -2784,7 +2964,8 @@ export function installQuote() {
       state.quoteStatus,
       state.invoiceStatus,
       loaded.parent && loaded.parent.number,
-      state.parentStatus
+      state.parentStatus,
+      loaded.invoice && loaded.invoice.number
     );
     if (note || !findReprintAllowed(findView.kind, state.quoteStatus, state.invoiceStatus, state.parentStatus)) {
       if (note) shop().showStatus(note, 'error');
@@ -2793,7 +2974,7 @@ export function installQuote() {
     let doc = null;
     if (findView.kind === 'invoice' && loaded.invoice) {
       doc = printDocFromInvoice(loaded.invoice, loaded.lines, loaded.parent, '');
-      doc.draft = loaded.invoice.status !== 'approved';
+      doc.draft = isDraftInvoice(loaded.invoice);
     } else if (loaded.quote) {
       if (!(loaded.lines || []).length) {
         shop().showStatus('Nothing to reprint', 'error');
@@ -2886,6 +3067,11 @@ export function installQuote() {
       const inv = loaded.invoice;
       const lines = loaded.lines || [];
       renderFindDetail(findView.kind, loaded);
+      if (inv && inv.status === 'void') {
+        const n = String(inv.number || '').trim() || 'This invoice';
+        shop().showStatus(`${n} is void. A void invoice has no packing list.`, 'error');
+        return;
+      }
       if (!findPackingAllowed(findView.kind, loaded) || !lines.length) {
         shop().showStatus('A packing list needs an approved invoice with lines.', 'error');
         return;
