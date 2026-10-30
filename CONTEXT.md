@@ -94,6 +94,7 @@ created_at (timestamptz)
 - `schema/r1_round1_guards.sql` — Round 1 guards. Run once after this build is on Pages and every phone has hard-refreshed. Re-run it if A1, A2, or A2.4 is re-run after it. Do not VALIDATE the new checks.
 - `schema/b038_part_delete_guard.sql` — a part on an open quote can't be deleted (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
 - schema/c1_customer_list.sql — customer list: unique name, type-ahead / Did you mean, New-not-in-QB tag, merge by pointer (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
+- `schema/vd1_void_invoice.sql` — voids an approved invoice and puts its stock back once at the original cost (Kyle runs it once by hand after this build is on Pages and every phone has hard-refreshed)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -440,6 +441,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/c1_customer_list.sql` | customer list: unique name, type-ahead / Did you mean, New-not-in-QB tag, merge by pointer (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run) |
 | `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule. Quote delete is closed by `schema/co1_company_numbering.sql` once that file has been run |
 | `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
+| `schema/vd1_void_invoice.sql` | Voids an approved invoice and puts its stock back once at the original cost. Kyle runs it once by hand after this build is on Pages and every phone has hard-refreshed |
 
 ## Local-only (this Mac, not in git)
 
