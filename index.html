@@ -120,6 +120,12 @@
     .cust-qb-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .cust-error { color: var(--danger); font-size: 0.9rem; margin-bottom: 0.5rem; }
     #customers textarea { resize: vertical; font: inherit; }
+    #po textarea { resize: vertical; font: inherit; }
+    #po .po-line { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.55rem; }
+    #po .po-line-main { flex: 1; min-width: 0; }
+    #po .po-line input { width: 4.5rem; flex: 0 0 4.5rem; margin: 0; }
+    #po .po-hit { display: block; font-weight: 600; }
+    #po .po-hit-pn { display: block; color: var(--muted); font-size: 0.85rem; font-weight: 400; margin: 0; }
     .barcode-preview { text-align: center; padding: 1rem; background: white; border-radius: 8px; margin: 0.75rem 0; }
     .status {
       padding: 0.65rem 0.85rem; border-radius: 8px; margin-bottom: 0.75rem; display: none; font-size: 0.9rem;
@@ -744,6 +750,7 @@
     <!-- QUOTE -->
     <div id="quote" class="panel"></div>
     <div id="customers" class="panel"></div>
+    <div id="po" class="panel"></div>
 
     <!-- MORE -->
     <div id="data" class="panel">
@@ -982,6 +989,7 @@ notify pgrst, 'reload schema';</pre>
     <div class="tab-row tab-row-quote">
       <button type="button" class="tab" data-tab="quote">Quote</button>
       <button type="button" class="tab" data-tab="customers">Customers</button>
+      <button type="button" class="tab" data-tab="po">PO</button>
     </div>
   </nav>
 
@@ -4026,6 +4034,7 @@ ${bodyHtml}
       plainDbError,
       lockedShopSentence,
       escapeHtml,
+      searchInventoryMatches,
       money,
       toCents,
       currentUser,
