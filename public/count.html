@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="public-config.js"></script>
   <script src="shop-auth.js"></script>
+  <script src="part-match.js"></script>
   <style>
     :root {
       --bg: #f4f6f9;
@@ -787,24 +788,16 @@
     }
 
     function searchBits(q) {
-      const ql = q.toLowerCase().trim();
-      if (ql.length < 1) return [];
-      const compact = ql.replace(/[^a-z0-9]/g, '');
-      const digits = ql.replace(/\D/g, '');
+      const raw = String(q || '');
+      if (!raw.trim()) return [];
       const pool = (seed.parts || []).concat(state.items.map(it => ({
         part_number: it.part_number, name: it.name, source: it.source, category: it.category, counted: true
       })));
       const seen = new Set();
       const out = [];
       pool.forEach(p => {
-        const pn = (p.part_number || '').toLowerCase();
-        const name = (p.name || '').toLowerCase();
-        const pnc = pn.replace(/[^a-z0-9]/g, '');
-        const pnd = pn.replace(/\D/g, '');
-        const hit = name.includes(ql) || pn.includes(ql) || (compact.length >= 2 && pnc.includes(compact)) ||
-          (digits.length >= 3 && pnd.includes(digits));
-        if (!hit) return;
-        const k = pn;
+        if (!itemMatchesQuery(p, raw)) return;
+        const k = (p.part_number || '').toLowerCase();
         if (seen.has(k)) return;
         seen.add(k);
         out.push(p);
