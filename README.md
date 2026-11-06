@@ -32,6 +32,8 @@ Phone-friendly inventory tracker for **In-Mar Systems** with live remote access,
 | **More** | Link on Home. Export/Import JSON; sell factors; **GBP/EUR/NOK exchange rates** (fetch or type); FIFO/LIFO; setup SQL; Passwords; Reports; clear all |
 | **Physical count** | Separate phone tool: [`count.html`](count.html) — walk the room, export JSON, import here. See [`COUNT.md`](COUNT.md) |
 
+Inventory, Labels, Price history, and the count tool share Scan's punctuation-blind part match, so dashes, spaces, and capitals in a part number do not matter. On Edit, **Find quotes with this part** and **Find invoices with this part** open that Find screen with the part number filled in and the search already run. Quote, invoice, and PO part pickers are unchanged. No SQL in this cut.
+
 **Sign-in:** Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, and Ricky Whitfield each have their own login. Unlock once on that phone for a 12-hour shift. The phone’s saved password (Face ID, Touch ID, or fingerprint) fills the next unlock. The unlock screen asks you to select your name. There is no header name dropdown. Prepared By and the adjustment log use only the signed-in person. **Sign out** is in the header. **More → Passwords** sets a new password for any of the five. They save it again on their phone.
 
 The public anon key is in `public-config.js`. Never commit a service-role key.

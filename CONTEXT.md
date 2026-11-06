@@ -179,7 +179,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Dup** starts a new draft only. It uses the quote, or the invoice's parent quote. It does not void and does not approve.
 
 ### Inventory
-- Search includes barcode (label ID is not shown)
+- Search includes barcode (label ID is not shown). Inventory, Labels, Price history, and the count tool share Scan's punctuation-blind part match. Dashes, spaces, and capitals in a part number do not matter. Two numbers that differ only by a hyphen both stay listed. Quote, invoice, and PO part pickers are unchanged. No SQL in this cut.
 - Source + Category filter chips
 - **+ Add part** at the top
 - Filter bar with Clear filter when a Home tile is on
@@ -197,6 +197,7 @@ Known sale sentences stay exact, including `Q-… is cancelled…`, `I-L… is a
 
 ### Add / Edit
 - Same form; **barcode never shown** on the form (still generated on create for QR labels)
+- While a saved part is open, **Find quotes with this part** and **Find invoices with this part** open that Find screen with the Part Number / SKU filled in and the search already run. Home Find Quotes and Find Invoices still open empty and do not search.
 - Source, category, location: **dropdown + typeahead**. Matching existing values snap to the stored spelling; new values can still be kept
 - Qty (new) and Qty (used) on the same SKU. Each must be a whole number, 0 or more. A blank box means 0. A negative or a decimal is refused and is not turned into 0.
 - Sell price and buy price can't be negative. A blank price stays empty. A typed price is saved rounded to cents. The error sits above Save, in the card, and does not cover Part Name.

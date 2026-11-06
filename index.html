@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="public-config.js"></script>
   <script src="shop-auth.js"></script>
+  <script src="part-match.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -270,6 +271,8 @@
     }
     /* BUG-038: Delete part sits at the bottom of the Edit form, apart from Save. No display rule here, so [hidden] keeps working. */
     .item-delete-zone { margin-top: 1.75rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+    .item-find-zone { margin: 0.75rem 0 0.25rem; }
+    .item-find-zone button { margin: 0 0.4rem 0.4rem 0; }
     #item-delete-btn { width: 100%; }
     .meta-line {
       display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; align-items: center;
@@ -511,6 +514,10 @@
     <div id="add" class="panel">
       <div class="card">
         <h2 id="form-title">Add Part</h2>
+        <div id="item-find-zone" class="item-find-zone" hidden>
+          <button type="button" class="secondary tap" onclick="findDocsForThisPart('quote')">Find quotes with this part</button>
+          <button type="button" class="secondary tap" onclick="findDocsForThisPart('invoice')">Find invoices with this part</button>
+        </div>
         <input type="hidden" id="edit-id">
         <label>Part Name *</label>
         <input type="text" id="item-name" placeholder="e.g. Hydraulic Fitting 1/2&quot;" maxlength="120">
@@ -680,7 +687,7 @@
         <div class="row">
           <div>
             <label>Part # or name</label>
-            <input type="search" id="price-hist-q" placeholder="Optional filter">
+            <input type="search" id="price-hist-q" placeholder="Optional filter" oninput="renderPriceHistory()">
           </div>
         </div>
         <div class="btn-group" style="margin-bottom:0.75rem;">
@@ -999,7 +1006,7 @@ notify pgrst, 'reload schema';</pre>
 
     const isConfigured = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
     let supabaseClient = null;
-    let inventory = [];
+    var inventory = []; // same array part-match.js searches
     let html5QrCode = null;
     let scanning = false;
     let activeSourceFilter = 'All';
@@ -1018,6 +1025,7 @@ notify pgrst, 'reload schema';</pre>
     let hasCostLayersTable = false;
     let costingMethod = 'fifo';
     let lastPriceHistoryRows = [];
+    let priceHistoryFetched = false;
     let lastEndingInvRows = [];
     let lastAdjustmentRows = [];
     let sessionUser = ''; // signed-in full name only; not a pick-list
@@ -1628,53 +1636,6 @@ notify pgrst, 'reload schema';</pre>
       ) || null;
     }
 
-    function compactAlnum(s) {
-      return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    }
-    function digitsOnly(s) {
-      return String(s || '').replace(/\D/g, '');
-    }
-
-    /** Partial name / part # search for typed Scan lookup (not camera). */
-    function itemMatchesQuery(item, raw) {
-      const q = String(raw || '').trim();
-      if (!q) return false;
-      const ql = q.toLowerCase();
-      const name = (item.name || '').toLowerCase();
-      const pn = (item.part_number || '').toLowerCase();
-      const bc = (item.barcode || '').toLowerCase();
-      if (name.includes(ql) || pn.includes(ql) || bc.includes(ql)) return true;
-      const qc = compactAlnum(q);
-      if (qc.length >= 2) {
-        if (compactAlnum(item.part_number).includes(qc) || compactAlnum(item.barcode).includes(qc)) return true;
-      }
-      const qd = digitsOnly(q);
-      if (qd.length >= 3 && digitsOnly(item.part_number).includes(qd)) return true;
-      return false;
-    }
-
-    function searchInventoryMatches(raw) {
-      const q = String(raw || '').trim();
-      if (!q) return [];
-      const ql = q.toLowerCase();
-      const qc = compactAlnum(q);
-      const scored = [];
-      inventory.forEach(i => {
-        if (!itemMatchesQuery(i, q)) return;
-        const pn = (i.part_number || '').toLowerCase();
-        const name = (i.name || '').toLowerCase();
-        let score = 10;
-        if (pn === ql || (i.barcode || '').toLowerCase() === ql) score = 100;
-        else if (pn.startsWith(ql)) score = 80;
-        else if (compactAlnum(i.part_number) === qc) score = 75;
-        else if (name.startsWith(ql)) score = 60;
-        else if (name.includes(ql)) score = 40;
-        scored.push({ item: i, score });
-      });
-      scored.sort((a, b) => b.score - a.score || String(a.item.name || '').localeCompare(b.item.name || ''));
-      return scored.map(s => s.item);
-    }
-
     /**
      * QR options tuned for thermal + laser paper.
      * Screen is forgiving; print blurs small modules — need big modules, quiet zone, pure black.
@@ -2248,9 +2209,7 @@ notify pgrst, 'reload schema';</pre>
       const q = (document.getElementById('search')?.value || '').toLowerCase();
       const filtered = inventory.filter(i => {
         const matchSearch = !q ||
-          (i.name || '').toLowerCase().includes(q) ||
-          (i.part_number || '').toLowerCase().includes(q) ||
-          (i.barcode || '').toLowerCase().includes(q) ||
+          itemMatchesQuery(i, q) ||
           (i.source || '').toLowerCase().includes(q) ||
           (i.category || '').toLowerCase().includes(q) ||
           (i.location || '').toLowerCase().includes(q) ||
@@ -2831,6 +2790,8 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('form-title').textContent = 'Add Part';
       const delZone = document.getElementById('item-delete-zone');
       if (delZone) delZone.hidden = true;
+      const findZone = document.getElementById('item-find-zone');
+      if (findZone) findZone.hidden = true;
       ['item-name','item-barcode','item-list-price','item-sell-factor','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
        'item-date-ordered','item-est-delivery','item-ordered-qty'].forEach(id => {
         const el = document.getElementById(id);
@@ -2857,6 +2818,8 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('form-title').textContent = 'Edit Part';
       const delZone = document.getElementById('item-delete-zone');
       if (delZone) delZone.hidden = false;
+      const findZone = document.getElementById('item-find-zone');
+      if (findZone) findZone.hidden = false;
       document.getElementById('item-name').value = item.name || '';
       document.getElementById('item-barcode').value = item.part_number || '';
       document.getElementById('item-qty').value = item.qty || 0;
@@ -2889,6 +2852,16 @@ notify pgrst, 'reload schema';</pre>
       setTimeout(() => {
         document.getElementById('form-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
+    }
+
+    function findDocsForThisPart(kind) {
+      const part = (document.getElementById('item-barcode')?.value || '').trim();
+      if (!part) return;
+      if (typeof window.openFindKind !== 'function' || typeof window.runFindSearch !== 'function') return;
+      window.openFindKind(kind);
+      const box = document.getElementById('find-q');
+      if (box) box.value = part;
+      window.runFindSearch();
     }
 
     async function quickAdjust(id, delta) {
@@ -3280,12 +3253,7 @@ notify pgrst, 'reload schema';</pre>
       const q = (document.getElementById('label-search')?.value || '').toLowerCase();
       const list = document.getElementById('label-checklist');
       if (!list) return;
-      const filtered = inventory.filter(i =>
-        !q ||
-        (i.name || '').toLowerCase().includes(q) ||
-        (i.part_number || '').toLowerCase().includes(q) ||
-        (i.barcode || '').toLowerCase().includes(q)
-      );
+      const filtered = inventory.filter(i => !q || itemMatchesQuery(i, q));
       if (filtered.length === 0) {
         list.innerHTML = '<p style="color:var(--muted);padding:0.5rem;">No parts match.</p>';
         return;
@@ -3689,29 +3657,20 @@ ${bodyHtml}
       );
     }
 
-    async function loadPriceHistory() {
+    function priceHistoryVisibleRows() {
+      const raw = document.getElementById('price-hist-q')?.value || '';
+      if (!raw.trim()) return lastPriceHistoryRows.slice();
+      return lastPriceHistoryRows.filter(r => itemMatchesQuery({
+        part_number: r.part_number,
+        name: r.name
+      }, raw));
+    }
+
+    function renderPriceHistory() {
+      if (!priceHistoryFetched) return;
       const status = document.getElementById('price-hist-status');
       const table = document.getElementById('price-hist-table');
-      if (!supabaseClient || !hasPriceHistoryTable) {
-        if (status) status.textContent = 'Run Phase 3 SQL on More to store price history.';
-        if (table) table.innerHTML = '';
-        return;
-      }
-      const q = (document.getElementById('price-hist-q')?.value || '').trim().toLowerCase();
-      const { data, error } = await supabaseClient.from('inventory_price_history')
-        .select('*').order('recorded_at', { ascending: false }).limit(500);
-      if (error) {
-        if (status) status.textContent = plainDbError(error, 'load');
-        return;
-      }
-      let rows = data || [];
-      if (q) {
-        rows = rows.filter(r =>
-          String(r.part_number || '').toLowerCase().includes(q) ||
-          String(r.name || '').toLowerCase().includes(q)
-        );
-      }
-      lastPriceHistoryRows = rows;
+      const rows = priceHistoryVisibleRows();
       if (status) status.textContent = rows.length ? rows.length + ' rows' : 'No history yet.';
       if (!table) return;
       if (!rows.length) { table.innerHTML = ''; return; }
@@ -3728,10 +3687,29 @@ ${bodyHtml}
         </tr>`).join('')}</tbody></table>`;
     }
 
+    async function loadPriceHistory() {
+      const status = document.getElementById('price-hist-status');
+      const table = document.getElementById('price-hist-table');
+      if (!supabaseClient || !hasPriceHistoryTable) {
+        if (status) status.textContent = 'Run Phase 3 SQL on More to store price history.';
+        if (table) table.innerHTML = '';
+        return;
+      }
+      const { data, error } = await supabaseClient.from('inventory_price_history')
+        .select('*').order('recorded_at', { ascending: false }).limit(500);
+      if (error) {
+        if (status) status.textContent = plainDbError(error, 'load');
+        return;
+      }
+      lastPriceHistoryRows = data || [];
+      priceHistoryFetched = true;
+      renderPriceHistory();
+    }
+
     function exportPriceHistoryCsv() {
-      if (!lastPriceHistoryRows.length) { showStatus('Generate the report first', 'error'); return; }
+      if (!priceHistoryFetched || !lastPriceHistoryRows.length) { showStatus('Generate the report first', 'error'); return; }
       const headers = ['recorded_at', 'part_number', 'name', 'buy_price', 'sell_price', 'list_price', 'list_currency', 'qty', 'qty_used', 'note', 'changed_by'];
-      const lines = [headers.join(',')].concat(lastPriceHistoryRows.map(r => headers.map(h => {
+      const lines = [headers.join(',')].concat(priceHistoryVisibleRows().map(r => headers.map(h => {
         const v = r[h] == null ? '' : String(r[h]);
         return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
       }).join(',')));
