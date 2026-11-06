@@ -81,7 +81,11 @@ begin
         'ship_to_updated', true,
         'customer_in_qb', exists (
           select 1 from public.customers c
-          where c.id = v_inv.customer_id and c.qb_status = 'in_qb'
+          where c.id = v_inv.customer_id
+            and case
+              when v_inv.company = 'S' then c.qb_status_systems
+              else c.qb_status
+            end = 'in_qb'
         )
       );
     end if;
