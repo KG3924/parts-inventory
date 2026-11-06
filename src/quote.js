@@ -571,6 +571,109 @@ export function installQuote() {
     const idEl = document.getElementById('quote-customer-id');
     if (idEl) idEl.value = pickedCustomer ? pickedCustomer.id : '';
     renderCustomerTag();
+    syncSaveShipToBox();
+  }
+
+  // Snapshot columns. A blank stays blank. Billing is never copied into ship-to.
+  const QUOTE_SNAP_COLS = ['contact_name', 'phone', 'email', 'billing_address', 'ship_to', 'tax_exempt_number', 'customer_notes'];
+  const INVOICE_SNAP_COLS = ['contact_name', 'phone', 'email', 'billing_address', 'tax_exempt_number', 'customer_notes', 'save_ship_to'];
+  const CUSTOMER_PICK_COLS = 'id,name,contact_name,phone,email,billing_address,ship_to_address,payment_terms,tax_exempt_number,notes,qb_status,qb_status_systems';
+
+  function blankNull(value) {
+    const text = String(value == null ? '' : value).trim();
+    return text || null;
+  }
+
+  function setBox(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value == null ? '' : String(value);
+  }
+
+  function clearQuoteSnapshotFields() {
+    setBox('quote-contact', '');
+    setBox('quote-phone', '');
+    setBox('quote-email', '');
+    setBox('quote-billing', '');
+    setBox('quote-ship', '');
+    setBox('quote-tax-exempt', '');
+    setBox('quote-customer-notes', '');
+    setComboValue('terms', '');
+  }
+
+  function fillQuoteSnapshotFromRow(row) {
+    const q = row || {};
+    setBox('quote-contact', q.contact_name || '');
+    setBox('quote-phone', q.phone || '');
+    setBox('quote-email', q.email || '');
+    setBox('quote-billing', q.billing_address || '');
+    setBox('quote-ship', q.ship_to || '');
+    setBox('quote-tax-exempt', q.tax_exempt_number || '');
+    setBox('quote-customer-notes', q.customer_notes || '');
+  }
+
+  function quoteSnapshotFromForm() {
+    return {
+      contact_name: blankNull(document.getElementById('quote-contact')?.value),
+      phone: blankNull(document.getElementById('quote-phone')?.value),
+      email: blankNull(document.getElementById('quote-email')?.value),
+      billing_address: blankNull(document.getElementById('quote-billing')?.value),
+      ship_to: blankNull(document.getElementById('quote-ship')?.value),
+      tax_exempt_number: blankNull(document.getElementById('quote-tax-exempt')?.value),
+      customer_notes: blankNull(document.getElementById('quote-customer-notes')?.value)
+    };
+  }
+
+  function applySnapshotSource(src) {
+    const row = src || {};
+    setBox('quote-contact', row.contact_name || '');
+    setBox('quote-phone', row.phone || '');
+    setBox('quote-email', row.email || '');
+    setBox('quote-billing', row.billing_address || '');
+    setBox('quote-ship', row.ship_to_address || '');
+    setBox('quote-tax-exempt', row.tax_exempt_number || '');
+    setBox('quote-customer-notes', row.notes || '');
+    setComboValue('terms', row.payment_terms || '');
+  }
+
+  async function applyPickedSnapshot(row) {
+    const id = row && row.id;
+    if (!id || !shop().supabaseClient) return;
+    let src = row;
+    if (src.ship_to_address === undefined && src.billing_address === undefined) {
+      let res = await shop().supabaseClient.from('customers').select(CUSTOMER_PICK_COLS).eq('id', id).maybeSingle();
+      if (res.error && /qb_status_systems/i.test(dbErrorRaw(res.error))) {
+        const older = CUSTOMER_PICK_COLS.replace(',qb_status_systems', '');
+        res = await shop().supabaseClient.from('customers').select(older).eq('id', id).maybeSingle();
+      }
+      if (!pickedCustomer || pickedCustomer.id !== id || !linkedCustomerId()) return;
+      if (!res.error && res.data) src = res.data;
+      else src = { payment_terms: row.payment_terms || '' };
+    }
+    if (!pickedCustomer || pickedCustomer.id !== id || !linkedCustomerId()) return;
+    applySnapshotSource(src);
+  }
+
+  function syncSaveShipToBox() {
+    const wrap = document.getElementById('inv-save-ship-wrap');
+    const box = document.getElementById('inv-save-ship');
+    if (!wrap) return;
+    const ship = (document.getElementById('inv-ship')?.value || '').trim();
+    const named = customerKey(customerBoxText());
+    const show = !!linkedCustomerId() && !!named && named !== customerKey(CASH_SALE) && !!ship;
+    wrap.hidden = !show;
+    if (!show && box) box.checked = false;
+  }
+
+  function missingSnapshotColumn(error) {
+    const raw = dbErrorRaw(error);
+    return /contact_name|billing_address|tax_exempt_number|customer_notes|save_ship_to|\bphone\b|\bemail\b|\bship_to\b/i.test(raw)
+      && /does not exist|schema cache|could not find/i.test(raw);
+  }
+
+  function withoutKeys(body, keys) {
+    const slim = { ...body };
+    keys.forEach(key => { delete slim[key]; });
+    return slim;
   }
 
   function companyName(code) {
@@ -676,7 +779,10 @@ export function installQuote() {
   }
 
   function onQuoteCustomerInput() {
-    if (pickedCustomer && !linkedCustomerId()) setPickedCustomer(null);
+    if (pickedCustomer && !linkedCustomerId()) {
+      setPickedCustomer(null);
+      clearQuoteSnapshotFields();
+    }
     clearTimeout(customerPickTimer);
     const text = customerBoxText();
     customerPickTimer = setTimeout(() => showCustomerPick(text), 200);
@@ -711,7 +817,7 @@ export function installQuote() {
     if (el) el.value = row.name;
     setPickedCustomer(row);
     hideCustomerPick();
-    if (row.payment_terms) setComboValue('terms', row.payment_terms);
+    applyPickedSnapshot(row);
     refreshPickedQb();
   }
 
@@ -729,6 +835,7 @@ export function installQuote() {
     if (el) el.value = row.name;
     setPickedCustomer(row);
     hideCustomerPick();
+    await applyPickedSnapshot(row);
     refreshPickedQb();
     shop().showStatus(`${row.name} added. Tagged New, not in QuickBooks yet.`, 'success');
   }
@@ -752,18 +859,23 @@ export function installQuote() {
     shop().showStatus(`${data.name} marked In QuickBooks for ${which}.`, 'success');
   }
 
-  // Leaving the box: link an exact name typed in full, and fill its saved terms.
+  // Leaving the box: link an exact name typed in full, and copy that customer's saved details.
   async function onQuoteCustomerChange() {
     const text = customerBoxText();
-    if (!customerKey(text) || customerKey(text) === customerKey(CASH_SALE)) { setPickedCustomer(null); return; }
+    if (!customerKey(text) || customerKey(text) === customerKey(CASH_SALE)) {
+      setPickedCustomer(null);
+      clearQuoteSnapshotFields();
+      return;
+    }
     if (linkedCustomerId()) return;
     const row = await findCustomerByName(text);
     if (!row || customerKey(customerBoxText()) !== customerKey(text)) return;
     setPickedCustomer(row);
-    if (row.payment_terms) setComboValue('terms', row.payment_terms);
+    await applyPickedSnapshot(row);
     refreshPickedQb();
   }
 
+  // QuickBooks tag and the picked-customer link only. Does not copy customer fields onto the quote.
   async function loadQuoteCustomer(customerId) {
     setPickedCustomer(null);
     if (!customerId || !shop().supabaseClient) return;
@@ -785,6 +897,7 @@ export function installQuote() {
     const el = document.getElementById('quote-customer');
     if (el) el.value = CASH_SALE;
     setPickedCustomer(null);
+    clearQuoteSnapshotFields();
     hideCustomerPick();
   }
 
@@ -973,14 +1086,18 @@ export function installQuote() {
     if (!quoteId) return { error: { message: "Couldn't save the quote" }, id: null };
     const run = (body) => shop().supabaseClient.from('quotes').update(body).eq('id', quoteId);
     let res = await run(clean);
+    let body = clean;
     if (res.error && /project|rfq_number|fob_point|payment_terms|lead_time/i.test(res.error.message || '')) {
-      const slim = { ...clean };
-      delete slim.project;
-      delete slim.rfq_number;
-      delete slim.fob_point;
-      delete slim.payment_terms;
-      delete slim.lead_time;
-      res = await run(slim);
+      body = { ...body };
+      delete body.project;
+      delete body.rfq_number;
+      delete body.fob_point;
+      delete body.payment_terms;
+      delete body.lead_time;
+      res = await run(body);
+    }
+    if (res.error && missingSnapshotColumn(res.error)) {
+      res = await run(withoutKeys(body, QUOTE_SNAP_COLS));
     }
     return { error: res.error || null, id: quoteId || (res.data && res.data.id) || null };
   }
@@ -1063,6 +1180,7 @@ export function installQuote() {
     document.getElementById('quote-notes').value = '';
     document.getElementById('quote-customer').value = '';
     setPickedCustomer(null);
+    clearQuoteSnapshotFields();
     hideCustomerPick();
     quoteCompany = '';
     quoteCompanyLocked = false;
@@ -1109,6 +1227,7 @@ export function installQuote() {
     document.getElementById('quote-customer').value = q.customer_name || '';
     hideCustomerPick();
     await loadQuoteCustomer(q.customer_id);
+    fillQuoteSnapshotFromRow(q);
     const proj = document.getElementById('quote-project');
     if (proj) proj.value = q.project || '';
     const rfq = document.getElementById('quote-rfq');
@@ -1210,7 +1329,8 @@ export function installQuote() {
       prepared_by: (document.getElementById('quote-by').value || '').trim() || shop().currentUser() || null,
       notes: (document.getElementById('quote-notes').value || '').trim() || null,
       created_by: shop().currentUser(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      ...quoteSnapshotFromForm()
     };
     let quoteId = existingId || null;
     let number = '';
@@ -1311,6 +1431,8 @@ export function installQuote() {
     setVal('quote-status', 'draft');
     setVal('quote-number', '');
     setVal('quote-customer', '');
+    setPickedCustomer(null);
+    clearQuoteSnapshotFields();
     setVal('quote-project', '');
     setVal('quote-rfq', '');
     setVal('quote-lead', '');
@@ -1445,7 +1567,14 @@ export function installQuote() {
       status: document.getElementById('quote-status')?.value || 'draft',
       fob: comboValue('fob'),
       terms: comboValue('terms'),
-      lead: document.getElementById('quote-lead')?.value || ''
+      lead: document.getElementById('quote-lead')?.value || '',
+      contact: document.getElementById('quote-contact')?.value || '',
+      phone: document.getElementById('quote-phone')?.value || '',
+      email: document.getElementById('quote-email')?.value || '',
+      billing: document.getElementById('quote-billing')?.value || '',
+      shipTo: document.getElementById('quote-ship')?.value || '',
+      taxExempt: document.getElementById('quote-tax-exempt')?.value || '',
+      customerNotes: document.getElementById('quote-customer-notes')?.value || ''
     };
   }
 
@@ -1532,11 +1661,18 @@ export function installQuote() {
     </div>
     <div class="info">
   <div><span>Customer:</span> ${shop().escapeHtml(data.customer) || '—'}</div>
+  <div><span>Contact person:</span> ${printLines(data.contact)}</div>
+  <div><span>Phone:</span> ${printLines(data.phone)}</div>
+  <div><span>Email:</span> ${printLines(data.email)}</div>
+  <div><span>Billing address:</span> ${printLines(data.billing)}</div>
+  <div><span>Ship to:</span> ${printLines(data.shipTo)}</div>
   <div><span>Project:</span> ${shop().escapeHtml(data.project) || '—'}</div>
   <div><span>Prepared By:</span> ${shop().escapeHtml(data.by) || '—'}</div>
   <div><span>FOB:</span> ${shop().escapeHtml(data.fob) || '—'}</div>
   <div><span>Payment terms:</span> ${shop().escapeHtml(data.terms) || '—'}</div>
+  <div><span>Tax-exempt or resale number:</span> ${printLines(data.taxExempt)}</div>
   <div><span>Lead time:</span> ${shop().escapeHtml(data.lead) || '—'}</div>
+  <div><span>Customer notes:</span> ${printLines(data.customerNotes)}</div>
     </div>
     <table>
   <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
@@ -1563,8 +1699,30 @@ export function installQuote() {
       fob: row.fob_point || '',
       terms: row.payment_terms || '',
       lead: row.lead_time || '',
-      company: row.company || ''
+      company: row.company || '',
+      contact: row.contact_name || '',
+      phone: row.phone || '',
+      email: row.email || '',
+      billing: row.billing_address || '',
+      shipTo: row.ship_to || '',
+      taxExempt: row.tax_exempt_number || '',
+      customerNotes: row.customer_notes || ''
     };
+  }
+
+  function printLines(value) {
+    const text = String(value || '').trim();
+    if (!text) return '—';
+    return shop().escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  function printBillTo(name, billing) {
+    const who = String(name || '').trim();
+    const address = String(billing || '').trim();
+    if (!who && !address) return '—';
+    if (!address) return shop().escapeHtml(who);
+    if (!who) return shop().escapeHtml(address).replace(/\n/g, '<br>');
+    return shop().escapeHtml(who) + '<br>' + shop().escapeHtml(address).replace(/\n/g, '<br>');
   }
 
   function generateQuote() {
@@ -1642,6 +1800,16 @@ export function installQuote() {
     });
     const cc = document.getElementById('inv-cc');
     if (cc) cc.checked = false;
+    setBox('inv-contact', '');
+    setBox('inv-phone', '');
+    setBox('inv-email', '');
+    setBox('inv-billing', '');
+    setBox('inv-terms', '');
+    setBox('inv-tax-exempt', '');
+    setBox('inv-customer-notes', '');
+    const saveShip = document.getElementById('inv-save-ship');
+    if (saveShip) saveShip.checked = false;
+    syncSaveShipToBox();
     dueEditedByHand = false;
     syncDueFromValid();
     const box = document.getElementById('invoice-box');
@@ -1666,6 +1834,16 @@ export function installQuote() {
     if (po) po.value = inv.po_number || '';
     const ship = document.getElementById('inv-ship');
     if (ship) ship.value = inv.ship_to || '';
+    setBox('inv-contact', inv.contact_name || '');
+    setBox('inv-phone', inv.phone || '');
+    setBox('inv-email', inv.email || '');
+    setBox('inv-billing', inv.billing_address || '');
+    setBox('inv-terms', inv.payment_terms || '');
+    setBox('inv-tax-exempt', inv.tax_exempt_number || '');
+    setBox('inv-customer-notes', inv.customer_notes || '');
+    const saveShip = document.getElementById('inv-save-ship');
+    if (saveShip) saveShip.checked = !!inv.save_ship_to;
+    syncSaveShipToBox();
     const cc = document.getElementById('inv-cc');
     if (cc) cc.checked = !!inv.cc_used;
     const shipFee = document.getElementById('inv-shipfee');
@@ -1825,7 +2003,8 @@ export function installQuote() {
       return;
     }
     const d = newestOpenDraft();
-    if ((d ? String(d.id) : 'none') !== String(invoiceBoxDraftId)) fillInvoiceBoxFromDraft(d);
+    if (!d) copyQuoteSnapshotToInvoice();
+    else if (String(d.id) !== String(invoiceBoxDraftId)) fillInvoiceBoxFromDraft(d);
     const box = document.getElementById('invoice-box');
     if (!box) return;
     const valid = document.getElementById('quote-valid')?.value;
@@ -1913,10 +2092,18 @@ export function installQuote() {
       renderQuoteInvoiceRows([]);
       return;
     }
-    const { data, error } = await shop().supabaseClient.from('invoices')
-      .select('id,number,status,total,created_at,notes,po_number,ship_to,due_date,shipping_fee,duty,tariffs,cc_used')
+    const invoiceListCols = 'id,number,status,total,created_at,notes,po_number,ship_to,due_date,shipping_fee,duty,tariffs,cc_used,payment_terms,contact_name,phone,email,billing_address,tax_exempt_number,customer_notes,save_ship_to';
+    let listRes = await shop().supabaseClient.from('invoices')
+      .select(invoiceListCols)
       .eq('quote_id', quoteId)
       .order('created_at', { ascending: true });
+    if (listRes.error && missingSnapshotColumn(listRes.error)) {
+      listRes = await shop().supabaseClient.from('invoices')
+        .select(colsWithout(invoiceListCols, INVOICE_SNAP_COLS))
+        .eq('quote_id', quoteId)
+        .order('created_at', { ascending: true });
+    }
+    const { data, error } = listRes;
     if (currentQuoteId() !== quoteId) return;
     if (error) {
       console.warn(error);
@@ -1965,6 +2152,27 @@ export function installQuote() {
     return shop().plainDbError(error, 'approve');
   }
 
+  function rpcFlag(value) {
+    return value === true || value === 'true';
+  }
+
+  async function persistInvoiceSnapshot(id) {
+    if (String(invoiceBoxDraftId) !== String(id)) return { ok: true };
+    const box = document.getElementById('invoice-box');
+    if (!box || box.style.display === 'none') return { ok: true };
+    const patch = {
+      ship_to: blankNull(document.getElementById('inv-ship')?.value),
+      payment_terms: invoiceTermsValue('') || null,
+      ...invoiceSnapshotFromForm()
+    };
+    let res = await shop().supabaseClient.from('invoices').update(patch).eq('id', id);
+    if (res.error && missingSnapshotColumn(res.error)) {
+      res = await shop().supabaseClient.from('invoices').update(withoutKeys(patch, INVOICE_SNAP_COLS)).eq('id', id);
+    }
+    if (res.error) return { ok: false, error: res.error };
+    return { ok: true };
+  }
+
   async function approveInvoice(id) {
     if (!shop().requireUser('approving invoices')) return;
     if (!id || !shop().supabaseClient) {
@@ -1982,6 +2190,14 @@ export function installQuote() {
       showApproveError('This invoice has no customer. Add a customer or tap Cash sale, then Save & print before Approve.');
       return;
     }
+    const rowIsDraft = !row || isDraftInvoice(row);
+    if (rowIsDraft) {
+      const kept = await persistInvoiceSnapshot(id);
+      if (!kept.ok) {
+        showApproveError(shop().plainDbError(kept.error, 'save'));
+        return;
+      }
+    }
     const { data, error } = await shop().supabaseClient.rpc('shop_approve_invoice', { p_invoice_id: id });
     const quoteId = currentQuoteId();
     if (error) {
@@ -1995,9 +2211,12 @@ export function installQuote() {
       await startNewQuote({ keepStatus: true });
     } else if (payload.ok) {
       const approvedNumber = payload.number || 'Invoice';
-      const marked = payload.quote_marked_accepted
+      let marked = payload.quote_marked_accepted
         ? `Approved ${approvedNumber}. Parts left the shelf. Quote marked Accepted.`
         : `Approved ${approvedNumber}. Parts left the shelf.`;
+      if (rpcFlag(payload.ship_to_updated) && rpcFlag(payload.customer_in_qb)) {
+        marked += ' Ship-to updated. Update it in QuickBooks too.';
+      }
       shop().showStatus(marked, 'success');
       await startNewQuote({ keepStatus: true });
     } else {
@@ -2006,6 +2225,39 @@ export function installQuote() {
       return;
     }
     await loadQuotesList();
+  }
+
+  function copyQuoteSnapshotToInvoice() {
+    setBox('inv-contact', document.getElementById('quote-contact')?.value || '');
+    setBox('inv-phone', document.getElementById('quote-phone')?.value || '');
+    setBox('inv-email', document.getElementById('quote-email')?.value || '');
+    setBox('inv-billing', document.getElementById('quote-billing')?.value || '');
+    setBox('inv-ship', document.getElementById('quote-ship')?.value || '');
+    setBox('inv-terms', comboValue('terms'));
+    setBox('inv-tax-exempt', document.getElementById('quote-tax-exempt')?.value || '');
+    setBox('inv-customer-notes', document.getElementById('quote-customer-notes')?.value || '');
+    const saveShip = document.getElementById('inv-save-ship');
+    if (saveShip) saveShip.checked = false;
+    syncSaveShipToBox();
+  }
+
+  function invoiceTermsValue(fallback) {
+    const el = document.getElementById('inv-terms');
+    if (el) return (el.value || '').trim();
+    return String(fallback || '').trim();
+  }
+
+  function invoiceSnapshotFromForm() {
+    const saveShip = document.getElementById('inv-save-ship');
+    return {
+      contact_name: blankNull(document.getElementById('inv-contact')?.value),
+      phone: blankNull(document.getElementById('inv-phone')?.value),
+      email: blankNull(document.getElementById('inv-email')?.value),
+      billing_address: blankNull(document.getElementById('inv-billing')?.value),
+      tax_exempt_number: blankNull(document.getElementById('inv-tax-exempt')?.value),
+      customer_notes: blankNull(document.getElementById('inv-customer-notes')?.value),
+      save_ship_to: !!(saveShip && saveShip.checked)
+    };
   }
 
   function invoiceHeaderFields(data, m, po, shipTo, due, today) {
@@ -2017,7 +2269,8 @@ export function installQuote() {
       invoice_date: today,
       due_date: due || null,
       fob_point: data.fob || null,
-      payment_terms: data.terms || null,
+      payment_terms: invoiceTermsValue(data.terms) || null,
+      ...invoiceSnapshotFromForm(),
       cc_used: !!m.cc,
       cc_fee_rate: 0.035,
       cc_fee_amount: m.ccFee,
@@ -2030,6 +2283,20 @@ export function installQuote() {
       notes: data.notes || null,
       status: 'draft'
     };
+  }
+
+  async function writeInvoiceHeader(header, draftId, quoteId) {
+    const client = shop().supabaseClient;
+    const send = (body) => draftId
+      ? client.from('invoices').update(body).eq('id', draftId)
+      : client.from('invoices').insert({
+        quote_id: quoteId || null,
+        ...body,
+        created_by: shop().currentUser()
+      }).select('id').maybeSingle();
+    let res = await send(header);
+    if (res.error && missingSnapshotColumn(res.error)) res = await send(withoutKeys(header, INVOICE_SNAP_COLS));
+    return res;
   }
 
   function invoiceLinePayload(invoiceId) {
@@ -2076,12 +2343,17 @@ export function installQuote() {
   </div>
     </div>
     <div class="info">
-  <div><span>Bill to:</span> ${shop().escapeHtml(doc.customer) || '—'}</div>
+  <div><span>Bill to:</span> ${printBillTo(doc.customer, doc.billing)}</div>
+  <div><span>Contact person:</span> ${printLines(doc.contact)}</div>
+  <div><span>Phone:</span> ${printLines(doc.phone)}</div>
+  <div><span>Email:</span> ${printLines(doc.email)}</div>
   <div><span>Project:</span> ${shop().escapeHtml(doc.project) || '—'}</div>
-  <div><span>Ship to:</span> ${shop().escapeHtml(doc.shipTo) || 'Same as bill to'}</div>
+  <div><span>Ship to:</span> ${printLines(doc.shipTo)}</div>
   <div><span>Prepared By:</span> ${shop().escapeHtml(doc.by) || '—'}</div>
   <div><span>FOB:</span> ${shop().escapeHtml(doc.fob) || '—'}</div>
   <div><span>Payment terms:</span> ${shop().escapeHtml(doc.terms) || '—'}</div>
+  <div><span>Tax-exempt or resale number:</span> ${printLines(doc.taxExempt)}</div>
+  <div><span>Customer notes:</span> ${printLines(doc.customerNotes)}</div>
     </div>
     <table>
   <thead><tr><th>Part #</th><th>Description</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Amount</th></tr></thead>
@@ -2158,7 +2430,7 @@ export function installQuote() {
       let invNumber = '';
       if (!shop().supabaseClient) return;
       if (draft) {
-        const { error } = await shop().supabaseClient.from('invoices').update(header).eq('id', draft.id);
+        const { error } = await writeInvoiceHeader(header, draft.id, null);
         if (error) {
           console.warn(error);
           const raw = dbErrorRaw(error);
@@ -2188,11 +2460,7 @@ export function installQuote() {
           ? `Draft ${invNumber} updated. Stock unchanged until you Approve.`
           : 'Draft updated. Stock unchanged until you Approve.', 'success');
       } else {
-        const { data: inv, error } = await shop().supabaseClient.from('invoices').insert({
-          quote_id: quoteId || null,
-          ...header,
-          created_by: shop().currentUser()
-        }).select('id').maybeSingle();
+        const { data: inv, error } = await writeInvoiceHeader(header, null, quoteId);
         if (error || !inv?.id) {
           console.warn(error);
           const raw = dbErrorRaw(error);
@@ -2227,9 +2495,15 @@ export function installQuote() {
         customer: data.customer,
         project: data.project,
         shipTo,
+        billing: document.getElementById('inv-billing')?.value || '',
+        contact: document.getElementById('inv-contact')?.value || '',
+        phone: document.getElementById('inv-phone')?.value || '',
+        email: document.getElementById('inv-email')?.value || '',
+        taxExempt: document.getElementById('inv-tax-exempt')?.value || '',
+        customerNotes: document.getElementById('inv-customer-notes')?.value || '',
         by: data.by,
         fob: data.fob,
-        terms: data.terms,
+        terms: invoiceTermsValue(data.terms),
         notes: data.notes,
         lines: quoteCart,
         draft: true,
@@ -2247,8 +2521,8 @@ export function installQuote() {
     }
   }
 
-  const FIND_QUOTE_COLS = 'id,number,company,customer_name,status,quote_date,valid_until,prepared_by,notes,project,rfq_number,fob_point,payment_terms,lead_time';
-  const FIND_INVOICE_COLS = 'id,number,company,quote_id,customer_name,project,po_number,ship_to,invoice_date,due_date,fob_point,payment_terms,cc_used,cc_fee_amount,shipping_fee,duty,tariffs,subtotal,total,prepared_by,notes,status,voided_at,voided_by,void_reason';
+  const FIND_QUOTE_COLS = 'id,number,company,customer_name,status,quote_date,valid_until,prepared_by,notes,project,rfq_number,fob_point,payment_terms,lead_time,contact_name,phone,email,billing_address,ship_to,tax_exempt_number,customer_notes';
+  const FIND_INVOICE_COLS = 'id,number,company,quote_id,customer_name,project,po_number,ship_to,invoice_date,due_date,fob_point,payment_terms,cc_used,cc_fee_amount,shipping_fee,duty,tariffs,subtotal,total,prepared_by,notes,status,voided_at,voided_by,void_reason,contact_name,phone,email,billing_address,tax_exempt_number,customer_notes,save_ship_to';
   const FIND_LINE_COLS = 'line_no,part_number,name,qty,unit_price';
 
   function sortFindLines(lines) {
@@ -2902,12 +3176,22 @@ export function installQuote() {
     return /company/i.test(raw) && /does not exist|schema cache|could not find/i.test(raw);
   }
 
+  function colsWithout(list, drop) {
+    const gone = new Set(drop);
+    return String(list || '').split(',').map(col => col.trim()).filter(col => col && !gone.has(col)).join(',');
+  }
+
   async function selectFindRow(table, cols, id) {
     const client = shop().supabaseClient;
-    let res = await client.from(table).select(cols).eq('id', id).maybeSingle();
+    let current = cols;
+    let res = await client.from(table).select(current).eq('id', id).maybeSingle();
     if (res.error && missingCompanyColumn(res.error)) {
-      const slim = cols.split(',').filter(col => col !== 'company').join(',');
-      res = await client.from(table).select(slim).eq('id', id).maybeSingle();
+      current = colsWithout(current, ['company']);
+      res = await client.from(table).select(current).eq('id', id).maybeSingle();
+    }
+    if (res.error && missingSnapshotColumn(res.error)) {
+      current = colsWithout(current, table === 'quotes' ? QUOTE_SNAP_COLS : INVOICE_SNAP_COLS);
+      res = await client.from(table).select(current).eq('id', id).maybeSingle();
     }
     return res;
   }
@@ -2923,6 +3207,12 @@ export function installQuote() {
       customer: inv.customer_name || '',
       project: inv.project || '',
       shipTo: inv.ship_to || '',
+      billing: inv.billing_address || '',
+      contact: inv.contact_name || '',
+      phone: inv.phone || '',
+      email: inv.email || '',
+      taxExempt: inv.tax_exempt_number || '',
+      customerNotes: inv.customer_notes || '',
       by: inv.prepared_by || '',
       fob: inv.fob_point || '',
       terms: inv.payment_terms || '',
@@ -3104,6 +3394,7 @@ export function installQuote() {
     findCustomerByName,
     onQuoteCustomerChange,
     setCashSale,
+    syncSaveShipToBox,
     onQuoteCustomerInput,
     pickCustomer,
     addCustomerFromQuote,
