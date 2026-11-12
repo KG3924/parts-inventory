@@ -816,7 +816,7 @@
       }
       box.innerHTML = rows.map(p => {
         const already = state.items.some(i => i.part_number.toLowerCase() === p.part_number.toLowerCase());
-        return `<button type="button" class="hit" onclick="openFromCatalog('${escAttr(p.part_number)}')">
+        return `<button type="button" class="hit" data-pn="${escAttr(p.part_number)}" onclick="openFromCatalog(this.dataset.pn)">
           <strong>${esc(p.name)}</strong>
           <small>${esc(p.part_number)}${p.source ? ' · ' + esc(p.source) : ''}${already ? ' · already in count — tap to edit' : ''}</small>
         </button>`;

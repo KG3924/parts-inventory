@@ -272,6 +272,7 @@ export function installQuote() {
   let printedDraftLines = null;
   let approvedInvoiceByQuote = {};
   let invoiceSaveBusy = false;
+  let quoteSaveBusy = false;
   let dueEditedByHand = false;
   let invoiceBoxDraftId = 'none';
   let findView = null;
@@ -1248,7 +1249,23 @@ export function installQuote() {
     shop().showStatus(`Opened ${q.number}`, 'success');
   }
 
+  async function withQuoteSave(run) {
+    if (quoteSaveBusy) return false;
+    quoteSaveBusy = true;
+    applySaleLocks();
+    try {
+      return await run();
+    } finally {
+      quoteSaveBusy = false;
+      applySaleLocks();
+    }
+  }
+
   async function saveQuoteToDb() {
+    return withQuoteSave(saveQuoteToDbNow);
+  }
+
+  async function saveQuoteToDbNow() {
     if (!shop().requireUser('saving quotes')) return false;
     if (!(await ensureQuotesTables())) {
       shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
@@ -1400,6 +1417,7 @@ export function installQuote() {
   }
 
   async function saveAsNewQuote() {
+    return withQuoteSave(async () => {
     if (!shop().requireUser('saving quotes')) return false;
     if (!(await ensureQuotesTables())) {
       shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
@@ -1443,7 +1461,8 @@ export function installQuote() {
     renderCompanyPicker();
     quoteCart = lines;
     saveQuoteCart();
-    return saveQuoteToDb();
+    return saveQuoteToDbNow();
+    });
   }
 
   async function voidQuoteById(id) {
@@ -1938,11 +1957,14 @@ export function installQuote() {
     [saveBtn, invoiceBtn].forEach(btn => {
       if (!btn) return;
       btn.hidden = hideActions;
-      btn.disabled = blocked || hideActions;
+      btn.disabled = blocked || hideActions || quoteSaveBusy;
       btn.style.opacity = blocked ? '0.45' : '';
     });
     const saveNew = document.getElementById('quote-save-new-btn');
-    if (saveNew) saveNew.hidden = !(blocked || voidFinal);
+    if (saveNew) {
+      saveNew.hidden = !(blocked || voidFinal);
+      saveNew.disabled = quoteSaveBusy;
+    }
     const printBtn = document.getElementById('quote-save-print-btn');
     const voided = openQuoteIsVoid();
     if (printBtn) {
