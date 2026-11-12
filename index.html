@@ -1008,6 +1008,7 @@ notify pgrst, 'reload schema';</pre>
     let supabaseClient = null;
     var inventory = []; // same array part-match.js searches
     let inventoryLoaded = false;
+    let inventoryLoadFailed = false;
     let html5QrCode = null;
     let scanning = false;
     let activeSourceFilter = 'All';
@@ -1852,6 +1853,8 @@ notify pgrst, 'reload schema';</pre>
         console.error(error);
         document.getElementById('conn-status').textContent = "Couldn't load — try again";
         showStatus(plainDbError(error, 'load'), 'error');
+        inventoryLoadFailed = true;
+        renderTable();
         return;
       }
       inventory = data || [];
@@ -1911,6 +1914,7 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
       refreshSuggestionLists();
       inventoryLoaded = true;
+      inventoryLoadFailed = false;
       renderAll();
       if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
     }
@@ -2169,10 +2173,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     function chipList(values, active, setterName, extraClass) {
-      return values.map(s => {
-        const safe = String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<button type="button" class="filter-chip ${extraClass || ''} ${active === s ? 'active' : ''}" onclick="${setterName}('${safe}')">${escapeHtml(s)}</button>`;
-      }).join('');
+      return values.map(s => `<button type="button" class="filter-chip ${extraClass || ''} ${active === s ? 'active' : ''}" data-v="${escapeHtml(s)}" onclick="${setterName}(this.dataset.v)">${escapeHtml(s)}</button>`).join('');
     }
 
     function renderSourceFilters() {
@@ -2230,7 +2231,9 @@ notify pgrst, 'reload schema';</pre>
       if (filtered.length === 0) {
         tbody.innerHTML = '';
         empty.style.display = 'block';
-        if (!inventoryLoaded) {
+        if (!inventoryLoaded && inventoryLoadFailed) {
+          empty.textContent = "Couldn't load — try again.";
+        } else if (!inventoryLoaded) {
           empty.textContent = 'Loading…';
         } else if (inventory.length === 0) {
           empty.textContent = 'No parts yet. Import clean JSON or add a part.';
@@ -2637,6 +2640,26 @@ notify pgrst, 'reload schema';</pre>
       const existingItem = id ? inventory.find(i => i.id === id) : null;
       const stockQty = newQty;
       const stockUsed = newUsed;
+      let qtyChanged = false, usedChanged = false;
+      if (id) {
+        const editEl = document.getElementById('edit-id');
+        const openQty = Number(editEl.dataset.openQty);
+        const openUsed = Number(editEl.dataset.openUsed);
+        qtyChanged = stockQty !== openQty;
+        usedChanged = hasQtyUsedColumn && stockUsed !== openUsed;
+        if (qtyChanged || usedChanged) {
+          // Read the live row now; the in-memory list can be stale on a phone that was asleep.
+          const { data: live, error: liveErr } = await supabaseClient
+            .from('inventory').select(hasQtyUsedColumn ? 'qty,qty_used' : 'qty').eq('id', id).maybeSingle();
+          if (liveErr || !live) { showItemFormError("Couldn't check stock. Try again."); return; }
+          const liveQty = live.qty || 0;
+          const liveUsed = hasQtyUsedColumn ? qtyUsedOf(live) : openUsed;
+          if (liveQty !== openQty || liveUsed !== openUsed) {
+            showItemFormError('Stock changed since you opened this part. Reopen it.');
+            return;
+          }
+        }
+      }
       const payload = {
         name, part_number,
         qty: id ? undefined : 0,
@@ -2733,8 +2756,6 @@ notify pgrst, 'reload schema';</pre>
         return;
       }
       if (id) {
-        const qtyChanged = !existingItem || (existingItem.qty || 0) !== stockQty;
-        const usedChanged = !existingItem || qtyUsedOf(existingItem) !== stockUsed;
         if (qtyChanged) {
           const res = await commitQtyOnServer({
             id, action: 'set', qty: stockQty, condition: 'new', details: 'Qty changed via edit form'
@@ -2832,6 +2853,9 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('item-qty').value = item.qty || 0;
       const usedEl = document.getElementById('item-qty-used');
       if (usedEl) usedEl.value = qtyUsedOf(item);
+      const editEl = document.getElementById('edit-id');
+      editEl.dataset.openQty = String(item.qty || 0);
+      editEl.dataset.openUsed = String(qtyUsedOf(item));
       document.getElementById('item-reorder').value = (item.reorder_level != null && item.reorder_level !== '') ? item.reorder_level : 0;
       document.getElementById('item-buy-price').value = item.buy_price ?? '';
       document.getElementById('item-sell-price').value = item.sell_price ?? '';
@@ -2887,6 +2911,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     let pendingScanItem = null; // item waiting for Commit
+    let scanCommitBusy = false;
     let lastScannedCode = null;
 
     // Lookup only — does NOT change inventory until Commit
@@ -2910,14 +2935,14 @@ notify pgrst, 'reload schema';</pre>
 
       if (!item) {
         pendingScanItem = null;
-        const safe = escapeHtml(code).replace(/'/g, '&#39;');
+        const safe = escapeHtml(code);
         resultEl.innerHTML = `
           <div class="scan-result-card">
             <p style="margin:0 0 0.5rem;"><strong>Unknown part</strong></p>
             <code style="font-size:0.95rem;">${escapeHtml(code)}</code>
             <p style="font-size:0.85rem;color:var(--muted);margin:0.75rem 0 0.5rem;">Not in inventory yet.</p>
             <div class="btn-group">
-              <button onclick="prefillNew('${safe}')">Add this part</button>
+              <button type="button" data-code="${safe}" onclick="prefillNew(this.dataset.code)">Add this part</button>
               <button class="secondary" onclick="startScanner()">Scan again</button>
             </div>
           </div>`;
@@ -3010,7 +3035,7 @@ notify pgrst, 'reload schema';</pre>
             <p class="hint" style="margin-top:-0.35rem;">Use <strong>Edit part</strong> for name, prices, and the rest.</p>
           </div>
           <div class="btn-group" style="margin-top:0.25rem;">
-            <button class="tap" onclick="commitScanChange()" style="flex:1;font-weight:600;">Commit change</button>
+            <button class="tap" id="scan-commit-btn" onclick="commitScanChange()" style="flex:1;font-weight:600;">Commit change</button>
             <button type="button" class="secondary" onclick="saveScanNotesOnly()">Save notes</button>
             <button type="button" class="secondary" onclick="startScanner()">Scan again</button>
           </div>
@@ -3054,6 +3079,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function commitScanChange() {
+      if (scanCommitBusy) return;
       if (!pendingScanItem || !supabaseClient) return;
       if (!requireUser('committing scan changes')) return;
       const item = pendingScanItem;
@@ -3087,6 +3113,10 @@ notify pgrst, 'reload schema';</pre>
       const notes = notesRaw != null ? (notesRaw.trim() || null) : (item.notes || null);
       const resultEl = document.getElementById('scan-result');
 
+      scanCommitBusy = true;
+      const btn = document.getElementById('scan-commit-btn');
+      if (btn) btn.disabled = true;
+      try {
       if (notes !== (item.notes || null)) {
         const { error: noteErr } = await supabaseClient.from('inventory')
           .update({ notes, updated_by: currentUser(), updated_at: new Date().toISOString() })
@@ -3129,6 +3159,11 @@ notify pgrst, 'reload schema';</pre>
         </div>`;
       showStatus(`Qty updated: ${oldQty} → ${newQty} (${currentUser()})`, 'success');
       await loadInventory();
+      } finally {
+        scanCommitBusy = false;
+        const b = document.getElementById('scan-commit-btn');
+        if (b) b.disabled = false;
+      }
     }
 
     function adjustItem(id) {
@@ -3155,13 +3190,13 @@ notify pgrst, 'reload schema';</pre>
       if (!resultEl) return;
       if (!matches.length) {
         pendingScanItem = null;
-        const safe = escapeHtml(query).replace(/'/g, '&#39;');
+        const safe = escapeHtml(query);
         resultEl.innerHTML = `
           <div class="scan-result-card">
             <p style="margin:0 0 0.5rem;"><strong>No matches</strong> for “${escapeHtml(query)}”</p>
             <p class="hint" style="margin:0 0 0.5rem;">Name, part #, or label ID.</p>
             <div class="btn-group">
-              <button onclick="prefillNew('${safe}')">Add this as a new part</button>
+              <button type="button" data-code="${safe}" onclick="prefillNew(this.dataset.code)">Add this as a new part</button>
             </div>
           </div>`;
         return;
