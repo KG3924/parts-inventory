@@ -275,6 +275,7 @@ export function installQuote() {
   let dueEditedByHand = false;
   let invoiceBoxDraftId = 'none';
   let findView = null;
+  let findBackStack = [];
   let findSeq = 0;
   let findKind = 'quote';
   let findPackingBusy = false;
@@ -346,18 +347,9 @@ export function installQuote() {
     saveQuoteCart();
   }
 
-  function clearQuote() {
+  async function clearQuote() {
     if (quoteCart.length && !confirm('Clear the working cart? (Saved quotes in the database are kept.)')) return;
-    quoteCart = [];
-    editingQuoteId = null;
-    const eid = document.getElementById('quote-edit-id');
-    if (eid) eid.value = '';
-    resetQuoteInvoiceUi();
-    const st = document.getElementById('quote-status');
-    if (st) st.value = 'draft';
-    const num = document.getElementById('quote-number');
-    if (num) num.value = '';
-    saveQuoteCart();
+    await startNewQuote({ keepStatus: true });
     shop().showStatus('Cart cleared', 'info');
   }
 
@@ -2708,6 +2700,7 @@ export function installQuote() {
     findKind = kind === 'invoice' ? 'invoice' : 'quote';
     findSeq += 1;
     findView = null;
+    findBackStack = [];
     const box = document.getElementById('find-q');
     const fromEl = document.getElementById('find-from');
     const toEl = document.getElementById('find-to');
@@ -2745,6 +2738,7 @@ export function installQuote() {
     const results = document.getElementById('find-results');
     const detail = document.getElementById('find-detail');
     findView = null;
+    findBackStack = [];
     if (detail) {
       detail.hidden = true;
       detail.innerHTML = '';
@@ -2837,9 +2831,35 @@ export function installQuote() {
     if (results) results.innerHTML = `${picked.rows.map(hit).join('')}${narrow}${partNote}`;
   }
 
+  function findBack() {
+    const prev = findBackStack.pop();
+    if (!prev) {
+      showFindResults();
+      return;
+    }
+    openFindDoc(prev.kind, prev.id);
+  }
+
+  function openFindLinkedDoc(kind, id) {
+    const safeKind = kind === 'invoice' ? 'invoice' : 'quote';
+    const safe = findDocId(id);
+    if (!safe || !findView || !findDocId(findView.id)) return;
+    findBackStack.push({ kind: findView.kind === 'invoice' ? 'invoice' : 'quote', id: findView.id });
+    openFindDoc(safeKind, safe);
+  }
+
+  function findJumpButton(kind, id, label) {
+    const safeKind = kind === 'invoice' ? 'invoice' : 'quote';
+    const safe = findDocId(id);
+    const text = shop().escapeHtml(label || '—');
+    if (!safe) return text;
+    return `<button type="button" class="secondary tap" onclick="openFindLinkedDoc('${safeKind}','${safe}')">${text}</button>`;
+  }
+
   function showFindResults() {
     findSeq += 1;
     findView = null;
+    findBackStack = [];
     const detail = document.getElementById('find-detail');
     const results = document.getElementById('find-results');
     if (detail) {
@@ -2955,10 +2975,15 @@ export function installQuote() {
     const addBit = (label, value) => {
       headerBits.push(`<div><span style="color:var(--muted);">${label}</span> ${shop().escapeHtml(value || '—')}</div>`);
     };
+    const addHtml = (label, html) => {
+      headerBits.push(`<div><span style="color:var(--muted);">${label}</span> ${html}</div>`);
+    };
     if (kind === 'invoice' && loaded.invoice) {
       const inv = loaded.invoice;
       addBit('Invoice', inv.number);
-      addBit('Quote', parentNumber || '');
+      const parentId = findDocId(loaded.parent && loaded.parent.id);
+      if (parentId) addHtml('Quote', findJumpButton('quote', parentId, parentNumber || '—'));
+      else addBit('Quote', '');
       addBit('Status', findStatusLabel('invoice', inv.status));
       addBit('Customer', inv.customer_name);
       addBit('Project', inv.project);
@@ -2988,12 +3013,12 @@ export function installQuote() {
         ? 'Reprint shows this quote. Stock does not change.'
         : 'Reprint does not save and does not change stock.');
     detail.innerHTML = `
-      <button type="button" class="secondary tap" onclick="showFindResults()">Back</button>
+      <button type="button" class="secondary tap" onclick="findBack()">Back</button>
       <div class="info" style="margin-top:0.75rem;">${headerBits.join('')}</div>
       ${loaded.quote && loaded.quote.notes ? `<div class="notes">${shop().escapeHtml(loaded.quote.notes)}</div>` : ''}
       ${loaded.invoice && loaded.invoice.notes ? `<div class="notes">${shop().escapeHtml(loaded.invoice.notes)}</div>` : ''}
       ${renderFindLines(lines)}
-      ${kind === 'quote' && (loaded.invoices || []).length ? `<p class="hint">On this quote: ${shop().escapeHtml((loaded.invoices || []).map(row => `${row.number || ''} ${findStatusLabel('invoice', row.status)}`).join(', '))}</p>` : ''}
+      ${kind === 'quote' && (loaded.invoices || []).length ? `<div class="btn-group" style="margin-top:0.65rem;">${(loaded.invoices || []).map(row => findJumpButton('invoice', row && row.id, `${row && row.number || '—'} ${findStatusLabel('invoice', row && row.status)}`.trim())).join('')}</div>` : ''}
       ${voidedLine ? `<p>${shop().escapeHtml(voidedLine)}</p>` : ''}
       ${note ? `<p class="hint">${shop().escapeHtml(note)}</p>` : ''}
       ${readOnlyNote ? `<p class="hint">${shop().escapeHtml(readOnlyNote)}</p>` : ''}
@@ -3153,7 +3178,7 @@ export function installQuote() {
     if (detail) {
       detail.hidden = false;
       detail.setAttribute('aria-busy', 'true');
-      detail.innerHTML = '<button type="button" class="secondary tap" onclick="showFindResults()">Back</button><p class="empty">Opening…</p>';
+      detail.innerHTML = '<button type="button" class="secondary tap" onclick="findBack()">Back</button><p class="empty">Opening…</p>';
     }
     const loaded = await loadFindDoc(safeKind, safe);
     if (seq !== findSeq) return;
@@ -3429,6 +3454,8 @@ export function installQuote() {
     approveInvoice,
     runFindSearch,
     openFindDoc,
+    openFindLinkedDoc,
+    findBack,
     showFindResults,
     reprintFindDoc,
     printInvoiceDocument
