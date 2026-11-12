@@ -339,6 +339,7 @@ export function installQuote() {
   }
 
   function addToQuote(id) {
+    if (!shop().settingsReady) return;
     const item = shop().inventory.find(i => i.id === id);
     if (!item) return;
     const existing = quoteCart.find(c => c.id === id || (c.inventory_id && c.inventory_id === id));
@@ -1301,6 +1302,7 @@ export function installQuote() {
   }
 
   async function saveQuoteToDb() {
+    if (!shop().settingsReady) return;
     return withQuoteSave(saveQuoteToDbNow);
   }
 
@@ -1990,12 +1992,17 @@ export function installQuote() {
     }
     const saveBtn = document.getElementById('quote-save-btn');
     const invoiceBtn = document.getElementById('quote-invoice-btn');
-    [saveBtn, invoiceBtn].forEach(btn => {
-      if (!btn) return;
-      btn.hidden = hideActions;
-      btn.disabled = blocked || hideActions || quoteSaveBusy;
-      btn.style.opacity = blocked ? '0.45' : '';
-    });
+    if (saveBtn) {
+      saveBtn.hidden = hideActions;
+      saveBtn.disabled = blocked || hideActions || quoteSaveBusy || !shop().settingsReady;
+      saveBtn.style.opacity = (blocked || !shop().settingsReady) ? '0.45' : '';
+    }
+    if (invoiceBtn) {
+      invoiceBtn.hidden = hideActions;
+      invoiceBtn.disabled = blocked || hideActions || quoteSaveBusy;
+      invoiceBtn.style.opacity = blocked ? '0.45' : '';
+    }
+    if (typeof window.applySettingsGate === 'function') window.applySettingsGate();
     const saveNew = document.getElementById('quote-save-new-btn');
     if (saveNew) {
       saveNew.hidden = !(blocked || voidFinal);
@@ -3506,6 +3513,7 @@ export function installQuote() {
     startNewQuote,
     openQuote,
     saveQuoteToDb,
+    applySaleLocks,
     saveAsNewQuote,
     voidCurrentQuote,
     voidQuoteById,
@@ -3575,6 +3583,7 @@ export function installQuote() {
     if (findLast7) findLast7.addEventListener('click', () => { runFindLast7(); });
     const statusSel = document.getElementById('quote-status');
     if (statusSel) statusSel.addEventListener('change', () => applySaleLocks());
+    applySaleLocks();
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#customer-pick, #quote-customer')) hideCustomerPick();
     });
