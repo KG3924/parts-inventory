@@ -266,7 +266,7 @@ export function installQuote() {
   }
 
   let quotesListCache = [];
-  let editingQuoteId = null;
+  let editingQuoteId;
   let loadedQuoteStatus = '';
   let currentQuoteInvoices = [];
   let printedDraftLines = null;
@@ -276,7 +276,6 @@ export function installQuote() {
   let dueEditedByHand = false;
   let invoiceBoxDraftId = 'none';
   let findView = null;
-  let findBackStack = [];
   let findSeq = 0;
   let findKind = 'quote';
   let findPackingBusy = false;
@@ -296,6 +295,47 @@ export function installQuote() {
   function emptyWorkingCart() {
     quoteCart = [];
     saveQuoteCart();
+  }
+
+  function setOpenQuoteId(id) {
+    editingQuoteId = id || null;
+    const el = document.getElementById('quote-edit-id');
+    if (el) el.value = id || '';
+    if (id) localStorage.setItem('inv_quote_open', String(id));
+    else {
+      localStorage.removeItem('inv_quote_open');
+      localStorage.removeItem('inv_quote_base');
+    }
+  }
+  // Call right after openQuote succeeds and right after each save succeeds (both spots, about 1370 and 1406).
+  function markQuoteBase() {
+    localStorage.setItem('inv_quote_base', JSON.stringify(quoteCart));
+  }
+  async function restoreOpenQuote() {
+    const id = localStorage.getItem('inv_quote_open');
+    if (!id) return;                                  // no open quote: unsaved builder as today
+    const local = localStorage.getItem('inv_quote') || '[]';
+    const base = localStorage.getItem('inv_quote_base');   // read BEFORE openQuote, which overwrites it
+    await openQuote(id);
+    if (currentQuoteId() !== String(id)) {             // couldn't reopen it
+      setOpenQuoteId(null);
+      emptyWorkingCart();
+      renderQuotePanel();
+      shop().showStatus("Couldn't reopen the last quote. Open it again from Saved Quotes.", 'error');
+      return;
+    }
+    const db = JSON.stringify(quoteCart);
+    if (base === null || local === base) return;      // quote from before this cut, or no edits: keep db, no message
+    if (db === base) {
+      if (!quoteSaleBlocked() && !quoteIsVoidFinal()) {
+        quoteCart = JSON.parse(local);
+        saveQuoteCart();
+        shop().showStatus('Reopened with your unsaved line changes. Save to update it.', 'info');
+      }
+      return;
+    }
+    localStorage.setItem('inv_quote_base', db);       // someone else saved: keep db
+    shop().showStatus("This quote changed on another phone. Your unsaved line edits weren't kept.", 'info');
   }
 
   function addToQuote(id) {
@@ -1157,9 +1197,8 @@ export function installQuote() {
 
   async function startNewQuote(opts) {
     emptyWorkingCart();
-    editingQuoteId = null;
+    setOpenQuoteId(null);
     loadedQuoteStatus = '';
-    document.getElementById('quote-edit-id').value = '';
     resetQuoteInvoiceUi();
     document.getElementById('quote-status').value = 'draft';
     document.getElementById('quote-number').value = '';
@@ -1207,9 +1246,8 @@ export function installQuote() {
     }
     const { data: lines } = await shop().supabaseClient.from('quote_lines')
       .select('*').eq('quote_id', id).order('line_no');
-    editingQuoteId = q.id;
+    setOpenQuoteId(q.id);
     loadedQuoteStatus = q.status || '';
-    document.getElementById('quote-edit-id').value = q.id;
     quoteCompany = q.company === 'L' || q.company === 'S' ? q.company : '';
     quoteCompanyLocked = true;
     setQuoteNumberDisplay(q.number || '');
@@ -1241,6 +1279,7 @@ export function installQuote() {
       unit_price: Number(l.unit_price) || 0
     }));
     saveQuoteCart();
+    markQuoteBase();
     await refreshQuoteInvoices();
     if (currentQuoteId() === String(q.id)) {
       if (quoteSaleBlocked() || quoteIsVoidFinal()) resetInvoiceBox();
@@ -1367,8 +1406,8 @@ export function installQuote() {
       number = saved.number || '';
       if (saved.company === 'L' || saved.company === 'S') quoteCompany = saved.company;
       quoteCompanyLocked = true;
-      editingQuoteId = quoteId;
-      document.getElementById('quote-edit-id').value = quoteId;
+      setOpenQuoteId(quoteId);
+      markQuoteBase();
       setQuoteNumberDisplay(number);
       renderCompanyPicker();
     } else if (quoteId && sealingVoid) {
@@ -1403,8 +1442,8 @@ export function installQuote() {
       return false;
     }
     if (number === NEW_QUOTE_NUMBER) number = '';
-    editingQuoteId = quoteId;
-    document.getElementById('quote-edit-id').value = quoteId;
+    setOpenQuoteId(quoteId);
+    markQuoteBase();
     loadedQuoteStatus = requestedStatus;
     shop().showStatus(firstSave ? `Saved ${number}` : `Quote ${number} saved (${shop().currentUser()})`, 'success');
     if (requestedStatus === 'void') {
@@ -1428,10 +1467,8 @@ export function installQuote() {
       return false;
     }
     const lines = quoteCart.map(c => ({ ...c }));
-    editingQuoteId = null;
+    setOpenQuoteId(null);
     loadedQuoteStatus = '';
-    const edit = document.getElementById('quote-edit-id');
-    if (edit) edit.value = '';
     resetQuoteInvoiceUi();
     const setVal = (id, value) => {
       const el = document.getElementById(id);
@@ -1536,9 +1573,8 @@ export function installQuote() {
       shop().showStatus('Nothing to duplicate', 'error');
       return;
     }
-    editingQuoteId = null;
+    setOpenQuoteId(null);
     loadedQuoteStatus = '';
-    document.getElementById('quote-edit-id').value = '';
     document.getElementById('quote-status').value = 'draft';
     resetQuoteInvoiceUi();
     if (!(await ensureQuotesTables())) return;
@@ -2722,7 +2758,6 @@ export function installQuote() {
     findKind = kind === 'invoice' ? 'invoice' : 'quote';
     findSeq += 1;
     findView = null;
-    findBackStack = [];
     const box = document.getElementById('find-q');
     const fromEl = document.getElementById('find-from');
     const toEl = document.getElementById('find-to');
@@ -2760,7 +2795,6 @@ export function installQuote() {
     const results = document.getElementById('find-results');
     const detail = document.getElementById('find-detail');
     findView = null;
-    findBackStack = [];
     if (detail) {
       detail.hidden = true;
       detail.innerHTML = '';
@@ -2854,19 +2888,14 @@ export function installQuote() {
   }
 
   function findBack() {
-    const prev = findBackStack.pop();
-    if (!prev) {
-      showFindResults();
-      return;
-    }
-    openFindDoc(prev.kind, prev.id);
+    if (history.state?.panel === 'find' && history.state?.id) history.back();
+    else showFindResults();
   }
 
   function openFindLinkedDoc(kind, id) {
     const safeKind = kind === 'invoice' ? 'invoice' : 'quote';
     const safe = findDocId(id);
     if (!safe || !findView || !findDocId(findView.id)) return;
-    findBackStack.push({ kind: findView.kind === 'invoice' ? 'invoice' : 'quote', id: findView.id });
     openFindDoc(safeKind, safe);
   }
 
@@ -2881,7 +2910,6 @@ export function installQuote() {
   function showFindResults() {
     findSeq += 1;
     findView = null;
-    findBackStack = [];
     const detail = document.getElementById('find-detail');
     const results = document.getElementById('find-results');
     if (detail) {
@@ -3058,6 +3086,7 @@ export function installQuote() {
     if (voidKeep) voidKeep.addEventListener('click', () => { keepFindInvoice(); });
     const dupBtn = document.getElementById('find-dup');
     if (dupBtn) dupBtn.addEventListener('click', () => { duplicateFindDoc(); });
+    setFindVoidButtonsDisabled(findVoidBusy);
   }
 
   function findVoidPanelHtml(inv, lines) {
@@ -3092,7 +3121,7 @@ export function installQuote() {
   }
 
   function setFindVoidButtonsDisabled(disabled) {
-    ['find-void-confirm', 'find-void-keep'].forEach(id => {
+    ['find-void', 'find-void-confirm', 'find-void-keep'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = disabled;
     });
@@ -3153,6 +3182,7 @@ export function installQuote() {
       const loaded = await loadFindDoc('invoice', invoiceId);
       if (seq !== findSeq) return;
       if (!loaded || loaded.error || loaded.missing) return;
+      findVoidBusy = false;
       findView = { kind: 'invoice', id: invoiceId, loaded };
       renderFindDetail('invoice', loaded);
       finished = true;
@@ -3189,10 +3219,19 @@ export function installQuote() {
     if (typeof window.showPanel === 'function') window.showPanel('quote');
   }
 
-  async function openFindDoc(kind, id) {
-    const safeKind = kind === 'invoice' ? 'invoice' : 'quote';
+  async function openFindDoc(kind, id, opts) {
+    const fromHistory = !!(opts && opts.fromHistory);
+    if (fromHistory && typeof window.showPanel === 'function') window.showPanel('find', { fromHistory: true });
+    if (kind !== 'quote' && kind !== 'invoice') {
+      showFindResults();
+      return;
+    }
+    const safeKind = kind;
     const safe = findDocId(id);
-    if (!safe) return;
+    if (!safe) {
+      showFindResults();
+      return;
+    }
     const seq = ++findSeq;
     const results = document.getElementById('find-results');
     const detail = document.getElementById('find-detail');
@@ -3216,6 +3255,16 @@ export function installQuote() {
     }
     findView = { kind: safeKind, id: safe, loaded };
     renderFindDetail(safeKind, loaded);
+    if (!fromHistory && !document.body.classList.contains('auth-locked') && typeof window.viewUrl === 'function') {
+      const next = {
+        panel: 'find',
+        kind: safeKind,
+        id: safe,
+        depth: ((history.state && history.state.depth) || 0) + 1
+      };
+      history.pushState(next, '', window.viewUrl('find'));
+      if (typeof window.noteShopHistory === 'function') window.noteShopHistory(next);
+    }
   }
 
   function missingCompanyColumn(error) {
@@ -3450,6 +3499,7 @@ export function installQuote() {
     nextDocNumber,
     ensureQuotesTables,
     loadQuotesList,
+    restoreOpenQuote,
     openFindFromQuotes,
     openFindKind,
     renderQuotesList,
@@ -3529,16 +3579,6 @@ export function installQuote() {
       if (!e.target.closest('#customer-pick, #quote-customer')) hideCustomerPick();
     });
   })();
-
-  // Refresh quote panel when switching to Quote tab
-  document.querySelectorAll('.tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.tab === 'quote') {
-        renderQuotePanel();
-        loadQuotesList();
-      }
-    });
-  });
 
   if (window.InmarShop && typeof window.InmarShop.updateUserUI === "function") {
     window.InmarShop.updateUserUI();

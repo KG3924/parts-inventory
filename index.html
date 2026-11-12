@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Parts Inventory – Remote</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Parts">
+  <meta name="theme-color" content="#f4f6f9">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="public-config.js"></script>
   <script src="shop-auth.js"></script>
@@ -39,6 +44,7 @@
       display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
       gap: 0.75rem; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
     }
+    #shop-back { width: auto; margin: 0; padding: 0.35rem 0.65rem; font-size: 0.95rem; }
     h1 { font-size: 1.25rem; font-weight: 600; }
     .user-bar { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; }
     .user-bar select {
@@ -397,6 +403,7 @@
   </div>
   <div class="container" id="app-shell">
     <header>
+      <button type="button" class="secondary" id="shop-back" hidden onclick="history.back()">‹ Back</button>
       <h1>📦 Parts Inventory</h1>
       <div class="user-bar">
         <span id="signed-in-name"></span>
@@ -426,7 +433,7 @@
     <!-- FIND. One section, two areas. Not a tab. -->
     <div id="find" class="panel">
       <div class="card">
-        <button type="button" class="secondary tap" onclick="showPanel('dashboard')">Back to Home</button>
+        <button type="button" class="secondary tap" onclick="shopBack()">Back</button>
         <h2 id="find-title">Find quotes</h2>
         <form id="find-form" action="#">
           <label for="find-q">Number, customer or part</label>
@@ -620,6 +627,7 @@
         <p id="item-form-error" class="status error" role="alert" hidden></p>
         <div class="btn-group">
           <button class="tap" onclick="saveItem()">Save</button>
+          <button type="button" class="secondary tap" onclick="cancelPartForm()">Cancel</button>
           <button class="secondary tap" onclick="clearForm()">Clear</button>
         </div>
         <div id="item-delete-zone" class="item-delete-zone" hidden>
@@ -761,6 +769,7 @@
 
     <!-- MORE -->
     <div id="data" class="panel">
+      <button type="button" class="secondary tap" onclick="shopBack()" style="width:100%;margin-bottom:0.75rem;">Back</button>
       <div class="card">
         <button type="button" class="secondary tap" onclick="showPanel('reports')" style="width:100%;margin-bottom:0.85rem;">Reports</button>
         <h2>Passwords</h2>
@@ -1163,7 +1172,108 @@ notify pgrst, 'reload schema';</pre>
       return line;
     }
 
-    function showPanel(name) {
+    const VIEW_NAMES = ['dashboard','inventory','scan','quote','find','data','reports','labels','customers','po','add'];
+    function safeView(v) { return VIEW_NAMES.includes(v) ? v : null; }
+    function viewFromUrl() {
+      let v = null;
+      try { v = new URLSearchParams(location.search).get('view'); } catch (e) { v = null; }
+      if (v === null || v === '') return 'dashboard';
+      return safeView(v) || 'inventory';   // unknown value opens the parts list
+    }
+    function viewUrl(name) {
+      const u = new URL(location.href);
+      ['p','part','pn'].forEach(k => u.searchParams.delete(k));
+      u.searchParams.set('view', name);
+      return u.pathname + u.search + u.hash;
+    }
+    window.viewUrl = viewUrl;
+
+    let shopPanel = 'dashboard';
+    let shopHistoryState = { panel: 'dashboard', depth: 0 };
+    let skipLeaveConfirm = false;
+    let partFormBase = null;
+
+    function currentPanelName() { return shopPanel; }
+    function currentHistoryState() {
+      const st = { panel: shopHistoryState.panel, depth: shopHistoryState.depth || 0 };
+      if (shopHistoryState.kind) st.kind = shopHistoryState.kind;
+      if (shopHistoryState.id) st.id = shopHistoryState.id;
+      return st;
+    }
+    function noteShopHistory(st) {
+      const next = {
+        panel: (st && safeView(st.panel)) || shopPanel,
+        depth: (st && st.depth) || 0
+      };
+      if (st && (st.kind === 'quote' || st.kind === 'invoice')) next.kind = st.kind;
+      if (st && st.id) next.id = st.id;
+      shopHistoryState = next;
+      updateShopBack();
+    }
+    window.noteShopHistory = noteShopHistory;
+
+    function updateShopBack() {
+      const btn = document.getElementById('shop-back');
+      if (!btn) return;
+      const depth = (history.state && history.state.depth) || 0;
+      btn.hidden = !(depth > 0);
+    }
+    function shopBack() {
+      if ((history.state && history.state.depth) > 0) history.back();
+      else showPanel('dashboard');
+    }
+
+    const PART_FORM_FIELDS = ['item-name','item-barcode','item-qty','item-qty-used','item-reorder','item-list-price','item-sell-factor','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes','item-date-ordered','item-est-delivery','item-ordered-qty'];
+    const PART_FORM_CHECKS = ['item-exclude-value','item-open-order'];
+    function partFormSnapshot() {
+      const vals = PART_FORM_FIELDS.map(id => {
+        const el = document.getElementById(id);
+        return el ? el.value : '';
+      });
+      const checks = PART_FORM_CHECKS.map(id => {
+        const el = document.getElementById(id);
+        return el && el.checked ? '1' : '0';
+      });
+      return JSON.stringify([vals, checks]);
+    }
+    function rememberPartForm() { partFormBase = partFormSnapshot(); }
+    function partFormDirty() {
+      if (partFormBase == null) return false;
+      return partFormSnapshot() !== partFormBase;
+    }
+    function leavingUnsavedWork() {
+      if (currentPanelName() === 'add' && partFormDirty()) return true;
+      if (currentPanelName() === 'customers' && typeof window.customersUnsavedChanges === 'function' && window.customersUnsavedChanges()) return true;
+      if (currentPanelName() === 'find') {
+        const reason = document.getElementById('find-void-reason');
+        if (reason && String(reason.value || '').trim()) return true;
+      }
+      return false;
+    }
+    function cancelPartForm() {
+      if (leavingUnsavedWork() && !confirm('Leave without saving? Your changes will be lost.')) return;
+      if ((history.state && history.state.depth) > 0) skipLeaveConfirm = true;
+      shopBack();
+    }
+
+    function findDocChanging(name) {
+      const st = history.state;
+      return !!(st && st.panel === 'find' && st.id && name === 'find');
+    }
+
+    function showPanel(name, opts) {
+      name = safeView(name) || 'inventory';
+      const fromHistory = !!(opts && opts.fromHistory);
+      const locked = document.body.classList.contains('auth-locked');
+      if (!fromHistory && !locked) {
+        const st = history.state;
+        const same = !!(st && st.panel === name) && !findDocChanging(name);
+        if (!same) {
+          const next = { panel: name, depth: ((st && st.depth) || 0) + 1 };
+          history.pushState(next, '', viewUrl(name));
+          noteShopHistory(next);
+        }
+      }
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       const panel = document.getElementById(name);
@@ -1172,10 +1282,34 @@ notify pgrst, 'reload schema';</pre>
         : (name === 'add' ? 'inventory' : name);
       const tab = document.querySelector('.tab[data-tab="' + tabName + '"]');
       if (tab) tab.classList.add('active');
+      shopPanel = name;
+      if (fromHistory) noteShopHistory(history.state || { panel: name, depth: 0 });
+      if (name === 'add' && partFormBase == null) rememberPartForm();
       if (name === 'labels') populateLabelSelect();
       if (name === 'reports') renderReports();
       if (name !== 'scan') stopScanner();
+      if (name === 'quote') {
+        if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
+        if (typeof window.loadQuotesList === 'function') window.loadQuotesList();
+      }
+      updateShopBack();
     }
+
+    window.addEventListener('popstate', (e) => {
+      if (document.body.classList.contains('auth-locked') || !window.__shopEntered) return;
+      const st = e.state || {};
+      if (skipLeaveConfirm) skipLeaveConfirm = false;
+      else if (leavingUnsavedWork() && !confirm('Leave without saving? Your changes will be lost.')) {
+        history.pushState(currentHistoryState(), '', viewUrl(currentPanelName()));
+        updateShopBack();
+        return;
+      }
+      const name = safeView(st.panel) || 'dashboard';
+      if (name === 'find' && st.kind && st.id) { window.openFindDoc(st.kind, st.id, { fromHistory: true }); return; }
+      if (name === 'find') { showPanel('find', { fromHistory: true }); window.showFindResults(); return; }
+      showPanel(name, { fromHistory: true });
+    });
+    window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
 
     function openAddPart() {
       clearForm();
@@ -2836,6 +2970,7 @@ notify pgrst, 'reload schema';</pre>
       const bcHint = document.getElementById('item-stable-barcode-hint');
       if (bcHint) bcHint.remove();
       toggleOrderFields();
+      rememberPartForm();
     }
 
     function editItem(id) {
@@ -2879,6 +3014,7 @@ notify pgrst, 'reload schema';</pre>
       const bcHint = document.getElementById('item-stable-barcode-hint');
       if (bcHint) bcHint.remove();
       toggleOrderFields();
+      rememberPartForm();
       showPanel('add');
       setTimeout(() => {
         document.getElementById('form-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2959,24 +3095,32 @@ notify pgrst, 'reload schema';</pre>
       showPanel('scan');
     }
 
-    /** Handle ?part= / ?pn= deep links from phone Camera QR scans. */
-    async function handleDeepLinkPart() {
-      let part = '';
+    function readDeepLinkPart() {
       try {
-        const params = new URLSearchParams(window.location.search);
-        part = (params.get('p') || params.get('part') || params.get('pn') || '').trim();
-      } catch (e) { return; }
+        const params = new URLSearchParams(location.search);
+        return (params.get('p') || params.get('part') || params.get('pn') || '').trim();
+      } catch (e) {
+        return '';
+      }
+    }
+
+    /** Handle ?part= / ?pn= deep links from phone Camera QR scans. */
+    async function handleDeepLinkPart(part) {
+      if (part == null) part = readDeepLinkPart();
+      part = String(part || '').trim();
       if (!part) return;
       await stopScanner();
-      showScanTab();
-      // Allow same code even if lastScannedCode set
+      // Same history entry as startup, so processScan's showPanel('scan') does not push.
+      try {
+        history.replaceState({ panel: 'scan', depth: history.state?.depth || 0 }, document.title, viewUrl('scan'));
+      } catch (e) { /* ignore */ }
+      noteShopHistory(history.state || { panel: 'scan', depth: 0 });
       lastScannedCode = null;
       await processScan(part);
-      // Clean query so refresh does not re-fire; keep path for Pages
       try {
-        const clean = window.location.pathname + (window.location.hash || '');
-        history.replaceState({}, document.title, clean || '/');
+        history.replaceState({ panel: 'scan', depth: history.state?.depth || 0 }, document.title, viewUrl('scan'));
       } catch (e2) { /* ignore */ }
+      noteShopHistory(history.state || { panel: 'scan', depth: 0 });
     }
 
     function renderScanFoundCard(item) {
@@ -3043,11 +3187,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     function editFromScan(id) {
-      // Jump to full Add/Edit form (same as adding a part) to review identifiers, category, prices, etc.
-      pendingScanItem = null;
-      lastScannedCode = null;
-      const resultEl = document.getElementById('scan-result');
-      if (resultEl) resultEl.innerHTML = '';
+      // Keep the scan card on the page so Cancel and Back land on it with nothing saved.
       editItem(id);
     }
 
@@ -3257,6 +3397,7 @@ notify pgrst, 'reload schema';</pre>
       clearForm();
       const pn = document.getElementById('item-barcode') || document.getElementById('item-part-number');
       if (pn) pn.value = code;
+      rememberPartForm();
       showPanel('add');
     }
 
@@ -4034,8 +4175,13 @@ ${bodyHtml}
       await loadGlobalFactorInputs();
       if (typeof window.refreshQuoteLookups === 'function') await window.refreshQuoteLookups();
       await loadInventory();
+      if (typeof window.restoreOpenQuote === 'function') await window.restoreOpenQuote();
+      const deepPart = readDeepLinkPart();
+      const start = viewFromUrl();
+      history.replaceState({ panel: start, depth: 0 }, '', viewUrl(start));
+      showPanel(start, { fromHistory: true });
       subscribeRealtime();
-      await handleDeepLinkPart();
+      await handleDeepLinkPart(deepPart);
     }
     const signOutBtn = document.getElementById('sign-out-btn');
     if (signOutBtn) signOutBtn.addEventListener('click', async () => {

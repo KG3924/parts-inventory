@@ -309,4 +309,5 @@ export function installCustomers() {
   $("cust-cancel").addEventListener("click", leave);
   form.addEventListener("submit", save);
   renderResults("short");
+  window.customersUnsavedChanges = function () { return isDirty(); };
 }
