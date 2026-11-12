@@ -280,6 +280,9 @@ export function installQuote() {
   let findKind = 'quote';
   let findPackingBusy = false;
   let findVoidBusy = false;
+  let openQuoteSeq = 0;
+  let quotesListSeq = 0;
+  let quotesListBusy = false;
 
   // Save, print, packing, and draft invoices do not change qty. Approve does, on the server.
   let quoteCart = JSON.parse(localStorage.getItem('inv_quote') || '[]');
@@ -316,7 +319,10 @@ export function installQuote() {
     if (!id) return;                                  // no open quote: unsaved builder as today
     const local = localStorage.getItem('inv_quote') || '[]';
     const base = localStorage.getItem('inv_quote_base');   // read BEFORE openQuote, which overwrites it
-    await openQuote(id);
+    const p = openQuote(id);
+    const mine = openQuoteSeq;
+    await p;
+    if (openQuoteSeq !== mine) return;                // a newer Edit / New quote won: no wipe, no toast
     if (currentQuoteId() !== String(id)) {             // couldn't reopen it
       setOpenQuoteId(null);
       emptyWorkingCart();
@@ -358,7 +364,9 @@ export function installQuote() {
     const by = document.getElementById('quote-by');
     if (by && !by.value && shop().currentUser()) by.value = shop().currentUser();
     saveQuoteCart();
-    shop().showStatus(`Added “${item.part_number}” to quote`, 'success');
+    const shown = String(document.getElementById('quote-number')?.value || '').trim();
+    const target = (!shown || shown === NEW_QUOTE_NUMBER) ? 'the new quote' : shown;
+    shop().showStatus(`Added ${item.part_number} to ${target}`, 'success');
   }
 
   function updateQuoteLine(idx, field, value) {
@@ -532,6 +540,7 @@ export function installQuote() {
   async function fillComboSelect(prefix, extras) {
     const sel = document.getElementById('quote-' + prefix + '-select');
     if (!sel) return;
+    const seq = openQuoteSeq;
     const current = comboValue(prefix);
     const kind = prefix === 'fob' ? 'fob' : 'payment_terms';
     const set = new Set(extras || []);
@@ -542,6 +551,7 @@ export function installQuote() {
         (data || []).forEach(r => { if (r.value) set.add(r.value); });
       } catch (e) {}
     }
+    if (seq !== openQuoteSeq) return;
     const opts = ['<option value="">— Select —</option>'];
     [...set].filter(Boolean).sort((a, b) => a.localeCompare(b)).forEach(v => {
       opts.push(`<option value="${shop().escapeHtml(v)}">${shop().escapeHtml(v)}</option>`);
@@ -911,18 +921,22 @@ export function installQuote() {
 
   // QuickBooks tag and the picked-customer link only. Does not copy customer fields onto the quote.
   async function loadQuoteCustomer(customerId) {
+    const seq = openQuoteSeq;
     setPickedCustomer(null);
     if (!customerId || !shop().supabaseClient) return;
     const cols = 'id,name,qb_status,qb_status_systems,payment_terms,merged_into';
     const older = 'id,name,qb_status,payment_terms,merged_into';
     let res = await shop().supabaseClient.from('customers').select(cols).eq('id', customerId).maybeSingle();
+    if (seq !== openQuoteSeq) return;
     if (res.error && /qb_status_systems/i.test([res.error.message, res.error.details].filter(Boolean).join(' '))) {
       res = await shop().supabaseClient.from('customers').select(older).eq('id', customerId).maybeSingle();
+      if (seq !== openQuoteSeq) return;
     }
     let { data } = res;
     if (data?.merged_into) {
       const keep = res.error ? older : cols;
       ({ data } = await shop().supabaseClient.from('customers').select(keep).eq('id', data.merged_into).maybeSingle());
+      if (seq !== openQuoteSeq) return;
     }
     if (data) setPickedCustomer(data);
   }
@@ -971,12 +985,26 @@ export function installQuote() {
     return status;
   }
 
+  function showQuotesLoadError() {
+    const listEl = document.getElementById('quotes-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<p class="empty">Couldn\'t load — try again</p>'
+      + '<button type="button" class="secondary" id="quotes-retry">Retry</button>';
+    const retry = document.getElementById('quotes-retry');
+    if (retry) retry.addEventListener('click', () => { loadQuotesList(); });
+  }
+
   async function loadQuotesList() {
     const hint = document.getElementById('quotes-schema-hint');
     const listEl = document.getElementById('quotes-list');
     if (!shop().supabaseClient) return;
+    const seq = ++quotesListSeq;
+    quotesListBusy = true;
+    if (listEl) listEl.innerHTML = '<p class="empty">Loading…</p>';
     const ok = await ensureQuotesTables();
+    if (seq !== quotesListSeq) return;
     if (!ok) {
+      quotesListBusy = false;
       if (hint) hint.textContent = 'Run Phase 1 SQL on More to save quotes.';
       if (listEl) listEl.innerHTML = '<p class="empty">Install quotes SQL to save and list quotes.</p>';
       return;
@@ -986,31 +1014,38 @@ export function installQuote() {
       .select('id,number,customer_name,status,quote_date,valid_until,prepared_by,updated_at')
       .in('status', ['draft', 'sent', 'accepted'])
       .order('updated_at', { ascending: false });
+    if (seq !== quotesListSeq) return;
     if (error) {
       quotesListCache = [];
-      if (listEl) listEl.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(error, 'load'))}</p>`;
+      quotesListBusy = false;
+      console.warn(error);
+      showQuotesLoadError();
       return;
     }
     const rows = data || [];
     const approved = await loadApprovedInvoiceNumbers(rows.map(q => q.id).filter(Boolean));
+    if (seq !== quotesListSeq) return;
     if (approved.error) {
       // A failed approved-invoice check must not leave sold quotes on this list.
+      approvedInvoiceByQuote = {};
+      rememberApprovedFromCurrent();
       quotesListCache = [];
+      quotesListBusy = false;
       console.warn(approved.error);
-      if (listEl) listEl.innerHTML = `<p class="empty">${shop().escapeHtml(shop().plainDbError(approved.error, 'load'))}</p>`;
+      showQuotesLoadError();
       return;
     }
+    approvedInvoiceByQuote = approved.found || {};
+    rememberApprovedFromCurrent();
     quotesListCache = rows.filter(q => quoteIsLiveStatus(q.status) && !approvedInvoiceByQuote[q.id]);
+    quotesListBusy = false;
     renderQuotesList();
   }
 
   async function loadApprovedInvoiceNumbers(ids) {
-    approvedInvoiceByQuote = {};
+    const found = {};
     const clean = (ids || []).filter(Boolean);
-    if (!clean.length || !shop().supabaseClient) {
-      rememberApprovedFromCurrent();
-      return { error: null };
-    }
+    if (!clean.length || !shop().supabaseClient) return { error: null, found };
     const chunkSize = 80;
     for (let i = 0; i < clean.length; i += chunkSize) {
       const slice = clean.slice(i, i + chunkSize);
@@ -1018,18 +1053,14 @@ export function installQuote() {
         .select('quote_id,number,status')
         .eq('status', 'approved')
         .in('quote_id', slice);
-      if (error) {
-        rememberApprovedFromCurrent();
-        return { error };
-      }
+      if (error) return { error, found: null };
       (data || []).forEach(row => {
-        if (row && row.quote_id && row.status === 'approved' && !approvedInvoiceByQuote[row.quote_id]) {
-          approvedInvoiceByQuote[row.quote_id] = row.number || 'This invoice';
+        if (row && row.quote_id && row.status === 'approved' && !found[row.quote_id]) {
+          found[row.quote_id] = row.number || 'This invoice';
         }
       });
     }
-    rememberApprovedFromCurrent();
-    return { error: null };
+    return { error: null, found };
   }
 
   function rememberApprovedFromCurrent() {
@@ -1167,19 +1198,33 @@ export function installQuote() {
     return number;
   }
 
+  function quotesSearchQuery() {
+    return String(document.getElementById('quotes-search')?.value || '').trim().toLowerCase();
+  }
+
   function renderQuotesList() {
     const listEl = document.getElementById('quotes-list');
     if (!listEl) return;
     const rows = quotesListCache.filter(q => quoteIsLiveStatus(q.status) && !approvedInvoiceByQuote[q.id]);
-    if (!rows.length) {
-      listEl.innerHTML = '<p class="empty">No live quotes.</p>';
+    const query = quotesSearchQuery();
+    const shown = query
+      ? rows.filter(q => {
+          const num = String(q.number || '').toLowerCase();
+          const customer = String(q.customer_name || '').toLowerCase();
+          return num.includes(query) || customer.includes(query);
+        })
+      : rows;
+    if (!shown.length) {
+      listEl.innerHTML = query
+        ? '<p class="empty">No quotes match.</p>'
+        : '<p class="empty">No live quotes.</p>';
       return;
     }
     listEl.innerHTML = `
       <table>
         <thead><tr><th>Number</th><th>Customer</th><th>Status</th><th>Date</th><th></th></tr></thead>
         <tbody>
-          ${rows.map(q => `
+          ${shown.map(q => `
             <tr>
               <td><code>${shop().escapeHtml(q.number)}</code></td>
               <td>${shop().escapeHtml(q.customer_name || '—')}</td>
@@ -1196,7 +1241,20 @@ export function installQuote() {
       </table>`;
   }
 
+  function quoteHasUnsavedLines() {
+    if (!quoteCart.length) return false;
+    if (!currentQuoteId()) return true;
+    return JSON.stringify(quoteCart) !== localStorage.getItem('inv_quote_base');
+  }
+
+  function newQuoteFromButton() {
+    if (quoteHasUnsavedLines() && !confirm('Clear the working cart? (Saved quotes in the database are kept.)')) return;
+    return startNewQuote();
+  }
+
   async function startNewQuote(opts) {
+    ++openQuoteSeq;
+    const seq = openQuoteSeq;
     emptyWorkingCart();
     setOpenQuoteId(null);
     loadedQuoteStatus = '';
@@ -1222,7 +1280,9 @@ export function installQuote() {
     const invBox = document.getElementById('invoice-box');
     if (invBox) invBox.style.display = 'none';
     await refreshQuoteInvoices();
+    if (seq !== openQuoteSeq) return;
     await refreshQuoteLookups();
+    if (seq !== openQuoteSeq) return;
     setComboValue('fob', '');
     setComboValue('terms', '');
     renderQuotePanel();
@@ -1232,21 +1292,27 @@ export function installQuote() {
   }
 
   async function openQuote(id) {
+    const seq = ++openQuoteSeq;
+    const still = () => seq === openQuoteSeq;
     resetInvoiceBox();
     if (String(id || '') !== currentQuoteId()) resetQuoteInvoiceUi();
     if (!(await ensureQuotesTables())) {
+      if (!still()) return false;
       shop().showStatus('Quotes tables not installed', 'error');
       await refreshQuoteInvoices();
-      return;
+      return false;
     }
+    if (!still()) return false;
     const { data: q, error } = await shop().supabaseClient.from('quotes').select('*').eq('id', id).maybeSingle();
+    if (!still()) return false;
     if (error || !q) {
       shop().showStatus(error ? shop().plainDbError(error, 'load') : 'Quote not found', 'error');
       await refreshQuoteInvoices();
-      return;
+      return false;
     }
     const { data: lines } = await shop().supabaseClient.from('quote_lines')
       .select('*').eq('quote_id', id).order('line_no');
+    if (!still()) return false;
     setOpenQuoteId(q.id);
     loadedQuoteStatus = q.status || '';
     quoteCompany = q.company === 'L' || q.company === 'S' ? q.company : '';
@@ -1259,6 +1325,7 @@ export function installQuote() {
     document.getElementById('quote-customer').value = q.customer_name || '';
     hideCustomerPick();
     await loadQuoteCustomer(q.customer_id);
+    if (!still()) return false;
     fillQuoteSnapshotFromRow(q);
     const proj = document.getElementById('quote-project');
     if (proj) proj.value = q.project || '';
@@ -1269,6 +1336,7 @@ export function installQuote() {
     document.getElementById('quote-by').value = q.prepared_by || shop().currentUser() || '';
     document.getElementById('quote-notes').value = q.notes || '';
     await refreshQuoteLookups();
+    if (!still()) return false;
     setComboValue('fob', q.fob_point || '');
     setComboValue('terms', q.payment_terms || '');
     quoteCart = (lines || []).map(l => ({
@@ -1282,11 +1350,13 @@ export function installQuote() {
     saveQuoteCart();
     markQuoteBase();
     await refreshQuoteInvoices();
+    if (!still()) return false;
     if (currentQuoteId() === String(q.id)) {
       if (quoteSaleBlocked() || quoteIsVoidFinal()) resetInvoiceBox();
       else fillInvoiceBoxFromDraft(newestOpenDraft());
     }
     shop().showStatus(`Opened ${q.number}`, 'success');
+    return true;
   }
 
   async function withQuoteSave(run) {
@@ -1314,6 +1384,7 @@ export function installQuote() {
     }
     const existingId = editingQuoteId || document.getElementById('quote-edit-id').value || '';
     let storedStatus = '';
+    let storedNumber = '';
     if (existingId) {
       const { data: stored, error: storedErr } = await shop().supabaseClient.from('quotes')
         .select('number,status')
@@ -1334,6 +1405,7 @@ export function installQuote() {
         return false;
       }
       storedStatus = stored && stored.status ? stored.status : '';
+      storedNumber = stored && stored.number ? String(stored.number) : '';
       const blockedNum = await blockingApprovedNumber(existingId);
       if (blockedNum === null) {
         shop().showStatus("Couldn't check invoices — quote was not saved", 'error');
@@ -1382,6 +1454,29 @@ export function installQuote() {
       updated_at: new Date().toISOString(),
       ...quoteSnapshotFromForm()
     };
+    let acceptReopened = false;
+    if (existingId && storedStatus === 'accepted' && requestedStatus === 'accepted') {
+      const { data: liveLines, error: liveErr } = await shop().supabaseClient.from('quote_lines')
+        .select('line_no,inventory_id,qty,unit_price')
+        .eq('quote_id', existingId)
+        .order('line_no');
+      if (liveErr) {
+        shop().showStatus("Couldn't check the quote — it was not saved", 'error');
+        return false;
+      }
+      const key = l => [String(l.inventory_id || ''), Number(l.qty), Math.round(Number(l.unit_price) * 100)].join('|');
+      const dbKeys = (liveLines || []).map(key);
+      const cartKeys = quoteCart.map(c => key({
+        inventory_id: c.inventory_id || c.id,
+        qty: c.qty,
+        unit_price: c.unit_price
+      }));
+      const linesDiffer = dbKeys.length !== cartKeys.length || dbKeys.some((k, i) => k !== cartKeys[i]);
+      if (linesDiffer) {
+        payload.status = 'draft';
+        acceptReopened = true;
+      }
+    }
     let quoteId = existingId || null;
     let number = '';
     const sealingVoid = requestedStatus === 'void' && storedStatus !== 'void';
@@ -1446,8 +1541,15 @@ export function installQuote() {
     if (number === NEW_QUOTE_NUMBER) number = '';
     setOpenQuoteId(quoteId);
     markQuoteBase();
-    loadedQuoteStatus = requestedStatus;
-    shop().showStatus(firstSave ? `Saved ${number}` : `Quote ${number} saved (${shop().currentUser()})`, 'success');
+    loadedQuoteStatus = payload.status;
+    if (acceptReopened) {
+      const st = document.getElementById('quote-status');
+      if (st) st.value = 'draft';
+      const qn = number || storedNumber;
+      shop().showStatus(`Lines changed, so ${qn} is back to Open. Mark it Accepted again once the customer agrees.`, 'success');
+    } else {
+      shop().showStatus(firstSave ? `Saved ${number}` : `Quote ${number} saved (${shop().currentUser()})`, 'success');
+    }
     if (requestedStatus === 'void') {
       emptyWorkingCart();
       resetInvoiceBox();
@@ -1549,13 +1651,7 @@ export function installQuote() {
     }
     const openId = String(editingQuoteId || document.getElementById('quote-edit-id')?.value || '');
     if (openId && openId === String(id)) {
-      loadedQuoteStatus = 'void';
-      const st = document.getElementById('quote-status');
-      if (st) st.value = 'void';
-      emptyWorkingCart();
-      resetInvoiceBox();
-      applySaleLocks();
-      await refreshQuoteInvoices();
+      await startNewQuote({ keepStatus: true });
     }
     shop().showStatus(`${num} cancelled. Stock unchanged.`, 'success');
     await loadQuotesList();
@@ -1593,12 +1689,13 @@ export function installQuote() {
   }
 
   async function duplicateQuoteById(id) {
-    await openQuote(id);
+    if (!(await openQuote(id))) return false;
     await duplicateCurrentQuote();
+    return true;
   }
 
   async function printQuoteById(id) {
-    await openQuote(id);
+    if (!(await openQuote(id))) return;
     generateQuote();
   }
 
@@ -3079,10 +3176,12 @@ export function installQuote() {
       ${voidedLine ? `<p>${shop().escapeHtml(voidedLine)}</p>` : ''}
       ${note ? `<p class="hint">${shop().escapeHtml(note)}</p>` : ''}
       ${readOnlyNote ? `<p class="hint">${shop().escapeHtml(readOnlyNote)}</p>` : ''}
-      ${findDetailActions(allowed, dupId, findPackingAllowed(kind, loaded), voidAllowed)}
+      ${findDetailActions(allowed, dupId, findPackingAllowed(kind, loaded), voidAllowed, findQuoteOpenId(kind, loaded))}
       ${voidAllowed ? findVoidPanelHtml(loaded.invoice, lines) : ''}`;
     const btn = document.getElementById('find-reprint');
     if (btn) btn.addEventListener('click', () => { reprintFindDoc(); });
+    const openBtn = document.getElementById('find-open');
+    if (openBtn) openBtn.addEventListener('click', () => { openFindQuote(); });
     const packBtn = document.getElementById('find-packing');
     if (packBtn) packBtn.addEventListener('click', () => { printFindPackingList(); });
     const voidBtn = document.getElementById('find-void');
@@ -3206,8 +3305,25 @@ export function installQuote() {
     return Array.isArray(loaded.lines) && loaded.lines.length > 0;
   }
 
-  function findDetailActions(allowed, dupId, packing, voidAllowed) {
+  function findQuoteOpenId(kind, loaded) {
+    if (kind !== 'quote' || !loaded || !loaded.quote) return '';
+    const status = loaded.quote.status;
+    if (status !== 'draft' && status !== 'sent' && status !== 'accepted') return '';
+    if ((loaded.invoices || []).some(row => row && row.status === 'approved')) return '';
+    return findDocId(loaded.quote.id);
+  }
+
+  async function openFindQuote() {
+    if (!findView || findView.kind !== 'quote' || !findView.loaded) return;
+    const id = findQuoteOpenId('quote', findView.loaded);
+    if (!id) return;
+    if (!(await openQuote(id))) return;
+    if (typeof window.showPanel === 'function') window.showPanel('quote');
+  }
+
+  function findDetailActions(allowed, dupId, packing, voidAllowed, openId) {
     const buttons = [
+      openId ? '<button type="button" class="tap" id="find-open">Open</button>' : '',
       allowed ? '<button type="button" class="tap" id="find-reprint">Reprint</button>' : '',
       packing ? '<button type="button" class="secondary tap" id="find-packing">Packing list</button>' : '',
       voidAllowed ? '<button type="button" class="secondary tap" id="find-void">Void invoice</button>' : '',
@@ -3222,7 +3338,7 @@ export function installQuote() {
       ? findDocId(findView.loaded.invoice && findView.loaded.invoice.quote_id)
       : findDocId(findView.loaded.quote && findView.loaded.quote.id);
     if (!id) return;
-    await duplicateQuoteById(id);
+    if (!(await duplicateQuoteById(id))) return;
     if (typeof window.showPanel === 'function') window.showPanel('quote');
   }
 
@@ -3506,6 +3622,7 @@ export function installQuote() {
     nextDocNumber,
     ensureQuotesTables,
     loadQuotesList,
+    newQuoteFromButton,
     restoreOpenQuote,
     openFindFromQuotes,
     openFindKind,
@@ -3583,6 +3700,43 @@ export function installQuote() {
     if (findLast7) findLast7.addEventListener('click', () => { runFindLast7(); });
     const statusSel = document.getElementById('quote-status');
     if (statusSel) statusSel.addEventListener('change', () => applySaleLocks());
+    const newQuoteBtn = document.getElementById('new-quote-btn');
+    if (newQuoteBtn) newQuoteBtn.addEventListener('click', () => { newQuoteFromButton(); });
+    const quotesSearch = document.getElementById('quotes-search');
+    if (quotesSearch) quotesSearch.addEventListener('input', () => {
+      if (!quotesListBusy) renderQuotesList();
+    });
+    const partSearch = document.getElementById('quote-part-search');
+    const partMatches = document.getElementById('quote-part-matches');
+    const renderQuotePartMatches = () => {
+      if (!partSearch || !partMatches) return;
+      const raw = partSearch.value;
+      if (raw.trim().length < 2) {
+        partMatches.innerHTML = '';
+        return;
+      }
+      const found = shop().searchInventoryMatches(raw).slice(0, 8);
+      if (!found.length) {
+        partMatches.innerHTML = '<p class="hint">No matching part.</p>';
+        return;
+      }
+      partMatches.innerHTML = '<div class="customer-pick">' + found.map(item => {
+        const id = shop().escapeHtml(item.id);
+        const pn = shop().escapeHtml(item.part_number);
+        const name = shop().escapeHtml(item.name);
+        return `<button type="button" class="customer-pick-row" data-part-id="${id}"><span>${pn}</span> <span>${name}</span></button>`;
+      }).join('') + '</div>';
+      if (typeof window.applySettingsGate === 'function') window.applySettingsGate();
+    };
+    if (partSearch) partSearch.addEventListener('input', renderQuotePartMatches);
+    if (partMatches) partMatches.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-part-id]');
+      if (!btn || !partMatches.contains(btn)) return;
+      if (!shop().settingsReady) return;
+      const id = btn.getAttribute('data-part-id');
+      if (!id) return;
+      addToQuote(id);
+    });
     applySaleLocks();
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#customer-pick, #quote-customer')) hideCustomerPick();

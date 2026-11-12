@@ -1488,6 +1488,8 @@ notify pgrst, 'reload schema';</pre>
       paint(document.getElementById('apply-factors-btn'));
       paint(document.getElementById('save-rates-btn'));
       paint(document.getElementById('apply-buy-btn'));
+      paint(document.getElementById('quote-part-search'));
+      document.querySelectorAll('#quote-part-matches button').forEach(paint);
       const cm = document.getElementById('costing-method');
       if (cm) {
         cm.disabled = locked;
