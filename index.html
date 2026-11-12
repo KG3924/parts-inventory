@@ -481,7 +481,7 @@
             <tbody id="inventory-body"></tbody>
           </table>
         </div>
-        <div id="empty-msg" class="empty" style="display:none;">No parts yet. Add one or scan a new part number.</div>
+        <div id="empty-msg" class="empty">Loading…</div>
       </div>
     </div>
 
@@ -1007,6 +1007,7 @@ notify pgrst, 'reload schema';</pre>
     const isConfigured = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
     let supabaseClient = null;
     var inventory = []; // same array part-match.js searches
+    let inventoryLoaded = false;
     let html5QrCode = null;
     let scanning = false;
     let activeSourceFilter = 'All';
@@ -1909,6 +1910,7 @@ notify pgrst, 'reload schema';</pre>
       }
       document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
       refreshSuggestionLists();
+      inventoryLoaded = true;
       renderAll();
       if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
     }
@@ -2094,18 +2096,19 @@ notify pgrst, 'reload schema';</pre>
       const low = inventory.filter(i => isLowStock(i)).length;
       const open = inventory.filter(i => i.open_order).length;
       const out = inventory.filter(i => (i.qty || 0) <= 0).length;
+      const shown = (n) => inventoryLoaded ? n : '—';
       document.getElementById('stats').innerHTML = `
         <div class="stat ${homeAttentionFilter === null ? 'active-filter' : ''}" onclick="setHomeFilter(null)" title="Show all parts">
-          <div class="stat-value">${total}</div><div class="stat-label">Parts</div>
+          <div class="stat-value">${shown(total)}</div><div class="stat-label">Parts</div>
         </div>
         <div class="stat">
-          <div class="stat-value">${units}</div><div class="stat-label">Units</div>
+          <div class="stat-value">${shown(units)}</div><div class="stat-label">Units</div>
         </div>
         <div class="stat clickable ${homeAttentionFilter === 'low' ? 'active-filter' : ''}" onclick="setHomeFilter('low')" title="Filter low stock">
-          <div class="stat-value" style="color:var(--warning)">${low}</div><div class="stat-label">Low</div>
+          <div class="stat-value" style="color:var(--warning)">${shown(low)}</div><div class="stat-label">Low</div>
         </div>
         <div class="stat clickable ${homeAttentionFilter === 'open_order' ? 'active-filter' : ''}" onclick="setHomeFilter('open_order')" title="Filter open orders">
-          <div class="stat-value" style="color:var(--open-order)">${open}</div><div class="stat-label">Open Orders</div>
+          <div class="stat-value" style="color:var(--open-order)">${shown(open)}</div><div class="stat-label">Open Orders</div>
         </div>
       `;
       // keep out count available for needs date card; unused in stats grid intentionally
@@ -2113,12 +2116,14 @@ notify pgrst, 'reload schema';</pre>
     }
 
     function renderValueSummary() {
-      const t = calcTotals();
+      const t = inventoryLoaded ? calcTotals() : null;
+      const amount = (n) => t ? money(n) : '—';
+      const excludedNote = t && t.excluded ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:0.2rem;">${t.excluded} part${t.excluded===1?'':'s'} excluded</div>` : '';
       document.getElementById('value-summary').innerHTML = `
-        <div class="value-card"><div class="label">Inventory at Cost</div><div class="amount">${money(t.cost)}</div>${t.excluded ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:0.2rem;">${t.excluded} part${t.excluded===1?'':'s'} excluded</div>` : ''}</div>
-        <div class="value-card"><div class="label">At Sell Price</div><div class="amount">${money(t.sell)}</div></div>
-        <div class="value-card"><div class="label">Potential Margin</div><div class="amount" style="color:var(--success)">${money(t.margin)}</div></div>
-        <div class="value-card clickable ${homeAttentionFilter === 'needs_date' ? 'active-filter' : ''}" onclick="setHomeFilter('needs_date')" title="Filter items needing delivery date"><div class="label">Needs Delivery Date</div><div class="amount" style="color:var(--danger)">${t.needsDate || 0}</div></div>
+        <div class="value-card"><div class="label">Inventory at Cost</div><div class="amount">${amount(t && t.cost)}</div>${excludedNote}</div>
+        <div class="value-card"><div class="label">At Sell Price</div><div class="amount">${amount(t && t.sell)}</div></div>
+        <div class="value-card"><div class="label">Potential Margin</div><div class="amount" style="color:var(--success)">${amount(t && t.margin)}</div></div>
+        <div class="value-card clickable ${homeAttentionFilter === 'needs_date' ? 'active-filter' : ''}" onclick="setHomeFilter('needs_date')" title="Filter items needing delivery date"><div class="label">Needs Delivery Date</div><div class="amount" style="color:var(--danger)">${t ? (t.needsDate || 0) : '—'}</div></div>
       `;
     }
 
@@ -2225,7 +2230,9 @@ notify pgrst, 'reload schema';</pre>
       if (filtered.length === 0) {
         tbody.innerHTML = '';
         empty.style.display = 'block';
-        if (inventory.length === 0) {
+        if (!inventoryLoaded) {
+          empty.textContent = 'Loading…';
+        } else if (inventory.length === 0) {
           empty.textContent = 'No parts yet. Import clean JSON or add a part.';
         } else if (homeAttentionFilter || activeSourceFilter !== 'All' || activeCategoryFilter !== 'All') {
           empty.textContent = 'No parts match the current filters.';
@@ -4003,6 +4010,7 @@ ${bodyHtml}
 
     renderStats();
     renderValueSummary();
+    renderTable();
 
     window.InmarShop = {
       get inventory() { return inventory; },
