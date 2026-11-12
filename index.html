@@ -626,7 +626,7 @@
 
         <p id="item-form-error" class="status error" role="alert" hidden></p>
         <div class="btn-group">
-          <button class="tap" onclick="saveItem()">Save</button>
+          <button class="tap" id="item-save-btn" onclick="saveItem()">Save</button>
           <button type="button" class="secondary tap" onclick="cancelPartForm()">Cancel</button>
           <button class="secondary tap" onclick="clearForm()">Clear</button>
         </div>
@@ -812,8 +812,8 @@
           </div>
         </div>
         <div class="btn-group">
-          <button type="button" class="secondary" onclick="saveGlobalFactorsOnly()">Save factors</button>
-          <button type="button" onclick="applyGlobalFactorsToInventory()">Apply to all Wynn / FFS parts</button>
+          <button type="button" class="secondary" id="save-factors-btn" onclick="saveGlobalFactorsOnly()">Save factors</button>
+          <button type="button" id="apply-factors-btn" onclick="applyGlobalFactorsToInventory()">Apply to all Wynn / FFS parts</button>
         </div>
         <p class="hint" id="global-factor-status"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
@@ -835,8 +835,8 @@
         </div>
         <div class="btn-group">
           <button type="button" class="secondary" onclick="fetchExchangeRates()">Fetch current rates</button>
-          <button type="button" class="secondary" onclick="saveExchangeRatesOnly()">Save rates</button>
-          <button type="button" onclick="applyExchangeRatesToInventory()">Apply buy $ to Wynn / FFS / Alu</button>
+          <button type="button" class="secondary" id="save-rates-btn" onclick="saveExchangeRatesOnly()">Save rates</button>
+          <button type="button" id="apply-buy-btn" onclick="applyExchangeRatesToInventory()">Apply buy $ to Wynn / FFS / Alu</button>
         </div>
         <p class="hint" id="fx-status"></p>
         <hr style="border-color:var(--border); margin:1.25rem 0;">
@@ -1018,6 +1018,8 @@ notify pgrst, 'reload schema';</pre>
     var inventory = []; // same array part-match.js searches
     let inventoryLoaded = false;
     let inventoryLoadFailed = false;
+    let settingsReady = false;
+    let scanCardItemId = null;
     let html5QrCode = null;
     let scanning = false;
     let activeSourceFilter = 'All';
@@ -1292,6 +1294,18 @@ notify pgrst, 'reload schema';</pre>
         if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
         if (typeof window.loadQuotesList === 'function') window.loadQuotesList();
       }
+      if (name === 'scan' && fromHistory && scanCardItemId) {
+        const item = inventory.find(i => i.id === scanCardItemId);
+        const resultEl = document.getElementById('scan-result');
+        if (item) {
+          pendingScanItem = item;
+          renderScanFoundCard(item);
+        } else {
+          scanCardItemId = null;
+          pendingScanItem = null;
+          if (resultEl) resultEl.innerHTML = '';
+        }
+      }
       updateShopBack();
     }
 
@@ -1460,7 +1474,34 @@ notify pgrst, 'reload schema';</pre>
       if (cm) cm.value = costingMethod;
     }
 
+    function applySettingsGate() {
+      const locked = !settingsReady;
+      const paint = (el) => {
+        if (!el) return;
+        el.disabled = locked;
+        el.style.opacity = locked ? '0.45' : '';
+      };
+      document.querySelectorAll('button.quote-btn').forEach(paint);
+      document.querySelectorAll('button[onclick^="quickAdjust"]').forEach(paint);
+      paint(document.getElementById('item-save-btn'));
+      paint(document.getElementById('save-factors-btn'));
+      paint(document.getElementById('apply-factors-btn'));
+      paint(document.getElementById('save-rates-btn'));
+      paint(document.getElementById('apply-buy-btn'));
+      const cm = document.getElementById('costing-method');
+      if (cm) {
+        cm.disabled = locked;
+        cm.style.opacity = locked ? '0.45' : '';
+      }
+      const saveBtn = document.getElementById('quote-save-btn');
+      if (saveBtn && locked) {
+        saveBtn.disabled = true;
+        saveBtn.style.opacity = '0.45';
+      }
+    }
+
     async function saveGlobalFactorsOnly() {
+      if (!settingsReady) return;
       const w = parseFloat(document.getElementById('global-wynn-factor')?.value);
       const f = parseFloat(document.getElementById('global-ffs-factor')?.value);
       if (isFinite(w) && w > 0) {
@@ -1479,6 +1520,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function applyGlobalFactorsToInventory() {
+      if (!settingsReady) return;
       if (!requireUser('applying sell factors')) return;
       if (!supabaseClient) { showStatus('Not connected', 'error'); return; }
       if (!hasListPriceColumn) {
@@ -1519,6 +1561,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function saveExchangeRatesOnly() {
+      if (!settingsReady) return;
       for (const code of ['GBP', 'EUR', 'NOK']) {
         const n = parseFloat(document.getElementById(FX_INPUT[code])?.value);
         if (isFinite(n) && n > 0) {
@@ -1573,6 +1616,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function applyExchangeRatesToInventory() {
+      if (!settingsReady) return;
       if (!requireUser('applying exchange rates')) return;
       if (!supabaseClient) { showStatus('Not connected', 'error'); return; }
       if (!hasListPriceColumn) {
@@ -1612,6 +1656,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function saveCostingMethod() {
+      if (!settingsReady) return;
       const v = document.getElementById('costing-method')?.value === 'lifo' ? 'lifo' : 'fifo';
       costingMethod = v;
       await persistSetting('costing_method', v);
@@ -1977,6 +2022,58 @@ notify pgrst, 'reload schema';</pre>
         document.getElementById('item-open-order').checked ? 'block' : 'none';
     }
 
+    let tablesProbePromise = null;
+
+    function probeIsMissingTable(error) {
+      return !!(error && /relation|does not exist|schema cache/i.test(error.message || ''));
+    }
+
+    function probeTablesOnce() {
+      if (tablesProbePromise) return tablesProbePromise;
+      const probeColumns = inventory.length === 0;
+      const run = (async () => {
+        const jobs = [
+          supabaseClient.from('inventory_adjustments').select('id').limit(1),
+          supabaseClient.from('quotes').select('id').limit(1),
+          supabaseClient.from('app_settings').select('key').limit(1),
+          supabaseClient.from('inventory_price_history').select('id').limit(1),
+          supabaseClient.from('inventory_cost_layers').select('id').limit(1)
+        ];
+        if (probeColumns) {
+          jobs.push(
+            supabaseClient.from('inventory').select('category').limit(1),
+            supabaseClient.from('inventory').select('barcode').limit(1),
+            supabaseClient.from('inventory').select('exclude_from_valuation').limit(1),
+            supabaseClient.from('inventory').select('list_price').limit(1),
+            supabaseClient.from('inventory').select('qty_used').limit(1)
+          );
+        }
+        let results;
+        try {
+          results = await Promise.all(jobs);
+        } catch (e) {
+          if (!probeIsMissingTable(e)) tablesProbePromise = null;
+          throw e;
+        }
+        if (results.some(r => r && r.error && !probeIsMissingTable(r.error))) tablesProbePromise = null;
+        const missed = (i) => !!(results[i] && results[i].error);
+        hasAdjustmentsTable = !missed(0);
+        hasQuotesTables = !missed(1);
+        hasPhase2Tables = !missed(2);
+        hasPriceHistoryTable = !missed(3);
+        hasCostLayersTable = !missed(4);
+        if (probeColumns && inventory.length === 0) {
+          hasCategoryColumn = !missed(5);
+          hasBarcodeColumn = !missed(6);
+          hasExcludeValueColumn = !missed(7);
+          hasListPriceColumn = !missed(8);
+          hasQtyUsedColumn = !missed(9);
+        }
+      })();
+      tablesProbePromise = run;
+      return run;
+    }
+
     async function loadInventory() {
       if (!supabaseClient) {
         document.getElementById('conn-status').textContent = 'Not configured – paste keys in the HTML file.';
@@ -1999,29 +2096,13 @@ notify pgrst, 'reload schema';</pre>
         hasExcludeValueColumn = Object.prototype.hasOwnProperty.call(row0, 'exclude_from_valuation');
         hasListPriceColumn = Object.prototype.hasOwnProperty.call(row0, 'list_price');
         hasQtyUsedColumn = Object.prototype.hasOwnProperty.call(row0, 'qty_used');
-      } else {
-        const probeCat = await supabaseClient.from('inventory').select('category').limit(1);
-        hasCategoryColumn = !probeCat.error;
-        const probeBc = await supabaseClient.from('inventory').select('barcode').limit(1);
-        hasBarcodeColumn = !probeBc.error;
-        const probeEx = await supabaseClient.from('inventory').select('exclude_from_valuation').limit(1);
-        hasExcludeValueColumn = !probeEx.error;
-        const probeLp = await supabaseClient.from('inventory').select('list_price').limit(1);
-        hasListPriceColumn = !probeLp.error;
-        const probeUsed = await supabaseClient.from('inventory').select('qty_used').limit(1);
-        hasQtyUsedColumn = !probeUsed.error;
       }
-      // Probe adjustments table
-      const probeAdj = await supabaseClient.from('inventory_adjustments').select('id').limit(1);
-      hasAdjustmentsTable = !probeAdj.error;
-      const probeQuotes = await supabaseClient.from('quotes').select('id').limit(1);
-      hasQuotesTables = !probeQuotes.error;
-      const probePhase2 = await supabaseClient.from('app_settings').select('key').limit(1);
-      hasPhase2Tables = !probePhase2.error;
-      const probeHist = await supabaseClient.from('inventory_price_history').select('id').limit(1);
-      hasPriceHistoryTable = !probeHist.error;
-      const probeLayers = await supabaseClient.from('inventory_cost_layers').select('id').limit(1);
-      hasCostLayersTable = !probeLayers.error;
+      inventoryLoaded = true;
+      inventoryLoadFailed = false;
+      renderAll();
+      if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
+
+      await probeTablesOnce();
 
       // Backfill stable barcodes when column exists
       if (hasBarcodeColumn) {
@@ -2047,10 +2128,7 @@ notify pgrst, 'reload schema';</pre>
       }
       document.getElementById('conn-status').textContent = 'Connected ✓  ' + inventory.length + ' parts. Realtime active.';
       refreshSuggestionLists();
-      inventoryLoaded = true;
-      inventoryLoadFailed = false;
       renderAll();
-      if (typeof window.renderQuotePanel === 'function') window.renderQuotePanel();
     }
 
     function refreshSuggestionLists() {
@@ -2226,6 +2304,7 @@ notify pgrst, 'reload schema';</pre>
       renderCategoryFilters();
       renderTable();
       populateLabelSelect();
+      applySettingsGate();
     }
 
     function renderStats() {
@@ -2735,6 +2814,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function saveItem() {
+      if (!settingsReady) return;
       if (!supabaseClient) { showStatus('Configure Supabase first', 'error'); return; }
       if (!requireUser('saving parts')) return;
       hideItemFormError();
@@ -2943,7 +3023,8 @@ notify pgrst, 'reload schema';</pre>
       showStatus((id ? 'Updated' : 'Added') + ` by ${currentUser()}`, 'success');
       clearForm();
       await loadInventory();
-      showPanel('inventory');
+      history.replaceState({ panel: 'inventory', depth: (history.state && history.state.depth) || 0 }, '', viewUrl('inventory'));
+      showPanel('inventory', { fromHistory: true });
     }
 
     function clearForm() {
@@ -3032,6 +3113,7 @@ notify pgrst, 'reload schema';</pre>
     }
 
     async function quickAdjust(id, delta) {
+      if (!settingsReady) return;
       if (!requireUser('adjusting quantity')) return;
       if (!supabaseClient) return;
       const item = inventory.find(i => i.id === id);
@@ -3071,6 +3153,7 @@ notify pgrst, 'reload schema';</pre>
 
       if (!item) {
         pendingScanItem = null;
+        scanCardItemId = null;
         const safe = escapeHtml(code);
         resultEl.innerHTML = `
           <div class="scan-result-card">
@@ -3126,6 +3209,7 @@ notify pgrst, 'reload schema';</pre>
     function renderScanFoundCard(item) {
       const resultEl = document.getElementById('scan-result');
       if (!resultEl || !item) return;
+      scanCardItemId = item.id;
       const q = item.qty || 0;
       const notesVal = item.notes || '';
       resultEl.innerHTML = `
@@ -3184,6 +3268,7 @@ notify pgrst, 'reload schema';</pre>
             <button type="button" class="secondary" onclick="startScanner()">Scan again</button>
           </div>
         </div>`;
+      applySettingsGate();
     }
 
     function editFromScan(id) {
@@ -3297,6 +3382,7 @@ notify pgrst, 'reload schema';</pre>
             <button type="button" class="secondary" onclick="editFromScan('${savedId}')">Edit part</button>
           </div>
         </div>`;
+      applySettingsGate();
       showStatus(`Qty updated: ${oldQty} → ${newQty} (${currentUser()})`, 'success');
       await loadInventory();
       } finally {
@@ -3330,6 +3416,7 @@ notify pgrst, 'reload schema';</pre>
       if (!resultEl) return;
       if (!matches.length) {
         pendingScanItem = null;
+        scanCardItemId = null;
         const safe = escapeHtml(query);
         resultEl.innerHTML = `
           <div class="scan-result-card">
@@ -3347,6 +3434,7 @@ notify pgrst, 'reload schema';</pre>
         return;
       }
       pendingScanItem = null;
+      scanCardItemId = null;
       resultEl.innerHTML = `
         <div class="scan-result-card">
           <p style="margin:0 0 0.45rem;"><strong>${matches.length} matches</strong> for “${escapeHtml(query)}”</p>
@@ -3406,7 +3494,10 @@ notify pgrst, 'reload schema';</pre>
       lastScannedCode = null;
       // Clear previous result so attention is on the camera
       const resultEl = document.getElementById('scan-result');
-      if (resultEl && !pendingScanItem) resultEl.innerHTML = '';
+      if (resultEl && !pendingScanItem) {
+        resultEl.innerHTML = '';
+        scanCardItemId = null;
+      }
       html5QrCode = new Html5Qrcode('reader');
       try {
         await html5QrCode.start(
@@ -4172,8 +4263,12 @@ ${bodyHtml}
       if (!isConfigured) return;
       window.__shopEntered = true;
       syncPricingUi();
-      await loadGlobalFactorInputs();
-      if (typeof window.refreshQuoteLookups === 'function') await window.refreshQuoteLookups();
+      loadGlobalFactorInputs().catch(() => {}).finally(() => {
+        settingsReady = true;
+        applySettingsGate();
+        if (typeof window.applySaleLocks === 'function') window.applySaleLocks();
+      });
+      if (typeof window.refreshQuoteLookups === 'function') window.refreshQuoteLookups();
       await loadInventory();
       if (typeof window.restoreOpenQuote === 'function') await window.restoreOpenQuote();
       const deepPart = readDeepLinkPart();
@@ -4192,11 +4287,13 @@ ${bodyHtml}
     renderStats();
     renderValueSummary();
     renderTable();
+    applySettingsGate();
 
     window.InmarShop = {
       get inventory() { return inventory; },
       get supabaseClient() { return supabaseClient; },
       get hasQuotesTables() { return hasQuotesTables; },
+      get settingsReady() { return settingsReady; },
       showStatus,
       plainDbError,
       lockedShopSentence,
