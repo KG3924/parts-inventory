@@ -4,9 +4,9 @@ Fast shelf count for the parts room. It is **not** the live inventory app. Openi
 
 | | |
 |--|--|
-| Tool | `count.html` — after a push: https://kg3924.github.io/parts-inventory/count.html |
+| Tool | `count.html` — after a push: https://inventory.inmarsystems.com/count.html |
 | Catalog | The live inventory, read after sign-in — part # / name / source / category / prices / app qty (lookup only). No public catalog file (BUG-041) |
-| Live app | https://kg3924.github.io/parts-inventory/ → **More → Import JSON** |
+| Live app | https://inventory.inmarsystems.com/ → **More → Import JSON** |
 
 ---
 
@@ -18,7 +18,7 @@ Fast shelf count for the parts room. It is **not** the live inventory app. Openi
 
 The tool is `public/count.html`. It is already on GitHub Pages. On the iPad open:
 
-`https://kg3924.github.io/parts-inventory/count.html`
+`https://inventory.inmarsystems.com/count.html`
 
 (After a new push, Pages can take 1–2 minutes. Hard-refresh if you still see the old site.)
 
@@ -65,7 +65,7 @@ Do **not** use Private / Incognito. Do **not** clear Safari or Chrome website da
 
 1. On the iPad, tap **Export JSON**. Safari saves a file like `Parts_room_2026-08-14.json` (Files → Downloads, or the share sheet).
 2. Get that file to wherever you import from (AirDrop to Mac, iCloud Drive, email to yourself).
-3. Open the **live inventory app**: https://kg3924.github.io/parts-inventory/
+3. Open the **live inventory app**: https://inventory.inmarsystems.com/
 4. Sign in (five shop accounts). Select your name on the unlock screen. There is no header name dropdown.
 5. **More → Import JSON** → pick the exported file.
 6. Confirm the import. The app **creates new part numbers only**.
