@@ -12,7 +12,7 @@ Push to `main` only when the user asks. GitHub Actions builds `dist/` and publis
 
 Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Gonzales, LA).
 
-- Live app: https://kg3924.github.io/parts-inventory/
+- Live app: https://inventory.inmarsystems.com/
 - GitHub: https://github.com/KG3924/parts-inventory (public). **Settings → Pages → Source** is **GitHub Actions** (`.github/workflows/pages.yml`), not “Deploy from a branch.”
 - Data backend: **Supabase** (Postgres + realtime)
 - Frontend: Vite. `index.html` is the shell. The Quote screen is `src/quote.js` and `src/quote-markup.js`, started from `src/main.js`. No React. There is no separate Invoice tab.
@@ -413,7 +413,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `src/main.js` | Loads the quote and Customers screens |
 | `src/quote.js` | Quote, packing list, and invoice behavior |
 | `src/quote-markup.js` | Quote screen HTML |
-| `vite.config.js` | Build. Base path `/parts-inventory/`. Output `dist/` |
+| `vite.config.js` | Build. Base path ./ (relative; works at inventory.inmarsystems.com and the old address). Output `dist/` |
 | `package.json` | `npm run dev` / `npm run build` |
 | `.github/workflows/pages.yml` | `npm ci`, build, secret scan, publish `dist/` |
 | `scripts/refuse-shipped-secrets.sh` | Fails the Pages build if a real secret is in `dist/` |

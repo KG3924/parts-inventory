@@ -1,6 +1,6 @@
 # Parts Inventory – Remote Web App (Supabase)
 
-**Live app:** [https://kg3924.github.io/parts-inventory/](https://kg3924.github.io/parts-inventory/)
+**Live app:** [https://inventory.inmarsystems.com/](https://inventory.inmarsystems.com/)
 
 ### Run locally
 
@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173/parts-inventory/ (the dev server uses the same `/parts-inventory/` base as the live site). `npm run build` writes `dist/`. GitHub Pages deploys that build, not the raw repo. After this is on `main`, the repo setting **Settings → Pages → Source** must be **GitHub Actions**, not “Deploy from a branch.” Count tool: http://localhost:5173/parts-inventory/count.html
+Open http://localhost:5173/ (the dev server uses the same relative `./` base as the live site). `npm run build` writes `dist/`. GitHub Pages deploys that build, not the raw repo. After this is on `main`, the repo setting **Settings → Pages → Source** must be **GitHub Actions**, not “Deploy from a branch.” Count tool: http://localhost:5173/count.html
 
 Phone-friendly inventory tracker for **In-Mar Systems** with live remote access, barcode scanning, labels, quotes, and basic reports.
 
@@ -121,7 +121,9 @@ Use **More → Import JSON**.
 ## 3. Labels (QR deep-links)
 
 Labels use a **QR code** that opens the live app with a query parameter, e.g.  
-`https://kg3924.github.io/parts-inventory/?part=IMXXXXXXXX`
+`https://inventory.inmarsystems.com/?p=IMXXXXXXXX`
+
+Labels printed before Nov 2026 encode https://kg3924.github.io/parts-inventory/?p=…; GitHub redirects those to the new address with the ?p= kept. Never rename, transfer, or turn off Pages on this repo, and never add a custom domain to the kg3924.github.io repo, or those labels break.
 
 The value is the part’s **stable label ID** (`barcode` in Supabase), not the human part number — so renaming a part does **not** require reprinting. Name and part # still print as text next to the QR.
 

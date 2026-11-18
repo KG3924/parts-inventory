@@ -69,7 +69,7 @@ jobs:
               '',
               'After a new commit, hard-refresh that page (pull down in Safari, or empty cache in Chrome). The address stays the same so a saved login / Face ID prompt can stick while you test.',
               '',
-              'Saved logins are tied to that exact address. After this PR is merged, unlock once more on https://kg3924.github.io/parts-inventory/ — do not expect the preview password prompt to appear on the live URL.',
+              'Saved logins are tied to that exact address. After this PR is merged, unlock once more on https://inventory.inmarsystems.com/ — do not expect the preview password prompt to appear on the live URL.',
               '',
               'Do **not** run `schema/auth_lock_after_merge.sql` until this PR is on main. Running it earlier locks the live no-login app out of stock.'
             ].join('\n');
