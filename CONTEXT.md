@@ -41,8 +41,8 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 |-------|--------|
 | UI | Vite. `index.html` shell + `src/quote.js`. Light theme. `npm run build` writes `dist/` |
 | Backend | Supabase JS v2: `inventory` (+ `qty_used`), `inventory_adjustments`, quotes/packing/invoices, `app_settings` / `app_lookups`, `inventory_price_history`, `inventory_cost_layers` |
-| Labels | QR (`qrcode` CDN) deep-link `?part=` stable `barcode` ID; human part # printed beside QR |
-| Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate; deep-link `?part=` |
+| Labels | QR (`qrcode` CDN) deep-link `?p=` stable `barcode` ID. `?part=` and `?pn=` are still accepted. Human part # is printed beside the QR |
+| Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate. After sign-in a label opens Scan and the address is cleaned to `?view=scan` |
 | Hosting | GitHub Actions publishes `dist/` to Pages |
 | Auth | Email + password for five accounts. Browser saved-password / Face ID fills the next unlock. Public signup off. Anon key stays in `public-config.js`. Service key never in the repo. |
 | Users | Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — each has their own login |
@@ -142,7 +142,7 @@ Status enum (app): draft | sent | accepted | expired | void.
 - Five accounts, no public signup: `glynn@inmarsystems.com`, `ricky@inmarsystems.com`, `grant@inmarsystems.com`, `toby@inmarsystems.com`, `kyle.grantham.kg@gmail.com`. Stamps and Prepared By use that signed-in full name. There is no header name dropdown.
 - First open on a phone: pick the name, type the password, let the phone **save the password**. Next open, Face ID / Touch ID / fingerprint fills it. That is the biometric unlock. There is no in-app fake Face ID button.
 - Session lasts **12 hours** on that phone (`inmar_shift_expires_at`). Five phones can be signed in as five people at once.
-- **Sign out** is in the header. `count.html` uses the same gate and still does not write Supabase. After sign-in it reads the `inventory` table for its catalog (BUG-041). There is no public catalog file.
+- **Sign out** is in the header. Count is shelved. `count.html` only redirects to the shop home (`?view=dashboard`) and cannot read or write stock. There is no public catalog file.
 - **More → Passwords** lets a signed-in person set a new password for any of the five. The admin key stays on Supabase (edge function `set-staff-password`), not in the page. That person unlocks once on their phone and saves the new password.
 - Passkeys were not turned on: Supabase passkeys are experimental and the relying-party id is one domain. Preview and live Pages are different addresses, so a passkey enrolled on preview would not be the live one anyway.
 
@@ -152,24 +152,26 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Shop navigation
 - Front row, left to right: **Home · Scan · Inventory · Labels**. Each target is at least 44×44px.
-- **Quote** is a second bottom row by itself, always visible. It is not inside More and not only a button on Inventory.
+- The second row is **Quote · Customers · PO**, always visible. Quote is not inside More and not only a button on Inventory.
+- Header **‹ Back** is hidden on the first screen. Each screen you open is one history step, and the address is `?view=` plus that screen (dashboard, inventory, scan, quote, find, data, reports, labels, customers, po, or add). An unknown `?view=` opens Inventory. A missing one opens Home. **Back** returns one step. Find stores the open document on that step, so Back inside Find returns one document at a time. Leaving an unsaved Add form, an unsaved customer, or a typed invoice-void reason asks `Leave without saving? Your changes will be lost.`
+- Add to Home Screen uses `public/manifest.webmanifest`. The name is In-Mar Systems Parts. The short name is Parts. The icons are the Systems marks `icon-180.png`, `icon-192.png`, and `icon-512.png`. The Apple touch icon is `icon-180.png` and the Apple title is Parts.
 - **+ Add part** is at the top of Inventory. Add is not a tab.
 - **More** is a link on Home, not the front row. Schema/SQL, sell factors, exchange rates, export/import, costing, Passwords, and **Reports** are there.
 
 ### Home
-- Stats row: **Parts**, **Units**, **Low**, **Open Orders**. Parts, Low, and Open Orders open Inventory on that list. Parts opens the full list. Units is a count only.
-- **Find Quotes** and **Find Invoices** are two tiles side by side under that row and above the value cards. Each opens its own Find area, fresh every time. **Back to Home** returns to Home. They are not inside the stats grid, not on the front row, not in More, and not on the Quote row.
-- Value cards: **Inventory at Cost**, **At Sell Price**, **Potential Margin**, **Needs Delivery Date**. Needs Delivery Date opens Inventory on that list.
+- Stats row: **Parts**, **Units**, **Low**, **Open Orders**. Until the parts list loads, these tiles and the value cards show —. They then fill from that list and do not wait for settings. Parts, Low, and Open Orders open Inventory on that list. Parts opens the full list. Units is a count only. A failed parts list says `Couldn't load — try again.` The connection line says `Couldn't load — try again`. It does not stay on `Loading…`.
+- **Find Quotes** and **Find Invoices** are two tiles side by side under that row and above the value cards. Each opens its own Find area, fresh every time. **Back** returns one screen, to wherever Find was opened from. They are not inside the stats grid, not on the front row, not in More, and not on the Quote row.
+- Value cards: **Inventory at Cost**, **At Sell Price**, **Potential Margin**, **Needs Delivery Date**. Needs Delivery Date opens Inventory on that list. They show — until the parts list loads.
 - **More** sits under the tiles
 
 ### Find & reprint
-- **Find Quotes** and **Find Invoices** are separate areas. Entering either one, even the same one again, starts fresh: empty search, empty From and To, no list, and no open document. **Back to Home** returns to Home. **Back** on an open document returns to that area's list. Search text, dates, a list, or an open document in one area does not show in the other.
+- **Find Quotes** and **Find Invoices** are separate areas. Entering either one, even the same one again, starts fresh: empty search, empty From and To, no list, and no open document. **Back** on an open document returns one document at a time (an invoice to its quote, then the list), then to the screen Find was opened from. Search text, dates, a list, or an open document in one area does not show in the other. A quote lists each invoice as a button (the number, or —, plus the status). An invoice's quote number is a button back to that quote.
 - Search needs a number fragment, a customer name, or a part on the lines. Find quotes searches quotes. Find invoices searches invoices. A part match uses the part number or the name. Dashes, spaces and capitals don't matter. Cancelled quotes are included. Find Invoices includes drafts, including a draft with no number yet. Partial match is enough. An empty search with no dates does not list the book.
 - `schema/bl3a_find_by_part.sql` is run once in the Supabase SQL editor after this build is on Pages and every phone has hard-refreshed. It is safe to re-run. It reads only. The merge does not run it. Until then Find adds `Search needs an update. Only numbers and customers were searched.` and still searches numbers and customers.
 - **Last 7 days** and **From–To** browse that area only. Dates are shop-local America/Chicago, not UTC midnight. Last 7 is Chicago today and the six days before it, inclusive. From and To are inclusive. One filled date is that one day. Empty search plus a date window lists that window.
 - A quote's date is `created_at` in Chicago, then `quote_date`, then `updated_at`. An invoice uses `invoice_date`. An approved invoice uses the Chicago date of `approved_at` when that stamp is set.
 - Typed search and date browse both show about 50, newest first by that date. More than that shows the newest 50 and `Narrow the dates.` A typed search with no dates says `Narrow the search.`
-- A match opens Find only. It does not open the Quote builder. It has Reprint and Dup. An approved invoice whose number starts with I- also has **Packing list**, next to Reprint. A quote, a draft invoice, and an invoice with no I- number do not. It has no Approve, no Void, and no stock control.
+- A match opens Find only until **Open**. **Open** is on a live unsold quote (Open, Sent, or Accepted, and no approved invoice). It loads that quote in the builder. **Back** returns to the Find document. It has Reprint and Dup. An approved invoice whose number starts with I- also has **Packing list**, next to Reprint. A quote, a draft invoice, and an invoice with no I- number do not. There is no Approve on Find. A quote there has no Void button. An approved invoice whose number starts with I- can be voided, and that void is the only Find action that changes stock.
 - Find says `Searching…` on the list as soon as search starts, and `Opening…` on the detail as soon as a row is tapped. A newer search, or Back, wins. A slow older request does not paint over that.
 - **Reprint** opens the document to look at. It does not open the print dialog. **Print quote** and **Save & print invoice** still do. **Packing list** is on an approved invoice in Find Invoices. It opens the print dialog, shows the I- number and `From quote`, takes no number, and writes nothing. The quote builder has no Packing list button. **Reprint** of a quote shows that saved quote: heading QUOTE, Quote #, Quote date, Valid Until, Quoted total, and the quote footer. It has no Status line. It does not use the open quote form. It does not say INVOICE, Invoice #, or Amount due, and it has no DRAFT stamp.
 - **Reprint** of an invoice uses the same invoice builder as **Save & print**, opened to look at. It does not save a PDF and does not write a row.
@@ -179,7 +181,11 @@ Status enum (app): draft | sent | accepted | expired | void.
 - **Dup** starts a new draft only. It uses the quote, or the invoice's parent quote. It does not void and does not approve.
 
 ### Inventory
-- Search includes barcode (label ID is not shown). Inventory, Labels, Price history, and the count tool share Scan's punctuation-blind part match. Dashes, spaces, and capitals in a part number do not matter. Two numbers that differ only by a hyphen both stay listed. Quote, invoice, and PO part pickers are unchanged. No SQL in this cut.
+- Search includes barcode (label ID is not shown). Inventory, Labels, Price history, Scan, the quote builder's **Add a part**, and the PO **Add a part** share Scan's punctuation-blind part match. Dashes, spaces, and capitals in a part number do not matter. Two numbers that differ only by a hyphen both stay listed. The count tool is shelved and does not search. That match needs no SQL.
+- The parts list paints as soon as the parts load. It does not wait for settings. Stock buttons stay dim until settings are ready.
+- A second tap on **Commit change** does nothing until that one stock change finishes. The button is disabled while it runs. **Back** to Scan redraws the found card from the current parts list. If that part is gone, the card is cleared.
+- If Edit changes the qty, Save reads the live row first. When the shelf moved it says `Stock changed since you opened this part. Reopen it.` and writes nothing. If that check fails it says `Couldn't check stock. Try again.` A successful Save replaces the Add step in Back's history with Inventory.
+- Filter chips and the Scan add-part buttons pass a typed part number from the button's own data. They do not put it inside the click code.
 - Source + Category filter chips
 - **+ Add part** at the top
 - Filter bar with Clear filter when a Home tile is on
@@ -225,8 +231,11 @@ Known sale sentences stay exact, including `Q-… is cancelled…`, `I-L… is a
 - Reports: **Price history**, **Ending inventory (LIFO/FIFO)**
 
 ### Quote (Phase 2 — quote / packing list / invoice)
-- Working **cart** still in `localStorage` (`inv_quote`) until Save
-- **Saved Quotes** is live unsold only: Open (stored as draft), Sent, or Accepted, and no approved invoice. Void, Expired, and any quote with an approved invoice are not in this list. Row actions: Edit, Print, Dup, **Cancel quote**. **Search all quotes** under the list opens Find quotes, fresh, and focuses the search. Cancel keeps the number. The stored status stays `void`. Lists say **Cancelled**. There is no Delete and no Archive chip.
+- Working **cart** stays in `localStorage` (`inv_quote`) until Save. The open quote id is `inv_quote_open`. The lines last opened or saved are `inv_quote_base`. A reload opens that same quote and keeps the same number. Unsaved line edits come back when nobody else saved it: `Reopened with your unsaved line changes. Save to update it.` If another phone saved it, those lines are kept: `This quote changed on another phone. Your unsaved line edits weren't kept.` A sold or cancelled quote does not restore the unsaved lines. If it cannot be opened, the builder is cleared and the toast is `Couldn't reopen the last quote. Open it again from Saved Quotes.` A slower reopen stops when a newer **Edit** or **New quote** has started, so the reload will not wipe that newer quote. The newest one stays on screen.
+- **Saved Quotes** is live unsold only: Open (stored as draft), Sent, or Accepted, and no approved invoice. Cancelled, Expired, and any quote with an approved invoice are not in this list. The search box says `Search Q number or customer`. It filters that list by the Q number or the customer. A piece of either is enough. No match says `No quotes match.` It does not search parts. A failed list says `Couldn't load — try again` and shows **Retry**. Row actions: Edit, Print, Dup, **Cancel quote**. **Search all quotes** under the list opens Find quotes, fresh, and focuses the search. Cancel keeps the number. The stored status stays `void`. Lists say **Cancelled**. There is no Delete and no Archive chip.
+- The builder has **Add a part**. Two characters of a part number or a name show up to eight matches, using the same punctuation-blind match as Scan. A tap adds the line. The box stays dim until settings are ready. The toast names the quote: `Added ZZ-TEST to Q-L00001`, or `Added ZZ-TEST to the new quote` when the number box is blank or still `New — number on first save`.
+- A second tap on **Save quote** or **Save as new quote** while a save is running does nothing, so one save takes one number. Those buttons are disabled while the save runs.
+- Saving an Accepted quote while the status box is still Accepted, when the lines differ from the saved lines (part, qty, or price), sets the status to `draft` and says `Lines changed, so Q-… is back to Open. Mark it Accepted again once the customer agrees.` A change that does not touch the lines leaves it Accepted. **Open** on a live unsold quote in Find loads that quote in the builder. **Back** returns to the Find document.
 - Builder fields: number, status, date, **valid until (default +90 days)**, **Customer** and **Project** (separate), **RFQ #**, **Prepared By** (defaults to logged-in full name), FOB dropdown (Origin / Destination / type-and-save), payment terms dropdown (customer-specific when saved), lead time, notes
 - Printed quote includes a **3.5% credit-card fee** notice
 - **Save quote** / **Print quote** / **Invoice…** / Duplicate / **Cancel quote** do **not** change stock. The quote builder has no **Packing list** button. Cancel does not restock and does not clear `approved_at`, so a second invoice for that quote is still refused. The **Cancel quote** button sits outside the Invoice… buttons. The status dropdown says **Cancelled** and still saves `void`. Invoices keep the word Void. There is no draft-invoice void. There is no Delete on a saved quote.
@@ -236,7 +245,7 @@ Known sale sentences stay exact, including `Q-… is cancelled…`, `I-L… is a
 - A quote line that wants more than the live new-shelf qty shows `wants N / shelf M` before Save & print. That is a warning only. Save & print and Approve stay available. Nothing is reserved.
 - **Save & print** reuses the newest open draft invoice on this quote: it refreshes that header and its lines from the cart and reprints it. A new draft is inserted with no number. The screen and the print say `Draft — number at Approve`, and `From quote` plus the quote number sits under that. Approve gives the invoice its I-L or I-S number. An approved invoice still blocks another invoice.
 - **Invoice…** on a cart that is not saved yet runs **Save quote** first. **Save & print** does the same if there is still no quote. If that save fails, the invoice box stays closed and no INV- is minted. Draft reuse still needs that quote id.
-- **New quote** clears the working cart (no confirm) and starts a blank header. A new quote shows In-Mar Solutions and In-Mar Systems, neither picked, and the number spot reads `New — number on first save`. The company can change until the first save, which calls `shop_save_new_quote` and toasts `Saved Q-L00001` (or Q-S). After that the company is text and the number cannot change. Duplicate copies the source company and stays changeable until its own first save. When Approve marks a quote Accepted that was not already Accepted, success toasts `Approved I-L00001. Parts left the shelf. Quote marked Accepted.` If the quote was already Accepted, the toast stays `Approved I-L00001. Parts left the shelf.` Either way it then starts that same blank quote. The sold quote leaves Saved quotes. Find can still open it. An already-approved tap does the same after its info toast. Approve failure leaves the quote open and leaves the cart, and a refused Approve uses no number. Save quote and Save & print do not clear the cart, except **Save** when the status just saved is Cancelled and that quote is open. **Cancel quote** clears the cart when the cancelled quote is the one open in the builder, including Cancel from the list. Cancelling a different quote leaves the cart. Valid Until can't be before the quote Date. Save quote checks that before it saves, so a refused save does not use a number.
+- **New quote** starts a blank header. It asks `Clear the working cart? (Saved quotes in the database are kept.)` only from that button, and only when the lines on screen are not the saved lines. The toast is `Builder ready — add lines then Save quote`. Approve and Cancel do not ask that question. A new quote shows In-Mar Solutions and In-Mar Systems, neither picked, and the number spot reads `New — number on first save`. The company can change until the first save, which calls `shop_save_new_quote` and toasts `Saved Q-L00001` (or Q-S). After that the company is text and the number cannot change. Duplicate copies the source company and stays changeable until its own first save. When Approve marks a quote Accepted that was not already Accepted, success toasts `Approved I-L00001. Parts left the shelf. Quote marked Accepted.` If the quote was already Accepted, the toast stays `Approved I-L00001. Parts left the shelf.` Either way it then starts that same blank quote. The sold quote leaves Saved quotes. Find can still open it. An already-approved tap does the same after its info toast. Approve failure leaves the quote open and leaves the cart, and a refused Approve uses no number. Save quote and Save & print do not clear the cart, except **Save** when the status just saved is Cancelled and that quote is open. **Cancel quote** on the quote that is open starts a blank quote, including Cancel from the list. Neither company is picked. The In-Mar Solutions and In-Mar Systems buttons both show, neither is highlighted, and the locked company name is hidden. The number reads `New — number on first save`. The toast is `Q-… cancelled. Stock unchanged.` Cancelling a different quote leaves the cart. **Clear cart** asks the same clear question when the cart has any lines. An empty cart does not ask. Either way it starts that same blank quote and says `Cart cleared`. Customer and the other header boxes are empty. Saved quotes stay in the database. Valid Until can't be before the quote Date. Save quote checks that before it saves, so a refused save does not use a number.
 - If this quote has an approved invoice, it is not listed in Saved quotes. On the builder, **Cancel quote** is grey, and the note names that INV: `INV-… is approved. Cancelling this quote won't undo the sale.` Void and Expired cannot be chosen or saved. **Save quote** is grey too, and the note also says `INV-… is approved. This quote's lines can't change after the sale.` Save quote does not replace those lines. **Save as new quote** keeps the lines and the company already picked, writes those lines on the first save (Q-L or Q-S), and leaves customer, project, RFQ, FOB, terms, notes, and lead time blank. A quote with only a draft, or no invoice, can still be cancelled and still saves. Cancel does not restock and does not change the invoice.
 - **Save & print** refuses when the open quote is Void. The note names that Q-: `Q-… is cancelled. This invoice can't be approved.` It does not create or refresh a draft. A draft invoice on a void quote stays a draft. The invoice list shows that same Q- note and **Approve** is grey. A tap still calls `shop_approve_invoice`, which refuses before any debit. Drafts are not auto-voided. There is no new invoice status.
 - Once a quote is Cancelled, it stays Cancelled (stored status `void`). The status dropdown is locked, and **Save quote** and **Invoice…** are hidden. Save reads the stored status, so picking another status does not write. The refusal is `Q-… is cancelled. Start a new quote to bring this deal back.` Bring the deal back with **Save as new quote** or **Duplicate**. Save as new quote keeps the company already picked, writes the lines on screen on the first save, and leaves the customer and the other header fields blank. It does not copy Cancelled onto the new quote. Deleting one line is refused while that cancelled quote still exists. A saved quote cannot be deleted. Cancel keeps the number. After `schema/co1_company_numbering.sql` is run, the database refuses that delete too.
@@ -252,14 +261,15 @@ Known sale sentences stay exact, including `Q-… is cancelled…`, `I-L… is a
 
 ### Labels (QR deep-links)
 - QR codes (library: `qrcode` CDN), **not** Code 128
-- QR payload = full app URL + `?part=` **stable label ID** (`inventory.barcode`, e.g. `IM…`) — **does not change** when name or part # is edited
+- QR payload = full app URL + `?p=` **stable label ID** (`inventory.barcode`, e.g. `IM…`) — **does not change** when name or part # is edited
 - Fallback key is `part_number` only if barcode column/value missing
-- Phone **Camera** opens the URL → app deep-links to Scan UI for that part (**Commit** still required)
-- In-app scanner: if decoded text is a URL with `part`/`pn`, extract key; else treat as plain ID/part #
+- `?part=` and `?pn=` are still accepted. `?p=` wins when more than one is present
+- Phone **Camera** opens the URL → after sign-in the app opens Scan for that part (**Commit** still required)
+- In-app scanner: if decoded text is a URL with `p`, `part`, or `pn`, extract the key; else treat as plain ID/part #
 - Lookup matches `barcode` **or** `part_number` (case-insensitive)
 - Layout DK-1201: horizontal — QR left (~0.85″), name small + **large part #** right
 - Print via **popup** (Brother one-per-page; letter paper 8-up with larger QR)
-- Deep link on load: read `?part=` / `?pn=`, open Scan found card, `history.replaceState` cleans URL
+- Deep link after sign-in: read `?p=`, then `?part=`, then `?pn=`. Open the Scan found card. `p`, `part`, and `pn` are removed and the address is cleaned to `?view=scan`
 
 ### Reports (inside More)
 1. **Inventory Valuation** (new qty × buy; used excluded)
@@ -337,11 +347,11 @@ Grok chat sessions are **not** the source of truth. Recover from GitHub + this f
 
 | What | Where it actually lives |
 |------|-------------------------|
-| App source, docs, count tool, SQL | GitHub `KG3924/parts-inventory` `main`. Actions publishes the Vite build. `main` includes the stock referee, Approve invoice, and the quote-screen follow-up through draft reuse (PR #8). Save-before-invoice and the fixed fail banner are the open follow-up on top of that. |
+| App source, docs, SQL | GitHub `KG3924/parts-inventory` `main`. Actions publishes the Vite build. Count is shelved. |
 | Live inventory, quotes, packing lists, invoices, settings, cost layers | **Supabase** (realtime). Phase 1–3 SQL has been run on production |
-| Working quote **cart** (unsaved) | Browser `localStorage` key `inv_quote` — device/browser only until Save quote |
+| Working quote **cart** (unsaved) | Browser `localStorage` key `inv_quote` — device/browser only until Save quote. The open quote id is `inv_quote_open`. A reload reopens that quote and keeps the same number |
 | Sell factors / FX / costing method | `localStorage` + `app_settings` in Supabase |
-| Physical count **draft** | That phone/browser only (`count.html` localStorage). **Export JSON** is the backup. Safari ≠ Chrome |
+| Physical count | Shelved. `count.html` only redirects to the shop home (`?view=dashboard`). It cannot read or write stock. There is no count draft |
 | Original supplier sheets, 2026 catalogs, helper xlsx/json | **This Mac only** (not in git — see local file map). Do not rely on GitHub for those |
 
 Default Wynn sell factor: **2.585**. FFS factor: enter when known.
@@ -388,7 +398,7 @@ Approve on a Draft or Sent quote still sets it to Accepted. The toast adds `Quot
 
 ## Quote screen (no new SQL)
 
-Invoice… follows the quote on screen and saves the cart first when that cart is not a saved quote yet. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Approve failures stay on screen at the top and leave the shelf and the draft alone. The quote action is labeled **Void quote**. None of that changes `shop_approve_invoice` or `schema/a2_approve_invoice.sql`. Smoke after the page is on Pages and every phone has hard-refreshed. Do not run SQL for these screen fixes.
+Invoice… follows the quote on screen and saves the cart first when that cart is not a saved quote yet. A short line warns `wants N / shelf M` and does not block Save & print or Approve. Save & print updates the newest open draft instead of minting another INV-. Approve failures stay on screen at the top and leave the shelf and the draft alone. The quote action is labeled **Cancel quote**. None of that changes `shop_approve_invoice` or `schema/a2_approve_invoice.sql`. Smoke after the page is on Pages and every phone has hard-refreshed. Do not run SQL for these screen fixes.
 
 ## Login and lock (live)
 
@@ -411,7 +421,8 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 |------|------|
 | `index.html` | App shell: stock, scan, labels, reports, More, sign-in. Empty `#quote` mount |
 | `src/main.js` | Loads the quote and Customers screens |
-| `src/quote.js` | Quote, packing list, and invoice behavior |
+| `src/quote.js` | Quote, packing list, invoice, and Find behavior |
+| `src/po.js` | Purchase order. It prints and does not save |
 | `src/quote-markup.js` | Quote screen HTML |
 | `vite.config.js` | Build. Base path ./ (relative; works at inventory.inmarsystems.com and the old address). Output `dist/` |
 | `package.json` | `npm run dev` / `npm run build` |
@@ -421,7 +432,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `scripts/refuse-customer-data.sh` | Fails the Pages build if customer-looking data (spreadsheet files, unknown emails or phone numbers) is in `dist/`. Prints file names and counts only, never the values (the build log is public) |
 | `scripts/refuse-shipped-count-seed.sh` | Fails the Pages build if `count-seed*` or part-catalog JSON is in `dist/` (BUG-041) |
 | `public/public-config.js` | Public Supabase URL + anon key only (copied into the Pages build) |
-| `public/shop-auth.js` | Shared login wall for the app and count tool |
+| `public/shop-auth.js` | Sign-in wall for the app |
 | `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
 | `public/inmar-logo.jpg` | Older shop logo. Quotes, packing lists, and invoices no longer use it |
 | `public/In-Mar-Solutions-logo-v4.png` | Logo when the document company is L |
@@ -430,8 +441,12 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/co1_cutover_reset.sql` | Cutover-day tool only. Not part of the build. Run the file, then count only, then CLEAR PRACTICE DATA, after a backup |
 | `README.md` | Setup docs |
 | `CONTEXT.md` | This file — read first in a new session |
-| `public/count.html` | Mobile physical-count capture (reads `inventory` after sign-in, no Supabase writes) |
-| `COUNT.md` | How to count on phone and import JSON |
+| `public/count.html` | Shelved. Redirects to the shop home (`?view=dashboard`). It cannot read or write stock |
+| `public/manifest.webmanifest` | Home Screen manifest. Name is In-Mar Systems Parts. Short name is Parts |
+| `public/icon-180.png` | Home Screen icon and the Apple touch icon |
+| `public/icon-192.png` | Home Screen icon |
+| `public/icon-512.png` | Home Screen icon |
+| `COUNT.md` | Old count how-to, kept as history under a Shelved (Nov 2026) note |
 | `schema/quotes_phase1.sql` | Additive quotes + customers |
 | `schema/quotes_phase2.sql` | Quote extras, packing lists, invoices, settings |
 | `schema/inventory_costing.sql` | Used qty, price history, cost layers |
@@ -463,4 +478,4 @@ Do **not** add these unless the user asks. Do **not** alter `inmarinventory/`.
 
 ---
 
-*Last updated: 2026-10-28 — CO1: every new quote picks In-Mar Solutions (L) or In-Mar Systems (S) before the first save, then the company is locked. Quote numbers (Q-L00001 / Q-S00001) are taken on the first save. Invoice numbers (I-L00001 / I-S00001) are taken at Approve. A failed save or a refused Approve uses no number. Cancel keeps the quote number (stored status stays void; lists say Cancelled). A numbered quote cannot be deleted. Prints use that document's logo, and a blank company prints none. QuickBooks is per company. Find reprints a quote as a quote. Run schema/co1_company_numbering.sql once by hand after Pages and a hard-refresh. Do not quote between the merge and that SQL. schema/co1_cutover_reset.sql is cutover day only. CL1b: Customers screen next to Quote (search, edit, Mark In QuickBooks, duplicate names refused in plain words, merged customers read-only, no Delete, no SQL); the Pages and phone-preview builds refuse customer-looking data, and that check prints file names and counts only, never the emails or phone numbers it found. BUG-041: the count tool reads its parts catalog from the live inventory after sign-in; count-seed.json is off the site (a build check refuses it). BUG-038: Delete part is on the Edit screen, not the Inventory rows; a part on an open quote can't be deleted (run schema/b038_part_delete_guard.sql once after Pages + hard-refresh). BUG-037: phone Inventory rows are cards with the buttons on their own row, no sideways scrolling. BUG-035: invoice box loads the draft's values and clears between quotes. Round 1: Commit refuses a short remove and points at Set. It does not floor at zero. Add 0 and Remove 0 are refused. Set 0 still works. Quote qty is a whole number, 1 or more. Prices can't be negative and round to cents. Fees can't be negative. Valid Until can't be before Date. Due date follows Valid Until until it is typed. Approve says Quote marked Accepted when the quote was not already Accepted. Draft prints show DRAFT. Approved reprints do not. Find says Searching… and Opening… and drops a stale result. Approve needs a customer on the invoice. Cash sale fills that name and does not save a customer. The mismatch hold also compares Notes. $0.00 lines and invoices still approve. Quote numbers are unchanged. Run schema/r1_round1_guards.sql once after live Pages and a hard-refresh. Do not VALIDATE those checks. A grey button alone is not the lock. Saved quotes stay live unsold only. Freeze, void-quote, and void-final SQL remain separate one-time runs.*
+*Last updated: 2026-11-20 — #41–#46. Older notes are in git log.*

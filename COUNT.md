@@ -1,5 +1,7 @@
 # Physical count tool (phone / iPad)
 
+**Shelved (Nov 2026).** The count tool is shelved. `count.html` only redirects to the shop home (`?view=dashboard`). It cannot read or write stock. The notes below are history from before it was shelved.
+
 Fast shelf count for the parts room. It is **not** the live inventory app. Opening it requires the same sign-in as the inventory app. It still does not write Supabase. When you finish, export JSON and import it in the web app.
 
 | | |
