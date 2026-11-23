@@ -404,6 +404,10 @@ Invoice… follows the quote on screen and saves the cart first when that cart i
 
 The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applied. Do not leave or restore open policies. Smoke after any later merge: unlock → scan → new or used → Commit → printed label still scans.
 
+## Archive (not linked from the app)
+
+`archive.html` is not linked from the app. Release order: merge, wait until Pages is green, hard-refresh every phone, then Kyle runs `schema/archive_v1.sql` once in the Supabase SQL editor. Safe to re-run. The file creates empty tables and does not load records. The real load is a separate step outside the repo.
+
 ## Possible next work
 
 - Later: block Save & print / Approve when a line wants more than the shelf. This cut only warns `wants N / shelf M`.
@@ -433,6 +437,9 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `scripts/refuse-shipped-count-seed.sh` | Fails the Pages build if `count-seed*` or part-catalog JSON is in `dist/` (BUG-041) |
 | `public/public-config.js` | Public Supabase URL + anon key only (copied into the Pages build) |
 | `public/shop-auth.js` | Sign-in wall for the app |
+| `archive.html` | Old Logs archive. Not linked from the app. Same sign-in wall |
+| `src/archive.js` | Archive search, record, hull, serial, customer, and lists |
+| `schema/archive_v1.sql` | Empty archive tables and three read-only functions. Kyle runs it by hand after Pages is green and every phone has hard-refreshed |
 | `schema/auth_lock_after_merge.sql` | Live lock (already applied). Do not re-open with allow-all policies |
 | `public/inmar-logo.jpg` | Older shop logo. Quotes, packing lists, and invoices no longer use it |
 | `public/In-Mar-Solutions-logo-v4.png` | Logo when the document company is L |
