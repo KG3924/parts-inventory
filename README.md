@@ -62,6 +62,8 @@ The public anon key is in `public-config.js`. Never commit a service-role key.
 | `public/manifest.webmanifest` | Home Screen manifest. Name is In-Mar Systems Parts. Short name is Parts |
 | `public/icon-180.png`, `public/icon-192.png`, `public/icon-512.png` | Home Screen icons (the Systems mark). `icon-180.png` is also the Apple touch icon |
 
+**Archive** (`archive.html`) is not linked from the app. It is a read-only search of the old Logs site's quotes and invoices. After Pages is green and every phone has hard-refreshed, run `schema/archive_v1.sql` once in the Supabase SQL editor. The repo has no archive records.
+
 ---
 
 ## 1. Supabase setup
