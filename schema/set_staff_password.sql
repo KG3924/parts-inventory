@@ -1,3 +1,4 @@
+-- Historical. Do not re-run; see sec1_sign_in_lookup.sql.
 -- Lets a signed-in shop account set another person's password.
 -- Only the service role can run this. The edge function checks who is signed in first.
 -- Length is the only rule: 8 characters. No symbol, case, or leaked-password check.

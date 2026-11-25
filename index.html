@@ -390,7 +390,7 @@
       <label for="login-who">Name</label>
       <select id="login-who"></select>
       <label for="login-email">Login</label>
-      <input id="login-email" name="username" type="email" autocomplete="username">
+      <input id="login-email" name="username" type="text" readonly autocomplete="username">
       <label for="login-password">Password</label>
       <div class="pw-field">
         <input id="login-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go">
@@ -4211,9 +4211,9 @@ ${bodyHtml}
     async function setStaffPassword() {
       if (!requireUser('changing a password')) return;
       const status = document.getElementById('pw-status');
-      const email = document.getElementById('pw-who')?.value || '';
+      const name = document.getElementById('pw-who')?.value || '';
       const a = document.getElementById('pw-new')?.value || '';
-      if (!email) {
+      if (!name) {
         if (status) status.textContent = 'Select a person.';
         return;
       }
@@ -4228,7 +4228,7 @@ ${bodyHtml}
       }
       if (status) status.textContent = 'Saving…';
       const { data, error } = await supabaseClient.functions.invoke('set-staff-password', {
-        body: { email, password: a }
+        body: { name, password: a }
       });
       document.getElementById('pw-new').value = '';
       document.getElementById('pw-again').value = '';
@@ -4249,11 +4249,10 @@ ${bodyHtml}
         showStatus(msg, 'error');
         return;
       }
-      const mine = InmarAuth.STAFF.find(p => p.email === email);
-      const self = mine && mine.name === currentUser();
+      const self = name === currentUser();
       let msg = 'Password saved. They unlock once on their phone and save it.';
       if (self) {
-        const again = await InmarAuth.signIn(email, a);
+        const again = await InmarAuth.signIn(name, a);
         msg = again.error
           ? 'Password saved. Sign out and unlock with the new password, then set the others.'
           : 'Password saved. You are still signed in.';

@@ -217,3 +217,4 @@ Count is shelved. **`count.html`** only redirects to the shop home (`?view=dashb
 *Last updated: 2026-11-20 — #41–#46. Older notes are in git log.*
 *2026-11-25 — Packing list pouch shows a bold PACKING LIST line above Ship to (ship-to height budget 144px). Edit Part hides Clear; Add Part still shows it. Valid Until shows the whole-day count from the quote Date, and Save quote, Save as new quote, and Save & print invoice ask before any number or row write when Valid Until is more than 180 days after that date.*
 *2026-11-25 — A new quote's Date uses the phone's calendar day, so after 6 PM Central it stays today. Valid Until still starts at that day plus 90 days. Save & print uses the same local day for the invoice date. The 180-day question still counts whole calendar days.*
+*2026-11-25 — Sign-in is by name through the staff-sign-in Edge Function. Login emails stay in the database and are not written in the site. There is no lockout.*
