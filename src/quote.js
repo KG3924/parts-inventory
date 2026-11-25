@@ -79,6 +79,15 @@ export function shopToday(now) {
   return shopCalendarDate(now || new Date());
 }
 
+// A date input wants this phone's calendar day. toISOString() is UTC, so after
+// about 6 PM Central it is already tomorrow.
+export function localYmd(now) {
+  const d = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
 export function addCivilDays(ymd, delta) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
   if (!m) return '';
@@ -463,12 +472,12 @@ export function installQuote() {
     const d = iso ? new Date(iso + 'T12:00:00') : new Date();
     if (isNaN(d.getTime())) return '';
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return localYmd(d);
   }
 
   function defaultQuoteValid() {
     const dt = document.getElementById('quote-date')?.value;
-    return addDaysIso(dt || new Date().toISOString().slice(0, 10), 90);
+    return addDaysIso(dt || localYmd(), 90);
   }
 
   function lookupStoreKey(kind) {
@@ -1261,7 +1270,7 @@ export function installQuote() {
     resetQuoteInvoiceUi();
     document.getElementById('quote-status').value = 'draft';
     document.getElementById('quote-number').value = '';
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localYmd();
     document.getElementById('quote-date').value = today;
     document.getElementById('quote-valid').value = addDaysIso(today, 90);
     refreshValidDays();
@@ -1582,7 +1591,7 @@ export function installQuote() {
       const el = document.getElementById(id);
       if (el) el.value = value;
     };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localYmd();
     setVal('quote-status', 'draft');
     setVal('quote-number', '');
     setVal('quote-customer', '');
@@ -1684,7 +1693,7 @@ export function installQuote() {
     quoteCompanyLocked = false;
     setQuoteNumberDisplay('');
     renderCompanyPicker();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localYmd();
     document.getElementById('quote-date').value = today;
     document.getElementById('quote-valid').value = addDaysIso(today, 90);
     refreshValidDays();
@@ -1708,7 +1717,7 @@ export function installQuote() {
   function collectQuoteHeader() {
     return {
       number: document.getElementById('quote-number')?.value || 'Q-XXXX',
-      date: document.getElementById('quote-date')?.value || new Date().toISOString().slice(0, 10),
+      date: document.getElementById('quote-date')?.value || localYmd(),
       valid: document.getElementById('quote-valid')?.value || '',
       customer: document.getElementById('quote-customer')?.value || '',
       customerId: linkedCustomerId(),
@@ -2639,7 +2648,7 @@ export function installQuote() {
       const po = (document.getElementById('inv-po')?.value || '').trim();
       const shipTo = (document.getElementById('inv-ship')?.value || '').trim();
       const due = document.getElementById('inv-due')?.value || data.valid || '';
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localYmd();
       const quoteId = currentQuoteId() || null;
       if (!quoteId) {
         shop().showStatus("Couldn't save the quote — invoice was not created", 'error');
@@ -3731,7 +3740,7 @@ export function installQuote() {
   // Init quote date + panel
   (function() {
     const d = document.getElementById('quote-date');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localYmd();
     if (d && !d.value) d.value = today;
     const v = document.getElementById('quote-valid');
     if (v && !v.value) v.value = addDaysIso(today, 90);
