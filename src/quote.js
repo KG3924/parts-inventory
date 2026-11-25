@@ -1264,6 +1264,7 @@ export function installQuote() {
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('quote-date').value = today;
     document.getElementById('quote-valid').value = addDaysIso(today, 90);
+    refreshValidDays();
     document.getElementById('quote-by').value = shop().currentUser() || '';
     document.getElementById('quote-project').value = '';
     document.getElementById('quote-rfq').value = '';
@@ -1322,6 +1323,7 @@ export function installQuote() {
     document.getElementById('quote-status').value = q.status || 'draft';
     document.getElementById('quote-date').value = q.quote_date || '';
     document.getElementById('quote-valid').value = q.valid_until || '';
+    refreshValidDays();
     document.getElementById('quote-customer').value = q.customer_name || '';
     hideCustomerPick();
     await loadQuoteCustomer(q.customer_id);
@@ -1371,12 +1373,12 @@ export function installQuote() {
     }
   }
 
-  async function saveQuoteToDb() {
+  async function saveQuoteToDb(opts) {
     if (!shop().settingsReady) return;
-    return withQuoteSave(saveQuoteToDbNow);
+    return withQuoteSave(() => saveQuoteToDbNow(opts));
   }
 
-  async function saveQuoteToDbNow() {
+  async function saveQuoteToDbNow(opts) {
     if (!shop().requireUser('saving quotes')) return false;
     if (!(await ensureQuotesTables())) {
       shop().showStatus('Run Phase 1 quotes SQL on the More tab first', 'error');
@@ -1426,6 +1428,7 @@ export function installQuote() {
       shop().showStatus(dateProblem, 'error');
       return false;
     }
+    if (!(opts && opts.skipLongValidAsk) && !confirmLongValidUntil()) return false;
     const requestedStatus = document.getElementById('quote-status').value || 'draft';
     const customerName = (document.getElementById('quote-customer').value || '').trim();
     const project = (document.getElementById('quote-project')?.value || '').trim();
@@ -1570,6 +1573,7 @@ export function installQuote() {
       shop().showStatus('Add at least one line before saving', 'error');
       return false;
     }
+    if (!confirmLongValidUntil()) return false;
     const lines = quoteCart.map(c => ({ ...c }));
     setOpenQuoteId(null);
     loadedQuoteStatus = '';
@@ -1590,6 +1594,7 @@ export function installQuote() {
     setVal('quote-notes', '');
     setVal('quote-date', today);
     setVal('quote-valid', addDaysIso(today, 90));
+    refreshValidDays();
     setVal('quote-by', shop().currentUser() || '');
     setPickedCustomer(null);
     hideCustomerPick();
@@ -1602,7 +1607,7 @@ export function installQuote() {
     renderCompanyPicker();
     quoteCart = lines;
     saveQuoteCart();
-    return saveQuoteToDbNow();
+    return saveQuoteToDbNow({ skipLongValidAsk: true });
     });
   }
 
@@ -1682,6 +1687,7 @@ export function installQuote() {
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('quote-date').value = today;
     document.getElementById('quote-valid').value = addDaysIso(today, 90);
+    refreshValidDays();
     const by = document.getElementById('quote-by');
     if (by && shop().currentUser()) by.value = shop().currentUser();
     await refreshQuoteInvoices();
@@ -1909,6 +1915,66 @@ export function installQuote() {
     return '';
   }
 
+  function isoCalendarParts(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const check = new Date(y, mo - 1, d);
+    if (check.getFullYear() !== y || check.getMonth() !== mo - 1 || check.getDate() !== d) return null;
+    return { y, m: mo, d };
+  }
+
+  // Whole calendar days from the quote Date to Valid Until. The Y-M-D numbers are
+  // compared as local dates, not parsed as UTC midnight, so the day does not shift.
+  function wholeDaysFromQuoteDate(dateIso, validIso) {
+    const a = isoCalendarParts(dateIso);
+    const b = isoCalendarParts(validIso);
+    if (!a || !b) return null;
+    return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000);
+  }
+
+  function quoteValidSpanDays() {
+    const date = document.getElementById('quote-date')?.value || '';
+    const valid = document.getElementById('quote-valid')?.value || '';
+    if (!date || !valid) return null;
+    return wholeDaysFromQuoteDate(date, valid);
+  }
+
+  function ensureValidDayNote() {
+    if (document.getElementById('quote-valid-days')) return;
+    const input = document.getElementById('quote-valid');
+    const label = input && input.previousElementSibling;
+    if (!label) return;
+    const span = document.createElement('span');
+    span.id = 'quote-valid-days';
+    span.style.fontWeight = '400';
+    label.appendChild(span);
+  }
+
+  function refreshValidDays() {
+    ensureValidDayNote();
+    const el = document.getElementById('quote-valid-days');
+    if (!el) return;
+    const days = quoteValidSpanDays();
+    if (days == null) {
+      el.textContent = '';
+      return;
+    }
+    const word = Math.abs(days) === 1 ? 'day' : 'days';
+    el.textContent = ` (${days} ${word})`;
+  }
+
+  function confirmLongValidUntil() {
+    const days = quoteValidSpanDays();
+    if (days == null || days <= 180) return true;
+    if (confirm(`Valid Until is ${days} days after the quote date. Save anyway?`)) return true;
+    const el = document.getElementById('quote-valid');
+    if (el) el.focus();
+    return false;
+  }
+
   function quoteDateProblem() {
     const date = document.getElementById('quote-date')?.value || '';
     const valid = document.getElementById('quote-valid')?.value || '';
@@ -2134,11 +2200,11 @@ export function installQuote() {
     resetInvoiceBox();
   }
 
-  async function ensureQuoteForInvoice() {
+  async function ensureQuoteForInvoice(opts) {
     if (currentQuoteId()) return true;
     if (!quoteCart.length) return false;
     try {
-      const saved = await saveQuoteToDb();
+      const saved = await saveQuoteToDb(opts);
       return saved === true && !!currentQuoteId();
     } catch (e) {
       return false;
@@ -2546,6 +2612,7 @@ export function installQuote() {
       shop().showStatus(dateProblem, 'error');
       return;
     }
+    if (!confirmLongValidUntil()) return;
     const feeProblem = invoiceFeeProblem();
     if (feeProblem) {
       shop().showStatus(feeProblem, 'error');
@@ -2554,7 +2621,7 @@ export function installQuote() {
     invoiceSaveBusy = true;
     try {
       if (!currentQuoteId()) {
-        const saved = await ensureQuoteForInvoice();
+        const saved = await ensureQuoteForInvoice({ skipLongValidAsk: true });
         if (!saved || !currentQuoteId()) return;
       }
       await refreshQuoteInvoices();
@@ -3497,6 +3564,7 @@ export function installQuote() {
     printInvoiceDocument(doc, { view: true });
   }
 
+  // Address height inside the 2.5in pouch window. 144px leaves the PACKING LIST line above Ship to, plus Invoice # and From quote.
   function shipToFontPx(text) {
     const lines = String(text || '').split('\n');
     for (let size = 16; size >= 13; size--) {
@@ -3505,7 +3573,7 @@ export function installQuote() {
       lines.forEach(line => {
         rows += line.length === 0 ? 1 : Math.ceil(line.length / per);
       });
-      if (rows * size * 1.3 <= 170) return size;
+      if (rows * size * 1.3 <= 144) return size;
     }
     return 12;
   }
@@ -3521,6 +3589,7 @@ export function installQuote() {
       ? `<div style="font-size:13px;font-weight:500;color:#64748b;">Ship to:</div>
     <div style="font-weight:400;color:#1e293b;font-size:${shipToFontPx(ship)}px;line-height:1.3;white-space:pre-line;overflow-wrap:anywhere;">${shop().escapeHtml(ship)}</div>`
       : '';
+    const pouchTitle = `<div style="font-weight:700;font-size:18px;line-height:18px;color:#1e3a5f;margin:0 0 8px;">PACKING LIST</div>`;
     const fromQuote = quoteNumber
       ? `<div style="font-size:13px;"><span style="font-weight:500;color:#64748b;">From quote:</span> <span style="font-weight:400;color:#1e293b;">${shop().escapeHtml(quoteNumber)}</span></div>`
       : '';
@@ -3532,6 +3601,7 @@ export function installQuote() {
     <div><strong>Date:</strong> ${shop().escapeHtml(inv.invoice_date || '')}</div>
   </div>
   <div style="position:absolute;left:4.6in;top:0;width:2.4in;height:2.5in;box-sizing:border-box;">
+    ${pouchTitle}
     ${shipBlock}
     <div style="margin-top:8px;font-size:13px;"><span style="font-weight:500;color:#64748b;">Invoice #:</span> <span style="font-weight:400;color:#1e293b;">${shop().escapeHtml(inv.number || '')}</span></div>
     ${fromQuote}
@@ -3669,13 +3739,16 @@ export function installQuote() {
       const valid = document.getElementById('quote-valid');
       if (valid) valid.value = addDaysIso(d.value, 90);
       syncDueFromValid();
+      refreshValidDays();
     });
     const validInput = document.getElementById('quote-valid');
     if (validInput) validInput.addEventListener('change', () => {
       const problem = quoteDateProblem();
       if (problem) shop().showStatus(problem, 'error');
       syncDueFromValid();
+      refreshValidDays();
     });
+    refreshValidDays();
     const dueInput = document.getElementById('inv-due');
     if (dueInput) dueInput.addEventListener('input', () => { dueEditedByHand = true; });
     const notesInput = document.getElementById('quote-notes');

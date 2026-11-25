@@ -628,7 +628,7 @@
         <div class="btn-group">
           <button class="tap" id="item-save-btn" onclick="saveItem()">Save</button>
           <button type="button" class="secondary tap" onclick="cancelPartForm()">Cancel</button>
-          <button class="secondary tap" onclick="clearForm()">Clear</button>
+          <button class="secondary tap" id="item-clear-btn" onclick="clearForm()">Clear</button>
         </div>
         <div id="item-delete-zone" class="item-delete-zone" hidden>
           <button type="button" class="danger tap" id="item-delete-btn" onclick="deleteItemFromForm()">Delete part</button>
@@ -3035,6 +3035,8 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('form-title').textContent = 'Add Part';
       const delZone = document.getElementById('item-delete-zone');
       if (delZone) delZone.hidden = true;
+      const clearBtn = document.getElementById('item-clear-btn');
+      if (clearBtn) clearBtn.hidden = false;
       const findZone = document.getElementById('item-find-zone');
       if (findZone) findZone.hidden = true;
       ['item-name','item-barcode','item-list-price','item-sell-factor','item-buy-price','item-sell-price','item-source','item-category','item-location','item-notes',
@@ -3064,6 +3066,8 @@ notify pgrst, 'reload schema';</pre>
       document.getElementById('form-title').textContent = 'Edit Part';
       const delZone = document.getElementById('item-delete-zone');
       if (delZone) delZone.hidden = false;
+      const clearBtn = document.getElementById('item-clear-btn');
+      if (clearBtn) clearBtn.hidden = true;
       const findZone = document.getElementById('item-find-zone');
       if (findZone) findZone.hidden = false;
       document.getElementById('item-name').value = item.name || '';
