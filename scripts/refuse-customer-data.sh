@@ -1,12 +1,12 @@
 #!/bin/sh
 # Fail if the Pages output looks like it shipped customer data.
-# Allowed: the shop's own contact block and the five staff logins already in the app.
+# Allowed email: info@inmarsystems.com only. A staff login email in the build fails this check.
 # The build log is public, so this prints file names and counts only, never an email or phone number.
 set -eu
 root="${1:-dist}"
 [ -d "$root" ] || { echo "No $root directory to scan."; exit 1; }
 email_re='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-email_ok='^((info|glynn|grant|ricky|toby)@inmarsystems\.com|kyle\.grantham\.kg@gmail\.com)$'
+email_ok='^info@inmarsystems\.com$'
 # US phones not inside a part number; the five shop numbers are allowed.
 phone_re='(^|[^0-9A-Za-z-])\(?[0-9]{3}\)?[-. ][0-9]{3}[-. ][0-9]{4}([^0-9A-Za-z-]|$)'
 phone_ok='^(2254309111|2256445555|5046174625|8565056251|8567225535)$'

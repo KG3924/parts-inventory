@@ -3,17 +3,18 @@
    Phone biometrics = the browser's saved-password prompt (Face ID, Touch ID,
    fingerprint). Passkeys need a dashboard relying-party setup that cannot
    cover a preview host and the live Pages host at the same time, so this
-   cut uses email + password with autocomplete. */
+   cut uses a name and password with autocomplete. */
 (function () {
   var SHIFT_MS = 12 * 60 * 60 * 1000;
   var EXP_KEY = 'inmar_shift_expires_at';
   var STAFF = [
-    { name: 'Glynn Grantham', email: 'glynn@inmarsystems.com' },
-    { name: 'Kyle Grantham', email: 'kyle.grantham.kg@gmail.com' },
-    { name: 'Toby Whitfield', email: 'toby@inmarsystems.com' },
-    { name: 'Grant Adams', email: 'grant@inmarsystems.com' },
-    { name: 'Ricky Whitfield', email: 'ricky@inmarsystems.com' }
+    'Glynn Grantham',
+    'Kyle Grantham',
+    'Toby Whitfield',
+    'Grant Adams',
+    'Ricky Whitfield'
   ];
+  var ZZ_NAME = 'ZZ Test Staff';
 
   function assertPublic(cfg) {
     var key = (cfg && cfg.anonKey) || '';
@@ -36,14 +37,16 @@
 
   var signedInName = '';
 
-  function emailForName(name) {
-    for (var i = 0; i < STAFF.length; i++) if (STAFF[i].name === name) return STAFF[i].email;
-    return '';
+  function zzOn() {
+    try {
+      return new URLSearchParams(window.location.search).get('zz') === '1';
+    } catch (e) {
+      return false;
+    }
   }
-  function nameForEmail(email) {
-    var e = String(email || '').toLowerCase();
-    for (var i = 0; i < STAFF.length; i++) if (STAFF[i].email === e) return STAFF[i].name;
-    return '';
+  function nameAllowed(name) {
+    if (STAFF.indexOf(name) !== -1) return true;
+    return name === ZZ_NAME && zzOn();
   }
   function stampShift() {
     try { localStorage.setItem(EXP_KEY, String(Date.now() + SHIFT_MS)); } catch (e) {}
@@ -66,19 +69,19 @@
       signedInName = '';
       return false;
     }
-    var email = session.user.email || '';
-    var mapped = nameForEmail(email);
-    if (!mapped) {
+    var res = null;
+    try {
+      res = await client.from('profiles').select('full_name').eq('id', session.user.id).maybeSingle();
+    } catch (e) {
+      res = { error: e };
+    }
+    if (!res || res.error || !res.data || !res.data.full_name) {
       await client.auth.signOut();
       clearShift();
       signedInName = '';
       return false;
     }
-    signedInName = mapped;
-    try {
-      var res = await client.from('profiles').select('full_name').eq('id', session.user.id).maybeSingle();
-      if (res && res.data && res.data.full_name) signedInName = res.data.full_name;
-    } catch (e) { /* profiles table arrives with the after-merge SQL */ }
+    signedInName = res.data.full_name;
     return true;
   }
 
@@ -87,14 +90,29 @@
     return applySession(result && result.data && result.data.session);
   }
 
-  async function signIn(email, password) {
-    var allowed = nameForEmail(email);
-    if (!allowed) return { error: { message: 'That login is not one of the five shop accounts.' } };
-    var result = await client.auth.signInWithPassword({ email: email, password: password });
-    if (result.error) return result;
+  async function signIn(name, password) {
+    if (!nameAllowed(name)) return { error: { message: 'That login is not one of the five shop accounts.' } };
+    var invoked = await client.functions.invoke('staff-sign-in', {
+      body: { name: name, password: password }
+    });
+    if (invoked.error) {
+      var failMsg = invoked.error.message || 'Could not unlock.';
+      try {
+        var ctx = await invoked.error.context?.json?.();
+        if (ctx && ctx.error) failMsg = ctx.error;
+      } catch (e) {}
+      return { error: { message: failMsg } };
+    }
+    var data = invoked.data || {};
+    if (data.error) return { error: { message: data.error } };
+    var set = await client.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token
+    });
+    if (set.error) return set;
     stampShift();
-    await applySession(result.data.session);
-    return result;
+    await applySession(set.data && set.data.session);
+    return set;
   }
 
   async function signOut() {
@@ -103,32 +121,37 @@
     await client.auth.signOut();
   }
 
+  function namesFor(sel) {
+    var names = STAFF.slice();
+    if (zzOn() && sel && (sel.id === 'login-who' || sel.id === 'pw-who')) names.push(ZZ_NAME);
+    return names;
+  }
   function fillStaffSelect(sel) {
     if (!sel || sel.dataset.filled) return;
     sel.dataset.filled = '1';
-    sel.innerHTML = '<option value="">— Select —</option>' + STAFF.map(function (p) {
-      return '<option value="' + p.email + '">' + p.name + '</option>';
+    sel.innerHTML = '<option value="">— Select —</option>' + namesFor(sel).map(function (name) {
+      return '<option value="' + name + '">' + name + '</option>';
     }).join('');
   }
 
   function bindLoginForm(onOk) {
     var form = document.getElementById('login-form');
     var who = document.getElementById('login-who');
-    var email = document.getElementById('login-email');
+    var login = document.getElementById('login-email');
     var pw = document.getElementById('login-password');
     var err = document.getElementById('login-error');
     var btn = document.getElementById('login-btn');
     if (!form || !pw || !btn) return;
     fillStaffSelect(who);
-    function syncEmail() {
-      if (email && who) email.value = who.value;
+    function syncLogin() {
+      if (login && who) login.value = who.value;
     }
-    syncEmail();
-    if (who) who.addEventListener('change', syncEmail);
+    syncLogin();
+    if (who) who.addEventListener('change', syncLogin);
     var busy = false;
     async function go() {
       if (busy) return;
-      syncEmail();
+      syncLogin();
       if (!who || !who.value) {
         if (err) err.textContent = 'Select your name.';
         return;
@@ -140,7 +163,7 @@
       busy = true;
       btn.disabled = true;
       if (err) err.textContent = '';
-      var result = await signIn(email.value, pw.value);
+      var result = await signIn(login.value, pw.value);
       busy = false;
       btn.disabled = false;
       if (result.error) {
@@ -159,7 +182,7 @@
       go();
     });
     pw.addEventListener('change', function () {
-      if (pw.value && email && email.value) go();
+      if (pw.value && login && login.value) go();
     });
   }
 

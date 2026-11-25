@@ -1,0 +1,2 @@
+[functions.staff-sign-in]
+verify_jwt = false

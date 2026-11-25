@@ -44,7 +44,7 @@ Internal inventory + parts tracker for **In-Mar Systems / In-Mar Solutions** (Go
 | Labels | QR (`qrcode` CDN) deep-link `?p=` stable `barcode` ID. `?part=` and `?pn=` are still accepted. Human part # is printed beside the QR |
 | Camera scan | html5-qrcode; QR URL or plain ID; lookup **barcode or part_number**; commit separate. After sign-in a label opens Scan and the address is cleaned to `?view=scan` |
 | Hosting | GitHub Actions publishes `dist/` to Pages |
-| Auth | Email + password for five accounts. Browser saved-password / Face ID fills the next unlock. Public signup off. Anon key stays in `public-config.js`. Service key never in the repo. |
+| Auth | Name + password for five accounts, through the `staff-sign-in` Edge Function. Login emails stay in `public.profiles`. Browser saved-password / Face ID fills the next unlock. Public signup off. No lockout. Anon key stays in `public-config.js`. Service key never in the repo. |
 | Users | Glynn Grantham, Kyle Grantham, Toby Whitfield, Grant Adams, Ricky Whitfield — each has their own login |
 
 ---
@@ -139,12 +139,14 @@ Status enum (app): draft | sent | accepted | expired | void.
 
 ### Sign-in
 - Unsigned visitors see a login wall. The app does not load inventory, quotes, packing lists, or invoices until unlock.
-- Five accounts, no public signup: `glynn@inmarsystems.com`, `ricky@inmarsystems.com`, `grant@inmarsystems.com`, `toby@inmarsystems.com`, `kyle.grantham.kg@gmail.com`. Stamps and Prepared By use that signed-in full name. There is no header name dropdown.
+- Five accounts, no public signup. Sign-in is by name through the `staff-sign-in` Edge Function; login emails live only in `public.profiles` and are never written in the repo. Stamps and Prepared By use that signed-in full name. There is no header name dropdown.
 - First open on a phone: pick the name, type the password, let the phone **save the password**. Next open, Face ID / Touch ID / fingerprint fills it. That is the biometric unlock. There is no in-app fake Face ID button.
 - Session lasts **12 hours** on that phone (`inmar_shift_expires_at`). Five phones can be signed in as five people at once.
 - **Sign out** is in the header. Count is shelved. `count.html` only redirects to the shop home (`?view=dashboard`) and cannot read or write stock. There is no public catalog file.
 - **More → Passwords** lets a signed-in person set a new password for any of the five. The admin key stays on Supabase (edge function `set-staff-password`), not in the page. That person unlocks once on their phone and saves the new password.
 - Passkeys were not turned on: Supabase passkeys are experimental and the relying-party id is one domain. Preview and live Pages are different addresses, so a passkey enrolled on preview would not be the live one anyway.
+
+SEC1 signs in by name. The `staff-sign-in` Edge Function looks the login email up on the server and returns only the session. There is no lockout of any kind; Supabase Auth's own rate limit is the only throttle. Run `schema/sec1_sign_in_lookup.sql` once before the merge (the old page keeps working), deploy `staff-sign-in` with JWT verification off, merge, hard-refresh every phone, redeploy `set-staff-password`, then run `schema/sec1_after_merge.sql` once. Do not change a password between the merge and that redeploy.
 
 ### Database lock (already applied on live)
 - `schema/auth_lock_after_merge.sql` has been run. Unsigned (anon) cannot read or change stock. Signed-in shop accounts can.

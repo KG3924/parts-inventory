@@ -1,3 +1,4 @@
+-- Historical. Do not re-run; see sec1_sign_in_lookup.sql.
 -- =============================================================================
 -- DO NOT RUN THIS until the login app is merged to main and live Pages
 -- is the version that requires sign-in.
