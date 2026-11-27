@@ -157,7 +157,7 @@ export function installCustomers() {
     }
     if (!results.length) { box.innerHTML = `<p class="hint">No customer matches “${esc(q)}”. New customers are added from the Quote screen.</p>`; return; }
     box.innerHTML = '<div class="customer-pick cust-list">'
-      + results.map((r, i) => `<button type="button" class="customer-pick-row" data-i="${i}">${esc(r.name)}`
+      + results.map((r, i) => `<button type="button" class="customer-pick-row" data-i="${i}"><span class="item-title">${esc(r.name)}</span>`
         + (r.qb_status === "new_not_in_qb" ? ' <span class="badge badge-new-qb">New, not in QuickBooks yet</span>' : "") + "</button>").join("")
       + "</div>"
       + (results.length >= CUSTOMER_SEARCH_CAP ? '<p class="hint">Showing the closest 8. Type more of the name to narrow it.</p>' : "");

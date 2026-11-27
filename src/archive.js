@@ -343,24 +343,21 @@ function rowButton(row, co) {
       page: 1
     });
   });
-  const top = document.createElement('div');
   const dayText = row.day == null || String(row.day).trim() === '' ? '\u2014' : (formatIso(row.day) || String(row.day));
-  top.append(
-    el('span', 'tag', kind === 'invoice' ? 'Invoice' : 'Quote'),
+  const title = el('div', 'item-title');
+  title.append(
+    el('span', 'item-num', (kind === 'invoice' ? 'Invoice ' : 'Quote ') + dash(row.doc_number)),
     document.createTextNode(' '),
-    el('span', null, dash(row.doc_number)),
-    document.createTextNode(' '),
-    el('span', null, dayText)
+    el('span', 'item-who', dash(row.customer))
   );
-  btn.appendChild(top);
-  btn.appendChild(el('div', null, dash(row.customer)));
-  btn.appendChild(el('div', null, dash(row.project)));
-  if (kind === 'quote') btn.appendChild(el('div', null, dash(row.item)));
+  const metaBits = [dayText, dash(row.project)];
+  if (kind === 'quote') metaBits.push(dash(row.item));
   else {
-    btn.appendChild(el('div', null, dash(row.serial_number)));
+    metaBits.push(dash(row.serial_number));
     const amount = row.amount == null || String(row.amount).trim() === '' ? '\u2014' : (formatMoney(row.amount) || String(row.amount));
-    btn.appendChild(el('div', null, amount));
+    metaBits.push(amount);
   }
+  btn.append(title, el('div', 'item-meta', metaBits.join(' · ')));
   return btn;
 }
 
@@ -546,7 +543,8 @@ function addLookup(parent, title, rows) {
     const line = el('div', 'lookup');
     const id = row && row.id != null && String(row.id).trim() !== '' ? String(row.id) : '\u2014';
     const name = row && row.name != null && String(row.name).trim() !== '' ? String(row.name) : '\u2014';
-    line.append(el('span', null, id), document.createTextNode(' '), el('span', null, name));
+    line.classList.add('item-title');
+    line.append(el('span', 'item-num', id), document.createTextNode(' '), el('span', 'item-who', name));
     parent.appendChild(line);
   });
 }
@@ -568,13 +566,9 @@ function renderLists(state) {
     btn.className = 'hit';
     const id = row && row.id != null ? String(row.id) : '\u2014';
     const name = row && row.name != null && String(row.name).trim() !== '' ? String(row.name) : '\u2014';
-    btn.append(
-      el('span', null, id),
-      document.createTextNode(' '),
-      el('span', null, name),
-      document.createTextNode(' '),
-      el('span', null, showRawDate(row && row.tax_certificate_expiration))
-    );
+    const title = el('div', 'item-title');
+    title.append(el('span', 'item-num', id), document.createTextNode(' '), el('span', 'item-who', name));
+    btn.append(title, el('div', 'item-meta', showRawDate(row && row.tax_certificate_expiration)));
     if (row && row.name != null && String(row.name).trim() !== '') {
       const customerName = String(row.name);
       btn.addEventListener('click', () => navigate(Object.assign(blankState('solutions'), { view: 'customer', q: customerName })));
