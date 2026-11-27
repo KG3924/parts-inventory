@@ -143,6 +143,12 @@
     .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
     .toolbar button { width: auto; }
     .toolbar button.secondary { background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
+    a.shop-return {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; min-height: 48px; margin: 0 0 0.75rem; padding: 0.55rem 0.9rem;
+      border-radius: 8px; border: 1.5px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 1rem; font-weight: 650; text-decoration: none; text-align: center;
+    }
     .textsize {
       display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;
       font-size: 0.83rem; font-weight: 650; color: var(--label); margin: 0 0 0.75rem;
@@ -208,6 +214,7 @@
   <div id="app-shell">
     <p id="archive-gate"></p>
     <div id="archive-app">
+      <a class="shop-return no-print" href="index.html">‹ Parts</a>
       <header class="no-print">
         <h1>Archive</h1>
         <div class="user-bar">

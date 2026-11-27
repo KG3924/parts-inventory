@@ -114,6 +114,12 @@
     }
     button:hover { background: var(--accent-hover); }
     button.secondary { background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
+    a.archive-link {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; min-height: 48px; margin: 0 0 0.85rem; padding: 0.55rem 0.9rem;
+      border-radius: 8px; border: 1.5px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 1rem; font-weight: 650; text-decoration: none; text-align: center;
+    }
     button.company-picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
     .btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
     table { width: 100%; border-collapse: collapse; font-size: 1rem; }
@@ -953,6 +959,7 @@
       <button type="button" class="secondary tap" onclick="shopBack()" style="width:100%;margin-bottom:0.75rem;">Back</button>
       <div class="card">
         <button type="button" class="secondary tap" onclick="showPanel('reports')" style="width:100%;margin-bottom:0.85rem;">Reports</button>
+        <a class="archive-link" href="archive.html">Archive</a>
         <h2>Passwords</h2>
         <p class="hint">At least 8 characters. They save it again on their phone.</p>
         <label for="pw-who">Person</label>
