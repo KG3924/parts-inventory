@@ -263,6 +263,52 @@ function chicagoClock(date) {
   return { y, m: mo, d, h, min, s };
 }
 
+// PostgREST has not loaded shop_save_quote yet. Any other error stays on this call.
+export function quoteSaveFnMissing(error) {
+  const code = error && error.code != null ? String(error.code) : '';
+  if (code === 'PGRST202') return true;
+  const raw = [error && error.message, error && error.details, error && error.hint, typeof error === 'string' ? error : '']
+    .filter(v => v != null && String(v).trim())
+    .map(v => String(v))
+    .join('\n');
+  return /\bPGRST202\b/.test(raw) || /could not find the function/i.test(raw);
+}
+
+// One database call. If that function is not installed, the old order: lines, then header.
+export async function runExistingQuoteSave(opts) {
+  const rpc = opts.rpc;
+  const replaceLines = opts.replaceQuoteLines;
+  const writeHeader = opts.writeQuoteHeader;
+  const showError = opts.showQuoteSaveError;
+  let error = null;
+  try {
+    const res = await rpc('shop_save_quote', {
+      p_quote_id: opts.quoteId,
+      p_quote: opts.payload,
+      p_lines: opts.lines
+    });
+    error = res && res.error ? res.error : null;
+  } catch (thrown) {
+    error = thrown;
+  }
+  if (!error) return true;
+  if (quoteSaveFnMissing(error)) {
+    const lineErr = await replaceLines(opts.quoteId);
+    if (lineErr) {
+      showError(lineErr, 'before-header');
+      return false;
+    }
+    const written = await writeHeader(opts.quoteId, opts.payload);
+    if (written && written.error) {
+      showError(written.error, 'header');
+      return false;
+    }
+    return true;
+  }
+  showError(error, 'before-header');
+  return false;
+}
+
 let installed = false;
 
 export function installQuote() {
@@ -1188,6 +1234,20 @@ export function installQuote() {
     return insertQuoteLines(quoteId);
   }
 
+  // Existing quote, including a save that seals void: one call, lines then header.
+  // Falls back to that same order only when shop_save_quote is not installed.
+  async function saveExistingQuote(quoteId, payload) {
+    return runExistingQuoteSave({
+      rpc: (name, args) => shop().supabaseClient.rpc(name, args),
+      replaceQuoteLines,
+      writeQuoteHeader,
+      showQuoteSaveError,
+      quoteId,
+      payload,
+      lines: quoteLineRows(quoteId)
+    });
+  }
+
   async function blockingApprovedNumber(quoteId) {
     if (!quoteId) return '';
     if (quoteId === currentQuoteId()) {
@@ -1520,27 +1580,9 @@ export function installQuote() {
       setQuoteNumberDisplay(number);
       renderCompanyPicker();
     } else if (quoteId && sealingVoid) {
-      const lineErr = await replaceQuoteLines(quoteId);
-      if (lineErr) {
-        showQuoteSaveError(lineErr, 'before-header');
-        return false;
-      }
-      const written = await writeQuoteHeader(quoteId, payload);
-      if (written.error) {
-        showQuoteSaveError(written.error, 'header');
-        return false;
-      }
+      if (!(await saveExistingQuote(quoteId, payload))) return false;
     } else if (quoteId) {
-      const lineErr = await replaceQuoteLines(quoteId);
-      if (lineErr) {
-        showQuoteSaveError(lineErr, 'before-header');
-        return false;
-      }
-      const written = await writeQuoteHeader(quoteId, payload);
-      if (written.error) {
-        showQuoteSaveError(written.error, 'header');
-        return false;
-      }
+      if (!(await saveExistingQuote(quoteId, payload))) return false;
     }
     if (!firstSave) {
       const shown = (document.getElementById('quote-number')?.value || '').trim();

@@ -96,6 +96,7 @@ created_at (timestamptz)
 - schema/c1_customer_list.sql — customer list: unique name, type-ahead / Did you mean, New-not-in-QB tag, merge by pointer (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
 - `schema/vd1_void_invoice.sql` — voids an approved invoice and puts its stock back once at the original cost (Kyle runs it once by hand after this build is on Pages and every phone has hard-refreshed)
 - `schema/ql1_lock_quote_lines.sql` — quote lines lock (run SQL only after this page is on the phones; safe to re-run)
+- `schema/sv1_save_quote.sql` — save an existing quote in one step (run SQL only after this page is on the phones; safe to re-run)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -395,6 +396,12 @@ Once any invoice for a quote has `status` approved, or `approved_at` set, that q
 
 Run `schema/ql1_lock_quote_lines.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Safe to re-run. The merge does not apply this SQL.
 
+## Save quote in one step (run SQL only after this page is on the phones)
+
+Save on an existing quote calls `shop_save_quote` once. The lines are written, then the header, in that one call. If anything refuses, the quote stays as it was. The first save still uses `shop_save_new_quote`. Until this SQL is applied, Save on an existing quote still replaces the lines and then writes the header as two calls.
+
+Run `schema/sv1_save_quote.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Safe to re-run. The merge does not apply this SQL.
+
 ## Round 1 guards (run SQL only after this page is on the phones)
 
 Commit no longer floors a short remove at zero. Remove of more than is on hand raises `Only N on hand. If the shelf has more, use Set to correct the count first.` Used stock says `Only N used on hand…`. Add 0 raises `Enter how many to add — 1 or more.` Remove 0 raises `Enter how many to remove — 1 or more.` Set 0 still works. Approve still uses its own short-shelf sentence, because it sets `inmar.strict_remove`. Home − on a part at 0 shows the on-hand sentence after this SQL runs.
@@ -476,6 +483,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
 | `schema/vd1_void_invoice.sql` | Voids an approved invoice and puts its stock back once at the original cost. Kyle runs it once by hand after this build is on Pages and every phone has hard-refreshed |
 | `schema/ql1_lock_quote_lines.sql` | Locks a quote's lines once an invoice for it is approved. Run once after this page is on Pages and every phone has hard-refreshed. Safe to re-run. The merge does not apply this SQL |
+| `schema/sv1_save_quote.sql` | Saves an existing quote's lines and header in one call. Run once after this page is on Pages and every phone has hard-refreshed. Safe to re-run. The merge does not apply this SQL |
 
 ## Local-only (this Mac, not in git)
 
