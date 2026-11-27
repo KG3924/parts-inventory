@@ -95,6 +95,7 @@ created_at (timestamptz)
 - `schema/b038_part_delete_guard.sql` — a part on an open quote can't be deleted (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
 - schema/c1_customer_list.sql — customer list: unique name, type-ahead / Did you mean, New-not-in-QB tag, merge by pointer (run once after this build is on Pages and every phone has hard-refreshed; safe to re-run)
 - `schema/vd1_void_invoice.sql` — voids an approved invoice and puts its stock back once at the original cost (Kyle runs it once by hand after this build is on Pages and every phone has hard-refreshed)
+- `schema/ql1_lock_quote_lines.sql` — quote lines lock (run SQL only after this page is on the phones; safe to re-run)
 
 App probes on load: `hasCategoryColumn`, `hasBarcodeColumn`, `hasAdjustmentsTable`, `hasQuotesTables`, `hasPhase2Tables`, `hasListPriceColumn`, `hasQtyUsedColumn`, `hasPriceHistoryTable`, `hasCostLayersTable`.  
 If `barcode` exists, missing values are **backfilled** on load (`ensureBarcodes`).
@@ -388,6 +389,12 @@ Once an invoice is approved (`status` is approved, or `approved_at` is set), tha
 
 Run `schema/a2_6_freeze_approved_invoice.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. A grey button alone is not the lock. The pass is an update of that approved invoice, under a signed-in profile, raising that sentence. The same sentence refuses a change to one of its lines.
 
+## Quote lines lock (run SQL only after this page is on the phones)
+
+Once any invoice for a quote has `status` approved, or `approved_at` set, that quote's lines stay as sold. Insert, update, and delete raise `Q-… has approved invoice I-…. Its lines can't change. Void the invoice first to change them.` A blank quote number says `This quote`. An update that moves a line onto or off that quote is refused the same way. Voiding the invoice clears the lock. A void quote still raises the void sentence. Approve does not write quote lines. The cutover reset is unchanged.
+
+Run `schema/ql1_lock_quote_lines.sql` **once**, only after this build is on live Pages and every phone has hard-refreshed. Order: merge → Pages → hard-refresh → run that SQL → smoke. Safe to re-run. The merge does not apply this SQL.
+
 ## Round 1 guards (run SQL only after this page is on the phones)
 
 Commit no longer floors a short remove at zero. Remove of more than is on hand raises `Only N on hand. If the shelf has more, use Set to correct the count first.` Used stock says `Only N used on hand…`. Add 0 raises `Enter how many to add — 1 or more.` Remove 0 raises `Enter how many to remove — 1 or more.` Set 0 still works. Approve still uses its own short-shelf sentence, because it sets `inmar.strict_remove`. Home − on a part at 0 shows the on-hand sentence after this SQL runs.
@@ -468,6 +475,7 @@ The login app is on `main`. `schema/auth_lock_after_merge.sql` is already applie
 | `schema/a2_4b_void_quote_final.sql` | Locks a void quote. Line edits are refused. Run once after A2.4b is on Pages and every phone has hard-refreshed. Re-run for the line-delete rule. Quote delete is closed by `schema/co1_company_numbering.sql` once that file has been run |
 | `schema/a2_6_freeze_approved_invoice.sql` | Locks an approved invoice and its lines. Run once after this build is on Pages and every phone has hard-refreshed. A grey button alone is not the lock |
 | `schema/vd1_void_invoice.sql` | Voids an approved invoice and puts its stock back once at the original cost. Kyle runs it once by hand after this build is on Pages and every phone has hard-refreshed |
+| `schema/ql1_lock_quote_lines.sql` | Locks a quote's lines once an invoice for it is approved. Run once after this page is on Pages and every phone has hard-refreshed. Safe to re-run. The merge does not apply this SQL |
 
 ## Local-only (this Mac, not in git)
 

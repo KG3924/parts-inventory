@@ -1265,6 +1265,7 @@ notify pgrst, 'reload schema';</pre>
         /((?:INV-[\w-]+|I-[LS]\d+|This invoice) is approved\. This quote's lines can't change after the sale\.)/,
         /((?:Q-[\w-]+|This quote) is void\. This invoice can't be approved\.)/,
         /((?:Q-[\w-]+|This quote) is void\. Start a new quote to bring this deal back\.)/,
+        /((?:Q-[\w-]+|This quote) has approved invoice (?:INV-[\w-]+|I-[LS]\d+)\. Its lines can't change\. Void the invoice first to change them\.)/,
         /(This invoice's quote is missing\. This invoice can't be approved\.)/,
         /(Approved invoices stay on the books)/,
         /(Approved invoices stay approved)/,

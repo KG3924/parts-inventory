@@ -1531,14 +1531,14 @@ export function installQuote() {
         return false;
       }
     } else if (quoteId) {
+      const lineErr = await replaceQuoteLines(quoteId);
+      if (lineErr) {
+        showQuoteSaveError(lineErr, 'before-header');
+        return false;
+      }
       const written = await writeQuoteHeader(quoteId, payload);
       if (written.error) {
         showQuoteSaveError(written.error, 'header');
-        return false;
-      }
-      const lineErr = await replaceQuoteLines(quoteId);
-      if (lineErr) {
-        showQuoteSaveError(lineErr, 'lines');
         return false;
       }
     }
