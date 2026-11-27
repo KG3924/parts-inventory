@@ -2,65 +2,82 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#FAF8F5">
+  <script>
+    try {
+      var savedTextSize = localStorage.getItem('parts-text-size');
+      if (savedTextSize === '90' || savedTextSize === '100' || savedTextSize === '115') {
+        document.documentElement.setAttribute('data-zoom', savedTextSize);
+      }
+    } catch (e) {}
+  </script>
   <title>Archive</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="public-config.js"></script>
   <script src="shop-auth.js"></script>
   <style>
     :root {
-      --bg: #f4f6f9;
+      --bg: #FAF8F5;
       --card: #ffffff;
-      --border: #e2e8f0;
-      --text: #1e293b;
-      --muted: #64748b;
-      --accent: #2563eb;
-      --accent-hover: #1d4ed8;
-      --danger: #dc2626;
+      --border: #8A8277;
+      --field: #746C60;
+      --text: #111827;
+      --label: #1F2937;
+      --muted: #374151;
+      --accent: #1D4ED8;
+      --accent-hover: #1E40AF;
+      --danger: #B91C1C;
     }
+    html { font-size: 18px; }
+    html[data-zoom="90"] { font-size: 16px; }
+    html[data-zoom="100"] { font-size: 18px; }
+    html[data-zoom="115"] { font-size: 20.5px; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.5;
+      line-height: 1.55;
       min-height: 100vh;
       padding: 0.75rem;
     }
     #login-wall {
-      max-width: 420px; margin: 2.5rem auto; background: var(--card);
-      border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem;
+      max-width: 420px; margin: 1.25rem auto; background: var(--card);
+      border: 1.5px solid var(--border); border-radius: 12px; padding: 1.1rem;
     }
     #login-wall h1 { font-size: 1.25rem; margin-bottom: 0.35rem; }
-    #login-wall p { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
-    #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.2rem; }
+    #login-wall p { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.75rem; }
+    #login-error { color: var(--danger); font-size: 0.95rem; min-height: 1.2rem; }
+    #login-btn { width: 100%; }
     body.auth-locked #app-shell { display: none; }
     body:not(.auth-locked) #login-wall { display: none; }
-    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    label { display: block; font-size: 0.83rem; font-weight: 650; color: var(--label); margin-bottom: 0.25rem; }
     input, select {
-      width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
-      padding: 0.55rem 0.7rem; border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.7rem;
+      width: 100%; background: #fff; border: 1.5px solid var(--field); color: var(--text);
+      padding: 0.55rem 0.7rem; border-radius: 8px; font-size: max(1rem, 16px); margin-bottom: 0.7rem;
+      min-height: 48px;
     }
-    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
     button {
-      background: var(--accent); color: white; border: none; padding: 0.6rem 1rem;
-      border-radius: 8px; font-size: 0.9rem; cursor: pointer;
+      background: var(--accent); color: white; border: none; padding: 0.55rem 0.9rem;
+      border-radius: 8px; font-size: 1rem; cursor: pointer; min-height: 48px;
     }
     button:hover { background: var(--accent-hover); }
-    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    button.secondary { background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
     button.picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
     button:disabled { opacity: 0.45; }
-    .hint { font-size: 0.78rem; color: var(--muted); margin-top: -0.4rem; margin-bottom: 0.6rem; }
+    .hint { font-size: 0.9rem; color: var(--muted); margin-top: -0.4rem; margin-bottom: 0.6rem; }
     .pw-field { position: relative; margin-bottom: 0.7rem; }
-    .pw-field input { padding-right: 4.4rem; margin-bottom: 0; }
+    .pw-field input { padding-right: 5.2rem; margin-bottom: 0; }
     .pw-toggle {
       position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-      width: auto; min-height: 0; margin: 0; padding: 0.3rem 0.5rem;
-      background: transparent; color: var(--accent); font-size: 0.8rem;
+      width: auto; min-height: 44px; min-width: 44px; margin: 0; padding: 0.35rem 0.65rem;
+      background: transparent; color: var(--accent); font-size: 0.9rem; font-weight: 650;
     }
     .pw-toggle:hover { background: transparent; }
     #app-shell { max-width: 720px; margin: 0 auto; }
-    #archive-gate { display: none; margin: 2rem auto; max-width: 40rem; }
+    #archive-gate { display: none; margin: 2rem auto; max-width: 40rem; font-size: 1rem; }
     body.archive-unavailable #archive-gate,
     body.archive-load-error #archive-gate { display: block; }
     body.archive-booting #archive-app,
@@ -68,47 +85,95 @@
     body.archive-load-error #archive-app { display: none; }
     header {
       display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
-      gap: 0.75rem; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+      gap: 0.75rem; margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1.5px solid var(--border);
     }
-    h1 { font-size: 1.25rem; font-weight: 600; }
-    h2 { font-size: 1.05rem; margin: 0.85rem 0 0.35rem; }
-    .user-bar { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; }
-    .user-bar button.secondary { width: auto; margin: 0; padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+    h1 { font-size: 1.25rem; font-weight: 700; }
+    h2 { font-size: 1.2rem; margin: 0.85rem 0 0.35rem; }
+    .user-bar { display: flex; gap: 0.5rem; align-items: center; font-size: 0.95rem; color: var(--muted); }
+    .user-bar button.secondary { width: auto; margin: 0; padding: 0.4rem 0.75rem; font-size: 0.9rem; min-height: 44px; }
     .switch { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 0.75rem; }
-    .switch button { width: auto; background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .switch button { width: auto; background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
     .switch button.picked { background: var(--accent); color: white; border-color: var(--accent); }
     .dates { display: flex; gap: 0.75rem; }
-    .dates > div { flex: 1; }
+    .dates > div { flex: 1; min-width: 0; }
     .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
     .actions button { width: auto; }
-    .banner { margin: 0.75rem 0 0.4rem; font-size: 0.9rem; }
+    .banner, .count, .note, .msg { font-size: 0.95rem; color: var(--label); }
+    .banner { margin: 0.75rem 0 0.4rem; }
     .count, .note, .msg { margin: 0.25rem 0 0.5rem; }
+    .note { color: var(--muted); }
     .pager { display: flex; gap: 0.5rem; margin: 0.6rem 0 1rem; }
     .pager button { width: auto; }
     button.hit {
       display: block; width: 100%; text-align: left; background: var(--card); color: var(--text);
-      border: 1px solid var(--border); margin: 0 0 0.45rem; min-height: 44px;
+      border: 1.5px solid var(--border); border-radius: 10px; margin: 0 0 0.55rem;
+      min-height: 48px; padding: 0.75rem 0.85rem; line-height: 1.4; font-size: 1rem;
     }
-    button.hit:hover { background: #eff6ff; border-color: var(--accent); }
-    button.hit .tag { font-weight: 700; margin-right: 0.35rem; }
-    .field { margin: 0.45rem 0; }
-    .lbl { font-size: 0.75rem; color: var(--muted); }
+    button.hit:hover { background: #E8EEF9; border-color: var(--accent); }
+    button.hit .tag { font-weight: 750; margin-right: 0.35rem; }
+    .item-title {
+      display: block;
+      font-size: 1.08rem;
+      font-weight: 650;
+      color: var(--text);
+      line-height: 1.3;
+    }
+    .item-num { font-weight: 750; color: var(--text); }
+    .item-who { font-weight: 500; color: var(--text); }
+    .item-title .item-num, .item-title .item-who { font-size: 1.08rem; }
+    .item-meta {
+      display: block;
+      margin-top: 0.12rem;
+      font-size: 0.85rem;
+      font-weight: 450;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    button.hit { white-space: normal; overflow-wrap: anywhere; }
+    .field { margin: 0.7rem 0; font-size: 1rem; }
+    .lbl { font-size: 0.83rem; font-weight: 700; color: var(--label); margin-bottom: 0.1rem; }
     .pre { white-space: pre-wrap; }
     button.linkish {
       display: inline; width: auto; min-height: 44px; padding: 0.2rem 0;
-      background: transparent; color: var(--accent); text-align: left;
+      background: transparent; color: var(--accent); text-align: left; font-weight: 650;
+      text-decoration: underline;
     }
-    button.linkish:hover { background: transparent; text-decoration: underline; }
+    button.linkish:hover { background: transparent; }
     .lookup { margin: 0.15rem 0; }
     .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
     .toolbar button { width: auto; }
-    .toolbar button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .toolbar button.secondary { background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
+    .textsize {
+      display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;
+      font-size: 0.83rem; font-weight: 650; color: var(--label); margin: 0 0 0.75rem;
+    }
+    .textsize button {
+      width: 44px; min-width: 44px; min-height: 44px; padding: 0;
+      background: #fff; color: var(--text); border: 1.5px solid var(--border); font-weight: 650;
+    }
+    .textsize button:nth-of-type(1) { font-size: 0.85rem; }
+    .textsize button:nth-of-type(2) { font-size: 1rem; }
+    .textsize button:nth-of-type(3) { font-size: 1.2rem; }
+    .textsize button:hover { background: #fff; color: var(--text); }
+    html[data-zoom="90"] .textsize button[data-text-size="90"],
+    html[data-zoom="100"] .textsize button[data-text-size="100"],
+    html:not([data-zoom]) .textsize button[data-text-size="100"],
+    html[data-zoom="115"] .textsize button[data-text-size="115"] {
+      background: var(--text); color: var(--bg); border-color: var(--text);
+    }
+    @media (max-width: 640px) {
+      .dates { flex-direction: column; gap: 0; }
+      .dates > div, .dates input { width: 100%; min-width: 0; max-width: 100%; }
+    }
     @media print {
       body { background: white; padding: 0; }
       #login-wall, .no-print { display: none !important; }
       button.hit, button.linkish {
         background: none !important; color: black !important; border: none !important;
         box-shadow: none !important; text-align: left;
+      }
+      button.hit .item-title, button.hit .item-num, button.hit .item-who, button.hit .item-meta {
+        color: black !important; font-size: 1rem; font-weight: 400;
       }
       button.hit { border-bottom: 1px solid #ccc !important; border-radius: 0; }
       a { color: black; }
@@ -117,6 +182,12 @@
 </head>
 <body class="auth-locked">
   <div id="login-wall">
+    <div class="textsize no-print" role="group" aria-label="Text size">
+      <span class="textsize-label">Text size</span>
+      <button type="button" data-text-size="90" aria-pressed="false">A</button>
+      <button type="button" data-text-size="100" aria-pressed="true">A</button>
+      <button type="button" data-text-size="115" aria-pressed="false">A</button>
+    </div>
     <h1>In-Mar parts</h1>
     <p>Unlock once for this shift. Your phone can fill the saved login with Face ID, Touch ID, or fingerprint. Scanning does not ask again.</p>
     <form id="login-form" autocomplete="on">
@@ -144,6 +215,12 @@
           <button type="button" class="secondary" id="sign-out-btn">Sign out</button>
         </div>
       </header>
+      <div class="textsize no-print" role="group" aria-label="Text size">
+        <span class="textsize-label">Text size</span>
+        <button type="button" data-text-size="90" aria-pressed="false">A</button>
+        <button type="button" data-text-size="100" aria-pressed="true">A</button>
+        <button type="button" data-text-size="115" aria-pressed="false">A</button>
+      </div>
       <div class="no-print">
         <div class="switch" id="company-switch">
           <button type="button" id="co-systems" aria-pressed="false">In-Mar Systems</button>
@@ -180,5 +257,29 @@
     </div>
   </div>
   <script type="module" src="./src/archive.js"></script>
+  <script>
+    (function () {
+      var KEY = 'parts-text-size';
+      function apply(n) {
+        if (n !== '90' && n !== '100' && n !== '115') n = '100';
+        document.documentElement.setAttribute('data-zoom', n);
+        var nodes = document.querySelectorAll('[data-text-size]');
+        for (var i = 0; i < nodes.length; i++) {
+          var on = nodes[i].getAttribute('data-text-size') === n;
+          nodes[i].classList.toggle('on', on);
+          nodes[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        try { localStorage.setItem(KEY, n); } catch (e) {}
+      }
+      document.addEventListener('click', function (e) {
+        var b = e.target && e.target.closest ? e.target.closest('[data-text-size]') : null;
+        if (!b) return;
+        apply(b.getAttribute('data-text-size'));
+      });
+      var saved = '100';
+      try { saved = localStorage.getItem(KEY) || '100'; } catch (e) {}
+      apply(saved);
+    })();
+  </script>
 </body>
 </html>

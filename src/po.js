@@ -113,7 +113,7 @@ export function poPanelHtml() {
 }
 
 function poMatchButton(line, index, escape) {
-  return `<button type="button" class="customer-pick-row" data-add="${index}"><span class="po-hit">${escape(line.name)}</span><span class="po-hit-pn">${escape(line.part_number)}</span></button>`;
+  return `<button type="button" class="customer-pick-row" data-add="${index}"><span class="po-hit item-title">${escape(line.name)}</span><span class="po-hit-pn item-meta">${escape(line.part_number)}</span></button>`;
 }
 
 function poPrintStyle() {
@@ -230,7 +230,7 @@ export function installPo() {
   }
   function renderLines() {
     $("po-lines").innerHTML = lines.map((line, i) => `<div class="po-line">
-      <div class="po-line-main"><div>${esc(line.name)}</div><div class="po-hit-pn">${esc(line.part_number)}</div></div>
+      <div class="po-line-main"><div class="item-title">${esc(line.name)}</div><div class="po-hit-pn item-meta">${esc(line.part_number)}</div></div>
       <input type="text" inputmode="numeric" autocomplete="off" aria-label="Qty" data-qty="${i}" value="${esc(line.qty)}">
       <button type="button" class="secondary tap" data-remove="${i}" aria-label="Remove">×</button>
     </div>`).join("");

@@ -855,7 +855,7 @@ export function installQuote() {
     const exact = rows.some(r => r.exact);
     const clean = text.replace(/[\s\u00a0]+/g, ' ').trim();
     const showSolutionsNew = quoteCompany === 'L';
-    const items = rows.map((r, i) => `<button type="button" class="customer-pick-row" onclick="pickCustomer(${i})">${esc(r.name)}`
+    const items = rows.map((r, i) => `<button type="button" class="customer-pick-row" onclick="pickCustomer(${i})"><span class="item-title">${esc(r.name)}</span>`
       + (showSolutionsNew && r.qb_status === 'new_not_in_qb' ? ' <span class="badge badge-new-qb">New, not in QuickBooks yet</span>' : '') + '</button>');
     const head = rows.length && !exact ? '<div class="customer-pick-head">Did you mean</div>' : '';
     const add = exact ? '' : `<button type="button" class="customer-pick-row customer-pick-add" onclick="addCustomerFromQuote()">+ Add “${esc(clean)}” as a new customer</button>`;
@@ -1235,10 +1235,10 @@ export function installQuote() {
         <tbody>
           ${shown.map(q => `
             <tr>
-              <td><code>${shop().escapeHtml(q.number)}</code></td>
-              <td>${shop().escapeHtml(q.customer_name || '—')}</td>
+              <td class="item-num"><code class="item-num">${shop().escapeHtml(q.number)}</code></td>
+              <td class="item-who">${shop().escapeHtml(q.customer_name || '—')}</td>
               <td><span class="badge ${q.status === 'accepted' ? 'open-order' : 'source-tag'}">${shop().escapeHtml(quoteStatusLabel(q.status))}</span></td>
-              <td style="font-size:0.8rem;color:var(--muted)">${shop().escapeHtml(q.quote_date || '')}</td>
+              <td class="item-meta">${shop().escapeHtml(q.quote_date || '')}</td>
               <td class="actions">
                 <button type="button" class="secondary" onclick="openQuote('${q.id}')">Edit</button>
                 <button type="button" class="secondary" onclick="printQuoteById('${q.id}')">Print</button>
@@ -3058,10 +3058,8 @@ export function installQuote() {
         ? `${entry.when || ''} · ${shop().money(Number(row.total) || 0)}`
         : (entry.when || '');
       return `<button type="button" class="secondary tap find-hit" onclick="openFindDoc('${entry.kind}','${id}')">
-        <code>${shop().escapeHtml(row.number || '')}</code>
-        ${shop().escapeHtml(row.customer_name || '—')}
-        · ${shop().escapeHtml(findStatusLabel(entry.kind, row.status))}
-        ${extra ? `<div style="font-size:0.8rem;color:var(--muted);">${shop().escapeHtml(extra)}</div>` : ''}
+        <span class="item-title"><span class="item-num">${shop().escapeHtml(row.number || '')}</span> <span class="item-who">${shop().escapeHtml(row.customer_name || '—')}</span></span>
+        <span class="item-meta">${shop().escapeHtml(findStatusLabel(entry.kind, row.status))}${extra ? ' · ' + shop().escapeHtml(extra) : ''}</span>
       </button>`;
     };
     if (results) results.innerHTML = `${picked.rows.map(hit).join('')}${narrow}${partNote}`;
@@ -3806,7 +3804,7 @@ export function installQuote() {
         const id = shop().escapeHtml(item.id);
         const pn = shop().escapeHtml(item.part_number);
         const name = shop().escapeHtml(item.name);
-        return `<button type="button" class="customer-pick-row" data-part-id="${id}"><span>${pn}</span> <span>${name}</span></button>`;
+        return `<button type="button" class="customer-pick-row" data-part-id="${id}"><span class="item-title"><span class="item-num">${pn}</span> <span class="item-who">${name}</span></span></button>`;
       }).join('') + '</div>';
       if (typeof window.applySettingsGate === 'function') window.applySettingsGate();
     };
